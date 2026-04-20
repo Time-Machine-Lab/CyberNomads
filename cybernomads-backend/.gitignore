@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.env
+
+storage/sqlite/*.db
+storage/artifacts/logs/**
+storage/artifacts/outputs/**
+
+!storage/artifacts/logs/system/.gitkeep
+!storage/artifacts/logs/scheduler/.gitkeep
+!storage/artifacts/logs/task/.gitkeep
+!storage/artifacts/logs/error/.gitkeep
+!storage/artifacts/outputs/.gitkeep
