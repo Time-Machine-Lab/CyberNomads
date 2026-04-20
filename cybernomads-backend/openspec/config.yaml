@@ -1,20 +1,32 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+# TML-Spec-Coding 项目上下文配置
+# 说明：以下配置决定了 Agent 在执行任何任务时，默认会自动读取并挂载的基础上下文文件。
+project_context:
+  - path: "docs/design/*.md"
+    description: "顶层架构设计文档。包含了项目的核心知识、技术选型和整体架构。供 Agent 在需求探索和代码编写时参考，确保不偏离整体架构。(注：具体的领域设计 domain/* 由开发者视需求自行挂载)"
+  - path: "docs/spec/Cybernomads后端开发规范文档.md"
+    description: "开发规约与技术栈约束文档。包含了前端、后端等具体的代码编写规范。Agent 在进行任何代码生成（Apply 阶段）前，必须读取此上下文以确保代码风格合规。"
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+# 生命周期行为约束
+rules:
+  global:
+    - "全局红线：项目的 `docs/` 目录是唯一的绝对真理（Single Source of Truth）。所有的数据库表结构必须且只能由 `docs/sql/*.sql` 定义；所有的 API 接口必须且只能由 `docs/api/*.yaml` 定义。Agent 严禁在没有这些顶层文件支撑的情况下，凭空捏造数据结构或接口。"
+    - "全局红线：Agent 在进行任何代码生成前，必须首先仔细阅读并严格遵守 `docs/spec/` 目录下的相关开发规范。"
+
+  explore:
+    - "需求探索 (Explore) 约束：在与用户探讨需求边界和技术方案时，Agent 必须主动检索并交叉对比 `docs/design/` (架构)、`docs/api/` (接口) 和 `docs/sql/` (数据库) 中的现有设计，确保新需求在现有架构下是技术可行的，并指出潜在的架构冲突。"
+    - "需求探索时，必须确认需求的边界，明确哪些是 in-scope，哪些是 out-of-scope。"
+
+  proposal:
+    - "提案生成 (Propose) 约束：如果需求涉及 API 或 SQL 变更，必须先明确将更新 `docs/api/` 和 `docs/sql/` 顶层文档，再进入代码设计。"
+    - "提案必须引用 `docs/` 中的现有设计，不能凭空创造。"
+    - "一份 `.yaml` 对应一个 Controller 文件；一张表对应一个 `.sql` 文件。"
+
+  specs:
+    - "规格说明 (Specs) 约束：specs 中的行为要求必须能回溯到 `docs/design/` 的领域语义。"
+    - "如果 specs 涉及接口契约，必须明确落到单一 Controller 对应的 `.yaml` 文件；如果涉及存储结构，必须落到具体表名对应的 `.sql` 文件。"
+
+  tasks:
+    - "任务清单 (Tasks) 约束：当需求涉及数据存储变更（新增表/改字段）或接口变更（新增接口/改参数）时，必须将【更新或创建对应的 `.sql` 文件到 `docs/sql/`】以及【更新或创建对应的 `.yaml` 文件到 `docs/api/`】列为最高优先级的首要任务。在这些顶层设计文档更新完成前，不得安排业务代码开发任务。"
+    - "所有涉及数据库交互或 API 调用的实现，都必须与 `docs/sql/` 和 `docs/api/` 100% 对齐。"
