@@ -1,20 +1,39 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+# TML-Spec-Coding 前端模式项目上下文配置
+# 说明：前端模式下的上下文配置。docs/api/*.yaml 和 docs/sql/*.sql 作为只读顶层文件处理。
+project_context:
+  - path: "docs/design/*.md"
+    description: "顶层架构设计文档。包含了项目的核心知识、技术选型和整体架构。供 Agent 在需求探索和代码编写时参考，确保不偏离整体架构。(注：具体的领域设计 domain/* 由开发者视需求自行挂载)"
+  - path: "docs/spec/**/*"
+    description: "开发规约与技术栈约束文档。包含了前端、后端等具体的代码编写规范。Agent 在进行任何代码生成（Apply 阶段）前，必须读取此上下文以确保代码风格合规。"
+  - path: "docs/api/*.yaml"
+    description: "API 接口定义文档（只读）。项目的所有 API 接口契约定义，前端开发必须严格遵守此文档中的接口规范，不得私自修改。"
+  - path: "docs/sql/*.sql"
+    description: "数据库表结构文档（只读）。项目的数据库表结构定义，前端开发在涉及数据建模时需参考此文档，确保数据结构的正确性。"
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+# 生命周期行为约束
+rules:
+  global:
+    - "全局红线：项目的 `docs/` 目录是唯一的绝对真理（Single Source of Truth）。所有的数据库表结构必须且只能由 `docs/sql/*.sql` 定义；所有的 API 接口必须且只能由 `docs/api/*.yaml` 定义。Agent 严禁在没有这些顶层文件支撑的情况下，凭空捏造数据结构或接口。"
+    - "全局红线：Agent 在进行任何代码生成前，必须首先仔细阅读并严格遵守 `docs/spec/` 目录下的相关开发规范。"
+
+  explore:
+    - "需求探索 (Explore) 约束：在与用户探讨前端需求边界和技术方案时，Agent 必须主动检索 `docs/api/*.yaml` (接口契约) 和 `docs/sql/*.sql` (数据结构) 作为只读参考，确保前端实现严格遵循既定的接口规范。"
+    - "需求探索时，必须确认需求的边界，明确哪些是 in-scope，哪些是 out-of-scope。"
+    - "前端开发不涉及 SQL 和 API 的更新或修改，如发现接口或数据结构不满足需求，应在探索阶段明确指出，由后端开发负责更新 `docs/api/` 和 `docs/sql/`。"
+
+  proposal:
+    - "提案生成 (Propose) 约束：前端开发必须严格遵循 `docs/api/*.yaml` 中定义的接口契约，提案中的接口调用必须与现有 API 文档 100% 对齐。"
+    - "提案中的数据结构定义必须参考 `docs/sql/*.sql`，不得私自定义或修改数据库表结构。"
+    - "如发现接口或数据结构不满足需求，应在提案中明确指出，由后端开发负责更新对应的顶层文档。"
+
+  specs:
+    - "规格说明 (Specs) 约束：specs 中的前端行为要求必须能回溯到 `docs/api/*.yaml` 的接口契约定义。"
+    - "前端组件的数据模型必须与 `docs/sql/*.sql` 中定义的数据结构保持一致。"
+    - "specs 中的接口调用必须明确落到 `docs/api/*.yaml` 中对应的接口定义。"
+
+  tasks:
+    - "任务清单 (Tasks) 约束：前端开发任务必须严格遵循 `docs/api/*.yaml` 和 `docs/sql/*.sql` 中定义的内容。"
+    - "前端任务不涉及 SQL 和 API 的更新或修改，如发现接口或数据结构不满足需求，应在任务清单中标注为【依赖后端更新】。"
+    - "所有涉及 API 调用的实现，都必须与 `docs/api/*.yaml` 100% 对齐；所有涉及数据结构的实现，都必须与 `docs/sql/*.sql` 100% 对齐。"
