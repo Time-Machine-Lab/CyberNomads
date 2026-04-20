@@ -1,0 +1,42 @@
+:root {
+  color-scheme: dark;
+  --cn-font-display: 'Space Grotesk', 'Inter', 'Segoe UI', sans-serif;
+  --cn-font-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --cn-font-mono: 'SFMono-Regular', 'Cascadia Code', 'JetBrains Mono', monospace;
+
+  --cn-surface: #0e0e0e;
+  --cn-surface-container-low: #131313;
+  --cn-surface-container: #1a1919;
+  --cn-surface-container-high: #202020;
+  --cn-surface-container-highest: #262626;
+
+  --cn-on-surface: #f3f7f8;
+  --cn-on-surface-soft: #c5c9cb;
+  --cn-on-surface-muted: #adaaaa;
+
+  --cn-primary: #8ff5ff;
+  --cn-primary-container: #00eefc;
+  --cn-on-primary: #005d63;
+  --cn-secondary: #c3f400;
+  --cn-on-secondary: #455900;
+  --cn-tertiary: #65afff;
+  --cn-error: #ff716c;
+
+  --cn-outline-ghost: rgb(72 72 71 / 0.2);
+  --cn-shadow-ambient: 0 24px 48px rgb(0 0 0 / 0.5);
+  --cn-shadow-soft: 0 18px 40px rgb(0 0 0 / 0.28);
+
+  --cn-radius-md: 0.5rem;
+  --cn-radius-lg: 0.75rem;
+
+  --cn-space-1: 0.25rem;
+  --cn-space-2: 0.5rem;
+  --cn-space-3: 0.75rem;
+  --cn-space-4: 1rem;
+  --cn-space-5: 1.5rem;
+  --cn-space-6: 2rem;
+  --cn-space-7: 2.5rem;
+  --cn-space-8: 3rem;
+
+  --cn-shell-width: 78rem;
+}
