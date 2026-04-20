@@ -1,0 +1,200 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Product API
+  version: 1.0.0
+  description: >
+    产品模块首版 API 契约。当前阶段只提供创建、更新、列表、详情能力；
+    产品详情同时承担“完整产品上下文”提供能力，不提供删除接口。
+  summary: 产品模块 MVP 对外契约
+
+tags:
+  - name: Products
+    description: 产品模块接口
+
+paths:
+  /api/products:
+    post:
+      tags:
+        - Products
+      summary: 创建产品
+      description: 创建一个新的产品对象，并提交完整 Markdown 正文。
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '400':
+          description: 请求参数不合法
+    get:
+      tags:
+        - Products
+      summary: 查询产品列表
+      description: >
+        返回用于选择和展示的产品摘要列表。列表结果不返回完整 Markdown 正文，
+        以避免把详情视图职责混入列表接口。
+      operationId: listProducts
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductSummary'
+
+  /api/products/{productId}:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+    get:
+      tags:
+        - Products
+      summary: 查询产品详情
+      description: >
+        返回产品完整详情，其中 `contentMarkdown` 为完整 Markdown 正文。
+        当前阶段该接口同时承担“完整产品上下文”提供能力，不单独拆分 context 接口。
+      operationId: getProductDetail
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '404':
+          description: 产品不存在
+    put:
+      tags:
+        - Products
+      summary: 更新产品
+      description: 更新已有产品的名称与完整 Markdown 正文。
+      operationId: updateProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '400':
+          description: 请求参数不合法
+        '404':
+          description: 产品不存在
+
+components:
+  parameters:
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      description: 产品稳定标识
+      schema:
+        type: string
+
+  schemas:
+    CreateProductRequest:
+      type: object
+      required:
+        - name
+        - contentMarkdown
+      properties:
+        name:
+          type: string
+          description: 产品可读名称，不要求全局唯一；对应 SQL 契约中的 `name`
+          minLength: 1
+        contentMarkdown:
+          type: string
+          description: >
+            产品完整 Markdown 正文。运行时应将其持久化为由 `content_ref`
+            关联的正文内容，而不是把名称当作主键或唯一索引。
+          minLength: 1
+
+    UpdateProductRequest:
+      type: object
+      required:
+        - name
+        - contentMarkdown
+      properties:
+        name:
+          type: string
+          description: 产品可读名称，不要求全局唯一；对应 SQL 契约中的 `name`
+          minLength: 1
+        contentMarkdown:
+          type: string
+          description: >
+            产品完整 Markdown 正文。更新后需继续作为同一 `productId`
+            的完整产品上下文内容返回。
+          minLength: 1
+
+    ProductSummary:
+      type: object
+      description: 用于列表选择与展示的产品摘要模型，不返回完整 Markdown 正文。
+      required:
+        - productId
+        - name
+        - updatedAt
+      properties:
+        productId:
+          type: string
+          description: 产品稳定标识，对应 SQL 契约中的 `product_id`
+        name:
+          type: string
+          description: 产品可读名称，对应 SQL 契约中的 `name`
+        updatedAt:
+          type: string
+          format: date-time
+          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
+
+    ProductDetail:
+      type: object
+      description: >
+        用于详情查看和完整产品上下文消费的模型。当前阶段不新增独立 context 接口，
+        `ProductDetail` 即完整产品上下文的对外载体。
+      required:
+        - productId
+        - name
+        - contentMarkdown
+        - createdAt
+        - updatedAt
+      properties:
+        productId:
+          type: string
+          description: 产品稳定标识，对应 SQL 契约中的 `product_id`
+        name:
+          type: string
+          description: 产品可读名称，对应 SQL 契约中的 `name`
+        contentMarkdown:
+          type: string
+          description: >
+            产品完整 Markdown 正文，也是当前阶段的完整产品上下文载体。
+            运行时通过 SQL 契约中的 `content_ref` 关联并装配得到。
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间，对应 SQL 契约中的 `created_at`
+        updatedAt:
+          type: string
+          format: date-time
+          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
+
+  securitySchemes: {}

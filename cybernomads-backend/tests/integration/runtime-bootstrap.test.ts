@@ -1,4 +1,11 @@
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -19,18 +26,26 @@ describe.sequential("runtime bootstrap", () => {
   });
 
   it("prepares the runtime root, fixed directories, SQLite file, and bootstrap table on first startup", async () => {
-    const workingDirectory = await createTemporaryDirectory(temporaryDirectories);
+    const workingDirectory =
+      await createTemporaryDirectory(temporaryDirectories);
 
     const result = await bootstrapRuntime({ workingDirectory });
     const runtimePaths = resolveRuntimePaths(workingDirectory);
 
     await expect(access(runtimePaths.runtimeRoot)).resolves.toBeUndefined();
-    await expect(access(runtimePaths.productDirectory)).resolves.toBeUndefined();
-    await expect(access(runtimePaths.strategyDirectory)).resolves.toBeUndefined();
+    await expect(
+      access(runtimePaths.productDirectory),
+    ).resolves.toBeUndefined();
+    await expect(
+      access(runtimePaths.strategyDirectory),
+    ).resolves.toBeUndefined();
     await expect(access(runtimePaths.workDirectory)).resolves.toBeUndefined();
     await expect(access(runtimePaths.databaseFile)).resolves.toBeUndefined();
 
-    expect(result.appliedScripts).toEqual(["001-bootstrap.sql"]);
+    expect(result.appliedScripts).toEqual([
+      "001-bootstrap.sql",
+      "002-products.sql",
+    ]);
     expect(result.skippedScripts).toEqual([]);
 
     const database = new DatabaseSync(runtimePaths.databaseFile);
@@ -40,39 +55,46 @@ describe.sequential("runtime bootstrap", () => {
       )
       .get("runtime_sql_scripts") as { name: string } | undefined;
     const recordedScripts = database
-      .prepare(
-        "SELECT COUNT(*) AS count FROM runtime_sql_scripts",
-      )
+      .prepare("SELECT COUNT(*) AS count FROM runtime_sql_scripts")
       .get() as { count: number } | undefined;
+    const productsTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("products") as { name: string } | undefined;
     database.close();
 
     expect(bootstrapTable?.name).toBe("runtime_sql_scripts");
-    expect(recordedScripts?.count).toBe(1);
+    expect(recordedScripts?.count).toBe(2);
+    expect(productsTable?.name).toBe("products");
   });
 
   it("skips already executed runtime SQL scripts on repeated startup", async () => {
-    const workingDirectory = await createTemporaryDirectory(temporaryDirectories);
+    const workingDirectory =
+      await createTemporaryDirectory(temporaryDirectories);
 
     await bootstrapRuntime({ workingDirectory });
     const secondRun = await bootstrapRuntime({ workingDirectory });
     const runtimePaths = resolveRuntimePaths(workingDirectory);
 
     expect(secondRun.appliedScripts).toEqual([]);
-    expect(secondRun.skippedScripts).toEqual(["001-bootstrap.sql"]);
+    expect(secondRun.skippedScripts).toEqual([
+      "001-bootstrap.sql",
+      "002-products.sql",
+    ]);
 
     const database = new DatabaseSync(runtimePaths.databaseFile);
     const recordedScripts = database
-      .prepare(
-        "SELECT COUNT(*) AS count FROM runtime_sql_scripts",
-      )
+      .prepare("SELECT COUNT(*) AS count FROM runtime_sql_scripts")
       .get() as { count: number } | undefined;
     database.close();
 
-    expect(recordedScripts?.count).toBe(1);
+    expect(recordedScripts?.count).toBe(2);
   });
 
   it("fails startup explicitly when the SQLite runtime database cannot be opened", async () => {
-    const workingDirectory = await createTemporaryDirectory(temporaryDirectories);
+    const workingDirectory =
+      await createTemporaryDirectory(temporaryDirectories);
 
     await expect(
       bootstrapRuntime({
@@ -87,10 +109,10 @@ describe.sequential("runtime bootstrap", () => {
   });
 
   it("fails startup explicitly when a bundled runtime SQL script cannot be executed", async () => {
-    const workingDirectory = await createTemporaryDirectory(temporaryDirectories);
-    const runtimeSqlDirectory = await createBrokenRuntimeSqlDirectory(
-      temporaryDirectories,
-    );
+    const workingDirectory =
+      await createTemporaryDirectory(temporaryDirectories);
+    const runtimeSqlDirectory =
+      await createBrokenRuntimeSqlDirectory(temporaryDirectories);
 
     await expect(
       bootstrapRuntime({

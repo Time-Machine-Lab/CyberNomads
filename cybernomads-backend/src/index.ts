@@ -7,6 +7,7 @@ try {
   console.info("Cybernomads backend is ready.");
   console.info(`Runtime root: ${application.runtime.paths.runtimeRoot}`);
   console.info(`SQLite database: ${application.runtime.paths.databaseFile}`);
+  console.info(`HTTP server: ${application.http.url}`);
 } catch (error) {
   if (isBootstrapError(error)) {
     console.error(`[bootstrap:${error.code}] ${error.message}`);
