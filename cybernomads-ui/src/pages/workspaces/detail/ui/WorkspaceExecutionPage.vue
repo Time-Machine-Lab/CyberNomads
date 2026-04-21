@@ -2,37 +2,23 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { listAccounts } from '@/entities/account/api/account-service'
-import { listAssets } from '@/entities/asset/api/asset-service'
 import {
   getInterventionContext,
   sendInterventionCommand,
   type InterventionContext,
 } from '@/entities/intervention-record/api/intervention-service'
-import { listStrategies } from '@/entities/strategy/api/strategy-service'
 import { getWorkspaceExecution, tickWorkspaceExecution } from '@/entities/workspace/api/workspace-service'
-import type { AccountRecord } from '@/entities/account/model/types'
-import type { AssetRecord } from '@/entities/asset/model/types'
-import type { StrategyRecord } from '@/entities/strategy/model/types'
 import type { TaskRunRecord } from '@/entities/task-run/model/types'
 import type { WorkspaceExecutionView } from '@/entities/workspace/model/types'
 import { env } from '@/shared/config/env'
-import {
-  referenceTopbarAvatarUrl,
-  referenceWorkspaceCoreUrl,
-} from '@/shared/config/reference-ui'
 import { usePolling } from '@/shared/hooks/usePolling'
-import { formatDateTime, formatTime } from '@/shared/lib/format'
+import { formatTime } from '@/shared/lib/format'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const route = useRoute()
 
 const execution = ref<WorkspaceExecutionView | null>(null)
 const intervention = ref<InterventionContext | null>(null)
-const assets = ref<AssetRecord[]>([])
-const strategies = ref<StrategyRecord[]>([])
-const accounts = ref<AccountRecord[]>([])
-const activeView = ref<'workspace' | 'tasks' | 'components' | 'logs'>('tasks')
 const selectedTaskId = ref('')
 const zoom = ref(1)
 const interventionCommand = ref('')
@@ -47,6 +33,7 @@ const dragState = reactive({
 })
 
 const workspaceId = computed(() => String(route.params.workspaceId ?? ''))
+const backTo = computed(() => '/workspaces')
 const selectedTask = computed(() =>
   execution.value?.tasks.find((task) => task.id === selectedTaskId.value) ?? execution.value?.tasks[0] ?? null,
 )
@@ -60,29 +47,6 @@ const workspaceStatusText = computed(() => {
 
   return `${baseName} - ${execution.value.workspace.statusLabel ?? execution.value.workspace.status}`
 })
-
-const topTabs = [
-  ['workspace', '工作空间'],
-  ['tasks', '任务编排'],
-  ['components', '组件库'],
-  ['logs', '运行日志'],
-] as const
-
-const sideItems = [
-  ['tasks', 'account_tree', '流程'],
-  ['components', 'hub', '节点'],
-  ['workspace', 'smart_toy', '智能体'],
-  ['logs', 'database', '数据'],
-  ['logs', 'history', '历史'],
-] as const
-
-async function loadResources() {
-  ;[assets.value, strategies.value, accounts.value] = await Promise.all([
-    listAssets(),
-    listStrategies(),
-    listAccounts(),
-  ])
-}
 
 async function loadView() {
   execution.value = await getWorkspaceExecution(workspaceId.value)
@@ -111,7 +75,7 @@ const polling = usePolling(
 watch(
   [workspaceId, mockScenarioId],
   async () => {
-    await Promise.all([loadView(), loadResources()])
+    await loadView()
 
     polling.stop()
     if (execution.value?.workspace.status === 'running') {
@@ -125,14 +89,6 @@ watch(selectedTaskId, async (next) => {
   if (!next) return
   intervention.value = await getInterventionContext(workspaceId.value, next)
 })
-
-function resolveAssetName(assetId: string) {
-  return assets.value.find((asset) => asset.id === assetId)?.name ?? '未绑定资产'
-}
-
-function resolveStrategyName(strategyId: string) {
-  return strategies.value.find((strategy) => strategy.id === strategyId)?.name ?? '未绑定策略'
-}
 
 function resolveTaskColor(task: TaskRunRecord) {
   if (task.status === 'running') return 'primary'
@@ -148,7 +104,7 @@ function resolveLogClass(level: WorkspaceExecutionView['logs'][number]['level'])
 }
 
 function startPan(event: PointerEvent) {
-  if (!canvasViewport.value || activeView.value !== 'tasks') return
+  if (!canvasViewport.value) return
 
   dragState.active = true
   dragState.startX = event.clientX
@@ -215,83 +171,31 @@ async function handleInterventionSubmit() {
   <section v-if="execution" class="execution-shell">
     <header class="execution-topbar">
       <div class="execution-topbar__left">
-        <div class="execution-topbar__brand">Neural Architect</div>
-        <nav class="execution-topbar__tabs">
-          <button
-            v-for="tab in topTabs"
-            :key="tab[0]"
-            type="button"
-            class="execution-topbar__tab"
-            :class="{ 'execution-topbar__tab--active': activeView === tab[0] }"
-            @click="activeView = tab[0]"
-          >
-            {{ tab[1] }}
-          </button>
-        </nav>
+        <RouterLink :to="backTo" class="execution-topbar__back" title="返回工作区列表">
+          <span class="material-symbols-outlined">arrow_back</span>
+        </RouterLink>
+        <span class="execution-topbar__brand">CyberNomads</span>
       </div>
 
       <div class="execution-topbar__right">
-        <span class="execution-topbar__status">{{ workspaceStatusText }}</span>
+        <span class="execution-topbar__context">{{ workspaceStatusText }}</span>
 
-        <div class="execution-topbar__controls">
-          <button type="button">
+        <div class="execution-topbar__actions">
+          <button type="button" title="继续执行">
             <span class="material-symbols-outlined">play_arrow</span>
           </button>
-          <button type="button">
+          <button type="button" title="暂停执行">
             <span class="material-symbols-outlined">pause</span>
           </button>
-          <button type="button" @click="resetView">
+          <button type="button" title="重置视图" @click="resetView">
             <span class="material-symbols-outlined">restart_alt</span>
           </button>
-        </div>
-
-        <div class="execution-topbar__icons">
-          <button type="button">
-            <span class="material-symbols-outlined">settings</span>
-          </button>
-          <button type="button">
-            <span class="material-symbols-outlined">notifications_active</span>
-          </button>
-          <button type="button">
-            <span class="material-symbols-outlined">sensors</span>
-          </button>
-          <img :src="referenceTopbarAvatarUrl" alt="User profile" />
         </div>
       </div>
     </header>
 
     <div class="execution-body">
-      <aside class="execution-sidebar">
-        <div class="execution-sidebar__core">
-          <img :src="referenceWorkspaceCoreUrl" alt="System Core" />
-          <span>Core</span>
-        </div>
-
-        <nav class="execution-sidebar__nav">
-          <button
-            v-for="item in sideItems"
-            :key="item[1]"
-            type="button"
-            class="execution-sidebar__link"
-            :class="{ 'execution-sidebar__link--active': activeView === item[0] }"
-            :title="item[2]"
-            @click="activeView = item[0]"
-          >
-            <span class="material-symbols-outlined">{{ item[1] }}</span>
-          </button>
-        </nav>
-
-        <div class="execution-sidebar__footer">
-          <button type="button" class="execution-sidebar__link" title="支持">
-            <span class="material-symbols-outlined">help_outline</span>
-          </button>
-          <button type="button" class="execution-sidebar__link" title="API">
-            <span class="material-symbols-outlined">code</span>
-          </button>
-        </div>
-      </aside>
-
-      <main v-if="activeView === 'tasks'" class="execution-canvas-shell">
+      <main class="execution-canvas-shell">
         <div
           ref="canvasViewport"
           class="execution-canvas"
@@ -446,70 +350,6 @@ async function handleInterventionSubmit() {
           </div>
         </div>
       </main>
-
-      <main v-else class="execution-alt">
-        <section class="execution-alt__card">
-          <div class="execution-alt__eyebrow">{{ activeView === 'workspace' ? '运行摘要' : activeView === 'components' ? '组件视图' : '运行日志' }}</div>
-          <h2>
-            {{
-              activeView === 'workspace'
-                ? execution.workspace.name
-                : activeView === 'components'
-                  ? '绑定资源与账号池'
-                  : '完整日志视图'
-            }}
-          </h2>
-          <p v-if="activeView === 'workspace'">{{ execution.workspace.summary }}</p>
-          <p v-else-if="activeView === 'components'">当前资产、策略与账号池映射已同步，可以回到任务编排视图继续控制流程。</p>
-          <p v-else>按时间顺序展开当前运行日志，便于排查执行问题与人工回溯。</p>
-
-          <dl v-if="activeView === 'workspace'" class="execution-alt__grid">
-            <div>
-              <dt>活跃资产</dt>
-              <dd>{{ resolveAssetName(execution.workspace.assetId) }}</dd>
-            </div>
-            <div>
-              <dt>当前策略</dt>
-              <dd>{{ resolveStrategyName(execution.workspace.strategyId) }}</dd>
-            </div>
-            <div>
-              <dt>最近执行</dt>
-              <dd>{{ formatDateTime(execution.workspace.lastRunAt) }}</dd>
-            </div>
-            <div>
-              <dt>下次调度</dt>
-              <dd>{{ formatDateTime(execution.workspace.nextRunAt) }}</dd>
-            </div>
-          </dl>
-
-          <div v-else-if="activeView === 'components'" class="execution-alt__grid">
-            <div>
-              <dt>资产</dt>
-              <dd>{{ resolveAssetName(execution.workspace.assetId) }}</dd>
-            </div>
-            <div>
-              <dt>策略</dt>
-              <dd>{{ resolveStrategyName(execution.workspace.strategyId) }}</dd>
-            </div>
-            <div>
-              <dt>账号数</dt>
-              <dd>{{ execution.workspace.accountIds.length }}</dd>
-            </div>
-            <div>
-              <dt>任务数</dt>
-              <dd>{{ execution.tasks.length }}</dd>
-            </div>
-          </div>
-
-          <div v-else class="execution-alt__logs">
-            <article v-for="entry in execution.logs" :key="entry.id">
-              <span>{{ formatDateTime(entry.createdAt) }}</span>
-              <strong>{{ entry.sourceLabel }}</strong>
-              <p>{{ entry.message }}</p>
-            </article>
-          </div>
-        </section>
-      </main>
     </div>
   </section>
 </template>
@@ -519,73 +359,81 @@ async function handleInterventionSubmit() {
   min-height: 100vh;
   color: #fff;
   background: #0e0e0e;
+  overflow: hidden;
 }
 
 .execution-topbar {
-  position: fixed;
-  inset: 0 0 auto 0;
-  z-index: 30;
+  position: sticky;
+  top: 0;
+  z-index: 24;
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
   height: 4rem;
   padding: 0 1.5rem;
-  background: rgb(9 9 9 / 0.84);
-  box-shadow: 0 24px 48px rgb(0 0 0 / 0.5);
+  border-bottom: 1px solid rgb(72 72 71 / 0.18);
+  background: rgb(14 14 14 / 0.82);
   backdrop-filter: blur(20px);
+  box-shadow: 0 24px 48px rgb(0 0 0 / 0.45);
 }
 
 .execution-topbar__left,
 .execution-topbar__right,
-.execution-topbar__tabs,
-.execution-topbar__controls,
-.execution-topbar__icons {
+.execution-topbar__actions {
   display: flex;
-  gap: 0.75rem;
+  gap: 1rem;
   align-items: center;
+}
+
+.execution-topbar__left {
+  gap: 1.25rem;
+}
+
+.execution-topbar__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 999px;
+  color: #767575;
+  background: transparent;
+  transition:
+    color var(--cn-transition),
+    background-color var(--cn-transition);
+}
+
+.execution-topbar__back:hover {
+  color: #8ff5ff;
+  background: rgb(38 38 38 / 0.72);
 }
 
 .execution-topbar__brand {
   color: #00f0ff;
   font-family: var(--cn-font-display);
-  font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
-.execution-topbar__tab {
-  border: 0;
-  padding: 0 0 0.3rem;
-  color: #767575;
-  background: transparent;
-  font-family: var(--cn-font-display);
-  font-size: 0.92rem;
-}
-
-.execution-topbar__tab--active {
-  color: #00f0ff;
-  border-bottom: 2px solid #00f0ff;
-}
-
-.execution-topbar__status {
-  padding-right: 1rem;
-  border-right: 1px solid rgb(72 72 71 / 0.2);
+.execution-topbar__context {
   color: #adaaaa;
-  font-size: 0.82rem;
+  padding-right: 1rem;
+  border-right: 1px solid rgb(72 72 71 / 0.18);
+  font-size: 0.88rem;
 }
 
-.execution-topbar__controls {
-  padding: 0.25rem 0.5rem;
+.execution-topbar__actions {
+  gap: 0.2rem;
+  padding: 0.25rem 0.45rem;
   border: 1px solid rgb(72 72 71 / 0.2);
   border-radius: 999px;
-  background: #201f1f;
+  background: rgb(32 31 31 / 0.72);
 }
 
-.execution-topbar__controls button,
-.execution-topbar__icons button,
-.execution-sidebar__link,
+.execution-topbar__actions button,
 .execution-zoom button {
   display: inline-flex;
   align-items: center;
@@ -593,96 +441,30 @@ async function handleInterventionSubmit() {
   border: 0;
   color: #adaaaa;
   background: transparent;
+  transition:
+    color var(--cn-transition),
+    background-color var(--cn-transition),
+    box-shadow var(--cn-transition);
 }
 
-.execution-topbar__controls button:hover,
-.execution-topbar__icons button:hover,
-.execution-sidebar__link:hover,
-.execution-zoom button:hover {
-  color: #8ff5ff;
-}
-
-.execution-topbar__icons img {
+.execution-topbar__actions button {
   width: 2rem;
   height: 2rem;
-  border: 1px solid rgb(72 72 71 / 0.3);
   border-radius: 999px;
+}
+
+.execution-topbar__actions button:hover,
+.execution-zoom button:hover {
+  color: #8ff5ff;
+  background: rgb(143 245 255 / 0.08);
 }
 
 .execution-body {
   display: flex;
-  min-height: 100vh;
-  padding-top: 4rem;
-}
-
-.execution-sidebar {
-  display: none;
-  flex-direction: column;
-  width: 5rem;
   min-height: calc(100vh - 4rem);
-  padding: 1.5rem 0;
-  border-right: 1px solid rgb(72 72 71 / 0.1);
-  background: #0b0b0b;
 }
 
-.execution-sidebar__core {
-  display: grid;
-  gap: 0.5rem;
-  justify-items: center;
-  margin-bottom: 2rem;
-}
-
-.execution-sidebar__core img {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 999px;
-  box-shadow: 0 0 15px rgb(143 245 255 / 0.4);
-}
-
-.execution-sidebar__core span {
-  color: #8ff5ff;
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.execution-sidebar__nav,
-.execution-sidebar__footer {
-  display: grid;
-  gap: 1rem;
-  justify-items: center;
-}
-
-.execution-sidebar__nav {
-  flex: 1;
-}
-
-.execution-sidebar__link {
-  position: relative;
-  width: 100%;
-  min-height: 2.5rem;
-}
-
-.execution-sidebar__link--active {
-  color: #00f0ff;
-}
-
-.execution-sidebar__link--active::after {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  width: 0.25rem;
-  height: 2rem;
-  border-radius: 999px 0 0 999px;
-  content: '';
-  background: #00f0ff;
-  box-shadow: 0 0 12px #00f0ff;
-  transform: translateY(-50%);
-}
-
-.execution-canvas-shell,
-.execution-alt {
+.execution-canvas-shell {
   flex: 1;
   min-width: 0;
 }
@@ -690,12 +472,13 @@ async function handleInterventionSubmit() {
 .execution-canvas {
   position: relative;
   overflow: auto;
-  min-height: calc(100vh - 4rem);
+  min-height: 100%;
   background:
     linear-gradient(to right, rgb(72 72 71 / 0.1) 1px, transparent 1px),
     linear-gradient(to bottom, rgb(72 72 71 / 0.1) 1px, transparent 1px),
     #0e0e0e;
   background-size: 40px 40px;
+  background-position: center center;
   cursor: grab;
 }
 
@@ -736,7 +519,7 @@ async function handleInterventionSubmit() {
   overflow: hidden;
   border: 1px solid rgb(143 245 255 / 0.3);
   border-radius: 1rem;
-  background: rgb(14 14 14 / 0.82);
+  background: rgb(14 14 14 / 0.84);
   box-shadow: 0 0 20px rgb(0 255 255 / 0.05);
   backdrop-filter: blur(16px);
   pointer-events: auto;
@@ -902,8 +685,9 @@ async function handleInterventionSubmit() {
   padding: 0.5rem;
   border: 1px solid rgb(72 72 71 / 0.2);
   border-radius: 1rem;
-  background: rgb(26 25 25 / 0.4);
+  background: rgb(26 25 25 / 0.6);
   backdrop-filter: blur(20px);
+  box-shadow: 0 24px 48px rgb(0 0 0 / 0.45);
 }
 
 .execution-zoom button {
@@ -1062,90 +846,6 @@ async function handleInterventionSubmit() {
   background: linear-gradient(90deg, #8ff5ff, #65afff);
 }
 
-.execution-alt {
-  display: grid;
-  place-items: center;
-  padding: 2rem 1.5rem;
-}
-
-.execution-alt__card {
-  width: min(56rem, 100%);
-  padding: 2rem;
-  border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 1.25rem;
-  background: #1a1919;
-}
-
-.execution-alt__eyebrow {
-  margin-bottom: 0.75rem;
-  color: #8ff5ff;
-  font-family: var(--cn-font-display);
-  font-size: 0.72rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
-.execution-alt__card h2 {
-  margin: 0;
-  font-family: var(--cn-font-display);
-  font-size: 2rem;
-  font-weight: 700;
-}
-
-.execution-alt__card > p {
-  margin: 0.75rem 0 0;
-  color: #adaaaa;
-  line-height: 1.7;
-}
-
-.execution-alt__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  margin-top: 1.5rem;
-}
-
-.execution-alt__grid div {
-  padding: 1rem;
-  border-radius: 0.85rem;
-  background: #131313;
-}
-
-.execution-alt__grid dt {
-  margin-bottom: 0.35rem;
-  color: #767575;
-  font-size: 0.78rem;
-}
-
-.execution-alt__logs {
-  display: grid;
-  gap: 1rem;
-  margin-top: 1.5rem;
-}
-
-.execution-alt__logs article {
-  padding: 1rem;
-  border-radius: 0.85rem;
-  background: #131313;
-}
-
-.execution-alt__logs span {
-  color: #767575;
-  font-family: var(--cn-font-mono);
-  font-size: 0.78rem;
-}
-
-.execution-alt__logs strong {
-  display: block;
-  margin: 0.5rem 0 0.35rem;
-}
-
-.execution-alt__logs p {
-  margin: 0;
-  color: #adaaaa;
-  line-height: 1.7;
-}
-
 @keyframes dash {
   to {
     stroke-dashoffset: -16;
@@ -1153,10 +853,20 @@ async function handleInterventionSubmit() {
 }
 
 @media (min-width: 1024px) {
-  .execution-sidebar,
   .execution-floating,
   .execution-zoom {
     display: flex;
+  }
+}
+
+@media (max-width: 767px) {
+  .execution-topbar {
+    padding: 0 1rem;
+  }
+
+  .execution-topbar__brand,
+  .execution-topbar__context {
+    display: none;
   }
 }
 </style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { listAccounts } from '@/entities/account/api/account-service'
 import { listAgentNodes } from '@/entities/agent/api/agent-service'
@@ -11,9 +11,9 @@ import type { AccountRecord } from '@/entities/account/model/types'
 import type { AgentNodeRecord } from '@/entities/agent/model/types'
 import type { AssetAttachmentRecord, AssetRecord } from '@/entities/asset/model/types'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
-import { referenceTopbarAvatarUrl } from '@/shared/config/reference-ui'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
+const route = useRoute()
 const router = useRouter()
 
 const assets = ref<AssetRecord[]>([])
@@ -26,6 +26,8 @@ const selectedAccountIds = ref<string[]>([])
 const isSubmitting = ref(false)
 
 const hasActiveAgent = computed(() => agentNodes.value.some((node) => node.status === 'active'))
+const backTo = computed(() => String(route.meta.backTo ?? '/workspaces'))
+const backLabel = computed(() => String(route.meta.backLabel ?? '返回工作区列表'))
 
 const selectedAsset = computed(() => assets.value.find((asset) => asset.id === selectedAssetId.value) ?? null)
 const selectedStrategy = computed(() => strategies.value.find((strategy) => strategy.id === selectedStrategyId.value) ?? null)
@@ -167,7 +169,7 @@ async function handleSubmit() {
       accountIds: selectedAccountIds.value,
     })
 
-    await router.push(`/workspaces/${workspace.id}/execution`)
+    await router.push(`/workspaces/${workspace.id}/runtime`)
   } finally {
     isSubmitting.value = false
   }
@@ -176,59 +178,18 @@ async function handleSubmit() {
 
 <template>
   <section class="create-page">
-    <nav class="create-sidebar">
-      <div class="create-sidebar__brand">
-        <div class="create-sidebar__avatar">
-          <img :src="referenceTopbarAvatarUrl" alt="用户头像" />
-        </div>
-        <div class="create-sidebar__brand-copy">
-          <h1>CyberNomad</h1>
-          <p>Arch-Level Access</p>
-        </div>
-      </div>
-
-      <div class="create-sidebar__nav">
-        <a class="create-sidebar__link" href="#">
-          <span class="material-symbols-outlined">terminal</span>
-          <span>Command</span>
-        </a>
-        <RouterLink class="create-sidebar__link" to="/assets">
-          <span class="material-symbols-outlined">inventory_2</span>
-          <span>Assets</span>
-        </RouterLink>
-        <RouterLink class="create-sidebar__link create-sidebar__link--active" to="/workspaces/new">
-          <span class="material-symbols-outlined">account_tree</span>
-          <span>Orchestra</span>
-        </RouterLink>
-        <a class="create-sidebar__link" href="#">
-          <span class="material-symbols-outlined">psychology</span>
-          <span>Intelligence</span>
-        </a>
-        <RouterLink class="create-sidebar__link" to="/agents/openclaw">
-          <span class="material-symbols-outlined">settings</span>
-          <span>Settings</span>
-        </RouterLink>
-      </div>
-
-      <div class="create-sidebar__footer">
-        <RouterLink class="create-sidebar__initialize" to="/agents/openclaw">Initialize Node</RouterLink>
-        <div class="create-sidebar__support">
-          <a class="create-sidebar__link" href="#">
-            <span class="material-symbols-outlined">menu_book</span>
-            <span>Documentation</span>
-          </a>
-          <a class="create-sidebar__link" href="#">
-            <span class="material-symbols-outlined">support_agent</span>
-            <span>Support</span>
-          </a>
-        </div>
-      </div>
-    </nav>
-
     <main class="create-main">
       <div class="create-main__glow" />
 
       <div class="create-main__content">
+        <div class="create-context">
+          <RouterLink :to="backTo" class="create-context__back">
+            <span class="material-symbols-outlined">arrow_back</span>
+            <span>{{ backLabel }}</span>
+          </RouterLink>
+          <span class="create-context__crumb">/ 推广工作区 / 创建引流团队</span>
+        </div>
+
         <header class="create-main__header">
           <div>
             <h2>创建引流团队</h2>
@@ -248,7 +209,7 @@ async function handleSubmit() {
         <section v-if="!hasActiveAgent" class="create-warning">
           <strong>当前无法创建工作区</strong>
           <p>因为没有可用执行节点。请先完成 OpenClaw 初始化。</p>
-          <RouterLink to="/agents/openclaw">初始化节点</RouterLink>
+          <RouterLink to="/console/openclaw">初始化节点</RouterLink>
         </section>
 
         <div class="create-timeline">
@@ -515,7 +476,7 @@ async function handleSubmit() {
   position: relative;
   flex: 1;
   min-width: 0;
-  margin-left: 16rem;
+  margin-left: 0;
   overflow-y: auto;
 }
 
@@ -537,6 +498,45 @@ async function handleSubmit() {
   max-width: 72rem;
   padding: 3rem 2rem 8rem;
   margin: 0 auto;
+}
+
+.create-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.create-context__back {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  border: 1px solid rgb(72 72 71 / 0.24);
+  border-radius: 999px;
+  background: rgb(19 19 19 / 0.82);
+  color: var(--cn-on-surface-muted);
+  font-family: var(--cn-font-display);
+  font-size: 0.88rem;
+  transition:
+    color var(--cn-transition),
+    border-color var(--cn-transition),
+    background-color var(--cn-transition);
+}
+
+.create-context__back:hover {
+  color: var(--cn-primary);
+  border-color: rgb(143 245 255 / 0.28);
+  background: rgb(32 31 31 / 0.92);
+}
+
+.create-context__crumb {
+  color: #767575;
+  font-family: var(--cn-font-display);
+  font-size: 0.84rem;
+  letter-spacing: 0.04em;
 }
 
 .create-main__header {
@@ -1011,7 +1011,7 @@ async function handleSubmit() {
   position: fixed;
   right: 0;
   bottom: 0;
-  left: 16rem;
+  left: 0;
   z-index: 20;
   display: flex;
   justify-content: flex-end;

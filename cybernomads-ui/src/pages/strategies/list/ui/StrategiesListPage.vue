@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 import { listStrategies } from '@/entities/strategy/api/strategy-service'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
-import { referenceAgentDashboardAvatarUrl } from '@/shared/config/reference-ui'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
 interface StrategyDisplayCard extends StrategyRecord {
@@ -19,6 +19,7 @@ interface StrategyDisplayCard extends StrategyRecord {
   levelTone: 'secondary' | 'tertiary' | 'error'
 }
 
+const router = useRouter()
 const strategies = ref<StrategyRecord[]>([])
 
 const strategyDisplayMap = {
@@ -113,26 +114,14 @@ const strategyCards = computed(() => {
 
 const featured = computed(() => strategyCards.value[0] ?? null)
 const secondaryStrategies = computed(() => strategyCards.value.slice(1))
+
+function openStrategyEditor(strategyId: string) {
+  void router.push(`/strategies/${strategyId}/edit`)
+}
 </script>
 
 <template>
   <section class="strategies-page">
-    <header class="strategies-topbar">
-      <label class="strategies-topbar__search">
-        <span class="material-symbols-outlined">search</span>
-        <input type="text" placeholder="搜索参数..." />
-      </label>
-
-      <div class="strategies-topbar__brand">CYBERNOMADS</div>
-
-      <div class="strategies-topbar__actions">
-        <button type="button"><span class="material-symbols-outlined">notifications</span></button>
-        <button type="button"><span class="material-symbols-outlined">grid_view</span></button>
-        <button type="button"><span class="material-symbols-outlined">history</span></button>
-        <img :src="referenceAgentDashboardAvatarUrl" alt="Operator avatar" />
-      </div>
-    </header>
-
     <div class="strategies-canvas">
       <header class="strategies-header">
         <div>
@@ -182,7 +171,14 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
       </div>
 
       <section v-if="featured" class="strategies-grid">
-        <article class="strategy-card strategy-card--featured">
+        <article
+          class="strategy-card strategy-card--featured"
+          role="link"
+          tabindex="0"
+          @click="openStrategyEditor(featured.id)"
+          @keydown.enter="openStrategyEditor(featured.id)"
+          @keydown.space.prevent="openStrategyEditor(featured.id)"
+        >
           <div class="strategy-card__feature-glow" />
 
           <div class="strategy-card__top">
@@ -194,9 +190,6 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
             </div>
 
             <div class="strategy-card__top-actions">
-              <RouterLink :to="`/strategies/${featured.id}/edit`" class="strategy-card__icon-button">
-                <span class="material-symbols-outlined">edit</span>
-              </RouterLink>
               <span class="strategy-card__badge strategy-card__badge--featured">{{ featured.displayTag }}</span>
             </div>
           </div>
@@ -218,16 +211,17 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
             </div>
           </div>
 
-          <RouterLink :to="`/strategies/${featured.id}/edit`" class="strategy-card__button strategy-card__button--featured">
-            <span class="material-symbols-outlined">edit_note</span>
-            <span>编辑策略</span>
-          </RouterLink>
         </article>
 
         <article
           v-for="strategy in secondaryStrategies"
           :key="strategy.id"
           class="strategy-card"
+          role="link"
+          tabindex="0"
+          @click="openStrategyEditor(strategy.id)"
+          @keydown.enter="openStrategyEditor(strategy.id)"
+          @keydown.space.prevent="openStrategyEditor(strategy.id)"
         >
           <div class="strategy-card__top">
             <div class="strategy-card__icon" :class="`strategy-card__icon--${strategy.accent}`">
@@ -235,9 +229,6 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
             </div>
 
             <div class="strategy-card__top-actions">
-              <RouterLink :to="`/strategies/${strategy.id}/edit`" class="strategy-card__icon-button">
-                <span class="material-symbols-outlined">edit</span>
-              </RouterLink>
               <span class="strategy-card__badge">{{ strategy.displayTag }}</span>
             </div>
           </div>
@@ -264,10 +255,6 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
             </div>
           </div>
 
-          <RouterLink :to="`/strategies/${strategy.id}/edit`" class="strategy-card__button">
-            <span class="material-symbols-outlined">edit_note</span>
-            <span>编辑策略</span>
-          </RouterLink>
         </article>
       </section>
     </div>
@@ -362,7 +349,9 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
 }
 
 .strategies-canvas {
-  padding: 2rem 2rem 4rem;
+  width: min(100%, 100rem);
+  margin: 0 auto;
+  padding: 2.3rem 2rem 3.4rem;
 }
 
 .strategies-header {
@@ -409,43 +398,63 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
 
 .strategies-header__button {
   display: inline-flex;
-  gap: 0.55rem;
+  gap: 0.5rem;
   align-items: center;
-  min-height: 3rem;
-  padding: 0 1.15rem;
-  border-radius: 0.7rem;
+  min-height: 2.5rem;
+  padding: 0 1.2rem;
+  border: 1px solid rgb(143 245 255 / 0.18);
+  border-radius: 0.25rem;
   color: #005d63;
-  background: linear-gradient(135deg, #8ff5ff 0%, #00eefc 100%);
-  font-family: var(--cn-font-display);
-  font-size: 0.88rem;
+  background: #8ff5ff;
+  font-family: var(--cn-font-body);
+  font-size: 0.84rem;
   font-weight: 700;
-  box-shadow: 0 0 16px rgb(143 245 255 / 0.18);
+  box-shadow: 0 0 15px rgb(143 245 255 / 0.3);
+  transition:
+    background-color var(--cn-transition),
+    box-shadow var(--cn-transition);
+}
+
+.strategies-header__button:hover {
+  color: #005d63;
+  background: #00eefc;
 }
 
 .strategies-toolbar {
-  gap: 0.85rem;
-  padding: 0.8rem 1rem;
-  margin-bottom: 1.25rem;
-  border: 1px solid rgb(72 72 71 / 0.15);
-  border-radius: 0.9rem;
+  gap: 1rem;
+  padding: 1rem;
+  margin-bottom: 2rem;
+  border: 0;
+  border-radius: 1rem;
   background: #131313;
 }
 
 .strategies-toolbar__label {
-  gap: 0.45rem;
-  color: #767575;
-  font-size: 0.8rem;
+  gap: 0.5rem;
+  margin-right: 0.25rem;
+  color: #adaaaa;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .strategies-toolbar__filter {
-  gap: 0.35rem;
-  min-height: 2.5rem;
+  gap: 0.45rem;
+  min-height: 2.4rem;
   padding: 0 0.95rem;
-  border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.6rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 0.5rem;
   color: #fff;
   background: #1a1919;
-  font-size: 0.82rem;
+  font-family: var(--cn-font-body);
+  font-size: 0.84rem;
+  transition:
+    background-color var(--cn-transition),
+    border-color var(--cn-transition);
+}
+
+.strategies-toolbar__filter:hover {
+  border-color: rgb(72 72 71 / 0.25);
+  background: #262626;
 }
 
 .strategies-toolbar__filter strong {
@@ -457,28 +466,40 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
   gap: 0.25rem;
   margin-left: auto;
   padding: 0.2rem;
-  border-radius: 0.65rem;
+  border-radius: 0.5rem;
   background: #1a1919;
 }
 
 .strategies-toolbar__view-button {
   display: grid;
   place-items: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  outline: 0;
   color: #adaaaa;
+  background: transparent;
+  transition:
+    color var(--cn-transition),
+    background-color var(--cn-transition);
 }
 
 .strategies-toolbar__view-button--active {
   color: #8ff5ff;
   background: #262626;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+}
+
+.strategies-toolbar__view-button:hover:not(.strategies-toolbar__view-button--active) {
+  color: #fff;
 }
 
 .strategies-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .strategy-card {
@@ -486,26 +507,31 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
   display: flex;
   flex-direction: column;
   min-height: 18rem;
-  padding: 1.45rem;
-  border: 1px solid rgb(72 72 71 / 0.14);
+  padding: 1.5rem;
+  border: 1px solid rgb(72 72 71 / 0.1);
   border-radius: 1rem;
   background: #1a1919;
+  box-shadow: var(--cn-shadow-ambient);
+  cursor: pointer;
   transition:
-    transform var(--cn-transition),
     border-color var(--cn-transition),
     box-shadow var(--cn-transition);
 }
 
+.strategy-card:focus-visible {
+  outline: 1px solid rgb(143 245 255 / 0.45);
+  outline-offset: 2px;
+}
+
 .strategy-card:hover {
-  transform: translateY(-2px);
-  border-color: rgb(143 245 255 / 0.3);
-  box-shadow: 0 0 18px rgb(143 245 255 / 0.08);
+  border-color: rgb(143 245 255 / 0.22);
 }
 
 .strategy-card--featured {
   grid-column: span 2;
   min-height: 17.5rem;
   overflow: hidden;
+  border-color: transparent;
 }
 
 .strategy-card__feature-glow {
@@ -533,10 +559,10 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
 .strategy-card__icon {
   display: grid;
   place-items: center;
-  width: 2.55rem;
-  height: 2.55rem;
+  width: 2.5rem;
+  height: 2.5rem;
   flex-shrink: 0;
-  border-radius: 0.6rem;
+  border-radius: 0.5rem;
   background: #262626;
 }
 
@@ -569,53 +595,49 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
   gap: 0.45rem;
 }
 
-.strategy-card__icon-button {
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-  color: #adaaaa;
-  background: #262626;
-}
-
 .strategy-card__badge {
   display: inline-flex;
   align-items: center;
-  min-height: 1.7rem;
+  min-height: 1.6rem;
   padding: 0 0.55rem;
-  border-radius: 0.4rem;
+  border: 0;
+  border-radius: 0.25rem;
   color: #adaaaa;
   background: #262626;
-  font-size: 0.7rem;
+  font-family: var(--cn-font-body);
+  font-size: 0.72rem;
 }
 
 .strategy-card__badge--featured {
   color: #c3f400;
-  background: rgb(195 244 0 / 0.1);
+  background: rgb(195 244 0 / 0.08);
+  border: 1px solid rgb(195 244 0 / 0.2);
+  font-family: var(--cn-font-display);
+  font-weight: 700;
 }
 
 .strategy-card__summary {
   flex: 1;
-  margin: 1.15rem 0 1.5rem;
+  margin: 1rem 0 1.5rem;
   color: #adaaaa;
-  font-size: 0.89rem;
-  line-height: 1.72;
+  font-size: 0.87rem;
+  line-height: 1.65;
 }
 
 .strategy-card__stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.45rem;
-  margin-bottom: 0.95rem;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .strategy-card__stats--featured {
-  max-width: 28rem;
+  max-width: 32rem;
 }
 
 .strategy-card__stats > div {
-  padding: 0.68rem;
-  border-radius: 0.55rem;
+  padding: 0.55rem;
+  border-radius: 0.25rem;
   background: #131313;
   text-align: center;
 }
@@ -623,14 +645,15 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
 .strategy-card__stats small {
   display: block;
   margin-bottom: 0.24rem;
-  color: #767575;
-  font-size: 0.63rem;
+  color: #adaaaa;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .strategy-card__value {
   color: #fff;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 600;
 }
 
@@ -648,25 +671,6 @@ const secondaryStrategies = computed(() => strategyCards.value.slice(1))
 
 .strategy-card__value--error {
   color: #ff716c;
-}
-
-.strategy-card__button {
-  justify-content: center;
-  gap: 0.4rem;
-  min-height: 2.55rem;
-  border-radius: 0.6rem;
-  color: #fff;
-  background: #262626;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.strategy-card__button--featured {
-  width: fit-content;
-  padding: 0 1rem;
-  color: #8ff5ff;
-  background: transparent;
-  border: 1px solid rgb(143 245 255 / 0.28);
 }
 
 @media (max-width: 1200px) {

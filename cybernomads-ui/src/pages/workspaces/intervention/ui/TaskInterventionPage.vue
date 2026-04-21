@@ -46,6 +46,7 @@ const isSubmitting = ref(false)
 const workspaceId = computed(() => String(route.params.workspaceId ?? ''))
 const taskId = computed(() => String(route.params.taskId ?? ''))
 const lineNumbers = computed(() => Math.max(draft.value.split('\n').length, 12))
+const runtimePath = computed(() => `/workspaces/${workspaceId.value}/runtime`)
 
 watch(
   [workspaceId, taskId, mockScenarioId],
@@ -65,7 +66,7 @@ async function handleSubmit() {
 
   try {
     await sendInterventionCommand(workspaceId.value, taskId.value, draft.value.trim())
-    await router.push(`/workspaces/${workspaceId.value}/execution`)
+    await router.push(runtimePath.value)
   } finally {
     isSubmitting.value = false
   }
@@ -80,11 +81,14 @@ function discardChanges() {
   <section v-if="context" class="intervention-page">
     <header class="intervention-header">
       <div class="intervention-header__crumbs">
-        <RouterLink :to="`/workspaces/${context.workspace.id}/execution`">{{ context.workspace.name }}</RouterLink>
+        <RouterLink :to="runtimePath" class="intervention-header__back" title="返回工作环境">
+          <span class="material-symbols-outlined">arrow_back</span>
+        </RouterLink>
+        <RouterLink :to="runtimePath">{{ context.workspace.name }}</RouterLink>
         <span class="material-symbols-outlined">chevron_right</span>
-        <span>Task: {{ context.task.code ?? context.task.name }}</span>
+        <span>任务：{{ context.task.code ?? context.task.name }}</span>
         <span class="material-symbols-outlined">chevron_right</span>
-        <span class="intervention-header__crumbs-active">Intervention</span>
+        <span class="intervention-header__crumbs-active">人工干预</span>
       </div>
 
       <div class="intervention-header__actions">
@@ -183,11 +187,11 @@ function discardChanges() {
     </main>
 
     <footer class="intervention-footer">
-      <button type="button" class="intervention-footer__button" @click="router.push(`/workspaces/${workspaceId}/execution`)">
-        Cancel
+      <button type="button" class="intervention-footer__button" @click="router.push(runtimePath)">
+        返回工作环境
       </button>
       <button type="button" class="intervention-footer__button intervention-footer__button--danger" @click="discardChanges">
-        Discard Changes
+        放弃修改
       </button>
       <button
         type="button"
@@ -196,7 +200,7 @@ function discardChanges() {
         @click="handleSubmit"
       >
         <span class="material-symbols-outlined fill">save</span>
-        <span>{{ isSubmitting ? 'Saving…' : 'Save & Resume' }}</span>
+        <span>{{ isSubmitting ? '保存中…' : '保存并恢复执行' }}</span>
       </button>
     </footer>
   </section>
@@ -239,6 +243,25 @@ function discardChanges() {
   color: #adaaaa;
   font-family: var(--cn-font-display);
   font-size: 0.88rem;
+}
+
+.intervention-header__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  color: #fff;
+  background: rgb(38 38 38 / 0.72);
+  transition:
+    color var(--cn-transition),
+    background-color var(--cn-transition);
+}
+
+.intervention-header__back:hover {
+  color: #8ff5ff;
+  background: rgb(38 38 38 / 0.95);
 }
 
 .intervention-header__crumbs-active {
@@ -302,6 +325,16 @@ function discardChanges() {
   border-radius: 1rem;
   background: rgb(26 25 25 / 0.6);
   backdrop-filter: blur(20px);
+  box-shadow: 0 24px 48px rgb(0 0 0 / 0.32);
+}
+
+.intervention-editor__panel::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgb(143 245 255 / 0.04);
 }
 
 .intervention-toolbar {
@@ -344,8 +377,11 @@ function discardChanges() {
 .intervention-body__lines {
   padding: 1rem 0.75rem 1rem 0;
   border-right: 1px solid rgb(72 72 71 / 0.2);
-  color: #767575;
-  font-size: 0.85rem;
+  background: #131313;
+  color: rgb(118 117 117 / 0.7);
+  font-family: var(--cn-font-mono);
+  font-size: 0.8rem;
+  line-height: 1.85;
   text-align: right;
   user-select: none;
 }
@@ -356,7 +392,8 @@ function discardChanges() {
   padding: 1rem;
   color: #fff;
   background: transparent;
-  font-size: 1rem;
+  font-family: var(--cn-font-mono);
+  font-size: 0.96rem;
   line-height: 1.85;
   outline: 0;
   resize: none;

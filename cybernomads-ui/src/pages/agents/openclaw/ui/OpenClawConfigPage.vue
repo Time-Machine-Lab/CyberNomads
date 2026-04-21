@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { listAgentNodes, saveOpenClawConfig } from '@/entities/agent/api/agent-service'
-import {
-  referenceSidebarBrandUrl,
-  referenceMaskedOperatorAvatarUrl,
-} from '@/shared/config/reference-ui'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
+const route = useRoute()
 const router = useRouter()
 const isSaving = ref(false)
 const diagnosticsStatus = ref<'awaiting' | 'connected' | 'offline'>('awaiting')
@@ -38,6 +35,8 @@ const diagnosticsLabel = computed(() => {
   if (diagnosticsStatus.value === 'offline') return 'OFFLINE'
   return 'AWAITING_TEST'
 })
+const backTo = computed(() => String(route.meta.backTo ?? '/console'))
+const backLabel = computed(() => String(route.meta.backLabel ?? '返回控制台'))
 
 watch(
   mockScenarioId,
@@ -99,7 +98,7 @@ async function handleSave() {
       parallelLimit: form.parallelLimit,
     })
 
-    await router.push('/agents')
+    await router.push('/console')
   } finally {
     isSaving.value = false
   }
@@ -108,81 +107,16 @@ async function handleSave() {
 
 <template>
   <section class="openclaw-page">
-    <button type="button" class="openclaw-hidden-save" @click="handleSave">save</button>
-
-    <aside class="openclaw-sidebar">
-      <div class="openclaw-sidebar__brand">
-        <div class="openclaw-sidebar__mark">
-          <img :src="referenceSidebarBrandUrl" alt="System Core" />
-        </div>
-        <div>
-          <h2>CYBER_NOMAD</h2>
-          <p>Protocol Active</p>
-        </div>
-      </div>
-
-      <nav class="openclaw-sidebar__nav">
-        <a class="openclaw-sidebar__link" href="#">
-          <span class="material-symbols-outlined">grid_view</span>
-          <span>Dashboard</span>
-        </a>
-        <RouterLink class="openclaw-sidebar__link" to="/agents">
-          <span class="material-symbols-outlined">smart_toy</span>
-          <span>Agent Nodes</span>
-        </RouterLink>
-        <a class="openclaw-sidebar__link" href="#">
-          <span class="material-symbols-outlined">hub</span>
-          <span>Neural Links</span>
-        </a>
-        <a class="openclaw-sidebar__link" href="#">
-          <span class="material-symbols-outlined">terminal</span>
-          <span>Protocol Logs</span>
-        </a>
-        <RouterLink class="openclaw-sidebar__link openclaw-sidebar__link--active" to="/agents/openclaw">
-          <span class="material-symbols-outlined">settings_input_component</span>
-          <span>System Settings</span>
-        </RouterLink>
-      </nav>
-
-      <button type="button" class="openclaw-sidebar__cta">
-        <span class="material-symbols-outlined">power_settings_new</span>
-        <span>INITIALIZE AGENT</span>
-      </button>
-
-      <div class="openclaw-sidebar__footer">
-        <a class="openclaw-sidebar__link" href="#">
-          <span class="material-symbols-outlined">verified_user</span>
-          <span>Security</span>
-        </a>
-        <a class="openclaw-sidebar__link" href="#">
-          <span class="material-symbols-outlined">help_center</span>
-          <span>Support</span>
-        </a>
-      </div>
-    </aside>
-
-    <div class="openclaw-main">
-      <header class="openclaw-topbar">
-        <div class="openclaw-topbar__crumbs">
-          <span class="material-symbols-outlined">settings_input_component</span>
-          <span>/ System Settings / OpenClaw Config</span>
+    <main class="openclaw-main">
+      <div class="openclaw-canvas">
+        <div class="openclaw-context">
+          <RouterLink :to="backTo" class="openclaw-context__back">
+            <span class="material-symbols-outlined">arrow_back</span>
+            <span>{{ backLabel }}</span>
+          </RouterLink>
+          <span class="openclaw-context__crumb">/ 控制台 / OpenClaw 配置</span>
         </div>
 
-        <div class="openclaw-topbar__actions">
-          <button type="button">
-            <span class="material-symbols-outlined">sensors</span>
-          </button>
-          <button type="button">
-            <span class="material-symbols-outlined">memory</span>
-          </button>
-          <button type="button">
-            <span class="material-symbols-outlined">signal_cellular_alt</span>
-          </button>
-          <img :src="referenceMaskedOperatorAvatarUrl" alt="Operator profile" />
-        </div>
-      </header>
-
-      <main class="openclaw-canvas">
         <header class="openclaw-header">
           <div>
             <h1>OpenClaw 代理配置</h1>
@@ -299,8 +233,8 @@ async function handleSave() {
             </div>
           </section>
         </div>
-      </main>
-    </div>
+      </div>
+    </main>
   </section>
 </template>
 
@@ -429,6 +363,41 @@ async function handleSave() {
   min-width: 0;
 }
 
+.openclaw-context {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  color: #adaaaa;
+  font-family: var(--cn-font-display);
+  font-size: 0.88rem;
+}
+
+.openclaw-context__back {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 2.4rem;
+  padding: 0 0.85rem;
+  border: 1px solid rgb(72 72 71 / 0.25);
+  border-radius: 999px;
+  background: rgb(19 19 19 / 0.82);
+  transition:
+    border-color var(--cn-transition),
+    color var(--cn-transition),
+    background-color var(--cn-transition);
+}
+
+.openclaw-context__back:hover {
+  color: var(--cn-primary);
+  border-color: rgb(143 245 255 / 0.26);
+  background: rgb(32 31 31 / 0.92);
+}
+
+.openclaw-context__crumb {
+  color: var(--cn-on-surface-muted);
+}
+
 .openclaw-topbar {
   position: fixed;
   top: 0;
@@ -482,7 +451,9 @@ async function handleSave() {
 }
 
 .openclaw-canvas {
-  padding: 1.5rem;
+  max-width: 82rem;
+  padding: 2rem 2rem 3rem;
+  margin: 0 auto;
 }
 
 .openclaw-header {
@@ -657,49 +628,72 @@ async function handleSave() {
   gap: 0.45rem;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgb(72 72 71 / 0.4);
-  padding: 0.8rem 1.1rem;
-  border-radius: 0.6rem;
+  border: 1px solid rgb(72 72 71 / 0.3);
+  padding: 0.62rem 1.05rem;
+  border-radius: 0.35rem;
   color: #8ff5ff;
   background: transparent;
+  font-family: var(--cn-font-body);
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition:
+    color var(--cn-transition),
+    border-color var(--cn-transition),
+    background-color var(--cn-transition),
+    box-shadow var(--cn-transition);
+}
+
+.openclaw-actions__button:hover,
+.openclaw-diagnostics__button:hover {
+  border-color: rgb(143 245 255 / 0.24);
+  background: #201f1f;
 }
 
 .openclaw-actions__button--primary {
   color: #005d63;
   background: #8ff5ff;
-  border-color: transparent;
+  border-color: rgb(143 245 255 / 0.24);
+  font-weight: 600;
+}
+
+.openclaw-actions__button--primary:hover {
+  color: #005d63;
+  background: #8ff5ff;
+  box-shadow: 0 0 18px rgb(143 245 255 / 0.24);
 }
 
 .openclaw-card--diagnostics {
   display: grid;
-  gap: 1.5rem;
-  min-height: 38rem;
+  grid-template-rows: auto minmax(9.5rem, auto) minmax(20rem, 1fr);
+  gap: 1rem;
+  min-height: 36rem;
 }
 
 .openclaw-diagnostics__badge {
   border: 1px solid rgb(72 72 71 / 0.3);
-  padding: 0.35rem 0.65rem;
-  border-radius: 0.4rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.25rem;
   color: #767575;
   background: #0e0e0e;
   font-family: var(--cn-font-mono);
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   letter-spacing: 0.1em;
 }
 
 .openclaw-diagnostics__radar-stage {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 16rem;
-  padding: 1rem 0 2.25rem;
+  min-height: 9.5rem;
+  padding: 0.1rem 0 1rem;
 }
 
 .openclaw-radar {
   position: relative;
-  width: 12rem;
-  height: 12rem;
+  width: 6.9rem;
+  height: 6.9rem;
   margin: 0 auto;
 }
 
@@ -725,12 +719,12 @@ async function handleSave() {
 }
 
 .openclaw-radar__middle {
-  inset: 0.85rem;
+  inset: 0.5rem;
   border: 1px solid rgb(143 245 255 / 0.2);
 }
 
 .openclaw-radar__inner {
-  inset: 2rem;
+  inset: 1.2rem;
   border: 1px solid rgb(143 245 255 / 0.4);
   background: rgb(143 245 255 / 0.05);
 }
@@ -754,11 +748,11 @@ async function handleSave() {
 .openclaw-radar__dot {
   top: 50%;
   left: 50%;
-  width: 0.6rem;
-  height: 0.6rem;
+  width: 0.52rem;
+  height: 0.52rem;
   border-radius: 999px;
   background: #8ff5ff;
-  box-shadow: 0 0 15px rgb(143 245 255 / 1);
+  box-shadow: 0 0 12px rgb(143 245 255 / 1);
   transform: translate(-50%, -50%);
 }
 
@@ -796,17 +790,17 @@ async function handleSave() {
 }
 
 .openclaw-radar__signal--a {
-  top: 1.9rem;
-  left: 1.9rem;
+  top: 1rem;
+  left: 1rem;
   background: #c3f400;
   box-shadow: 0 0 5px rgb(195 244 0 / 0.8);
 }
 
 .openclaw-radar__signal--b {
-  right: 2.2rem;
-  bottom: 1.5rem;
-  width: 0.45rem;
-  height: 0.45rem;
+  right: 1rem;
+  bottom: 0.8rem;
+  width: 0.4rem;
+  height: 0.4rem;
   background: #65afff;
   box-shadow: 0 0 5px rgb(101 175 255 / 0.8);
 }
@@ -818,27 +812,78 @@ async function handleSave() {
   justify-self: center;
   color: #455900;
   background: #c3f400;
-  border-color: transparent;
+  border-color: rgb(195 244 0 / 0.24);
   font-weight: 700;
-  transform: translateX(-50%);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  transform: translate(-50%, 36%);
+}
+
+.openclaw-diagnostics__button:hover {
+  color: #455900;
+  background: #b7e500;
+  border-color: rgb(195 244 0 / 0.24);
+  box-shadow: 0 0 18px rgb(195 244 0 / 0.2);
 }
 
 .openclaw-console {
-  overflow-y: auto;
-  padding: 1rem;
+  position: relative;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.95rem;
+  margin-top: 0.35rem;
   border: 1px solid rgb(72 72 71 / 0.3);
-  border-radius: 0.75rem;
+  border-radius: 0.35rem;
   background: #0a0a0a;
   color: #7d7b7b;
   font-family: var(--cn-font-mono);
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   line-height: 1.7;
+}
+
+.openclaw-console::before,
+.openclaw-console::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  height: 1.25rem;
+  content: '';
+  pointer-events: none;
+}
+
+.openclaw-console::before {
+  top: 0;
+  background: linear-gradient(180deg, #0a0a0a 0%, rgb(10 10 10 / 0) 100%);
+}
+
+.openclaw-console::after {
+  bottom: 0;
+  background: linear-gradient(0deg, #0a0a0a 0%, rgb(10 10 10 / 0) 100%);
 }
 
 .openclaw-console__body {
   display: grid;
+  flex: 1;
   gap: 0.2rem;
-  min-height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+  opacity: 0.82;
+}
+
+.openclaw-console__body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.openclaw-console__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.openclaw-console__body::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 999px;
 }
 
 .openclaw-console__divider {

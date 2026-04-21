@@ -40,21 +40,16 @@ const className = computed(() =>
   border: 0;
   border-radius: var(--cn-radius-lg);
   padding: 0.9rem 1.25rem;
-  font-family: var(--cn-font-display);
+  font-family: var(--cn-font-body);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   white-space: nowrap;
   transition:
-    transform 160ms ease,
     box-shadow 160ms ease,
     opacity 160ms ease,
     border-color 160ms ease,
     background-color 160ms ease,
     color 160ms ease;
-}
-
-.base-button:hover:not(:disabled) {
-  transform: translateY(-1px);
 }
 
 .base-button:focus-visible {
@@ -89,31 +84,25 @@ const className = computed(() =>
 
 .base-button--primary {
   color: var(--cn-on-primary);
-  background: linear-gradient(135deg, var(--cn-primary), var(--cn-primary-container));
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.18),
-    0 0 22px rgb(0 238 252 / 0.18);
+  background: var(--cn-primary);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16);
 }
 
 .base-button--secondary {
   color: var(--cn-on-secondary);
   background: var(--cn-secondary);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.18),
-    0 0 20px rgb(195 244 0 / 0.18);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16);
 }
 
 .base-button--ghost {
-  color: var(--cn-on-surface);
-  background: rgb(255 255 255 / 0.04);
+  color: var(--cn-on-surface-variant, var(--cn-on-surface-muted));
+  background: var(--cn-surface-container-low);
   box-shadow: inset 0 0 0 1px var(--cn-outline-ghost);
 }
 
 .base-button--outline {
   color: var(--cn-primary);
-  background: rgb(0 0 0 / 0.05);
-  box-shadow:
-    inset 0 0 0 1px rgb(143 245 255 / 0.28),
-    0 0 18px rgb(143 245 255 / 0.08);
+  background: rgb(143 245 255 / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(143 245 255 / 0.28);
 }
 </style>

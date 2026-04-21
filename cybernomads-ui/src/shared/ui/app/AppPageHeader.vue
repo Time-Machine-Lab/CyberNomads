@@ -54,8 +54,9 @@ defineProps<{
   display: flex;
   flex-wrap: wrap;
   gap: var(--cn-space-2);
-  font-family: var(--cn-font-display);
-  font-size: 0.78rem;
+  font-family: var(--cn-font-body);
+  font-size: 0.82rem;
+  font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--cn-on-surface-faint);
 }
@@ -89,6 +90,7 @@ defineProps<{
 }
 
 .app-page-header__eyebrow {
+  font-family: var(--cn-font-display);
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.16em;
@@ -104,7 +106,8 @@ defineProps<{
   color: var(--cn-secondary);
   background: rgb(195 244 0 / 0.08);
   box-shadow: inset 0 0 0 1px rgb(195 244 0 / 0.18);
-  font-size: 0.82rem;
+  font-family: var(--cn-font-body);
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -112,15 +115,16 @@ defineProps<{
 h1 {
   margin: 0;
   font-family: var(--cn-font-display);
-  font-size: clamp(2rem, 4vw, 3rem);
-  line-height: 0.98;
-  letter-spacing: -0.03em;
+  font-size: clamp(2rem, 4vw, 2.85rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
 }
 
 p {
   margin: 0;
   max-width: 46rem;
   color: var(--cn-on-surface-muted);
+  font-size: 0.95rem;
   line-height: 1.7;
 }
 

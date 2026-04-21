@@ -3,12 +3,13 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { getAccountById, updateAccountStatus } from '@/entities/account/api/account-service'
-import cybernomadsMarkUrl from '@/shared/assets/branding/cybernomads-mark.svg'
 import { referenceAccountDetailAvatarUrl } from '@/shared/config/reference-ui'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const route = useRoute()
 const account = ref<Awaited<ReturnType<typeof getAccountById>>>(null)
+const backTo = computed(() => String(route.meta.backTo ?? '/accounts'))
+const backLabel = computed(() => String(route.meta.backLabel ?? '返回账号池'))
 const terminalLogs = ref([
   '[14:02:11] [SYS] Initializing Handshake sequence...',
   '[14:02:12] [SYS] Establishing secure socket via wss://api.cybernomads.net/v2',
@@ -56,52 +57,15 @@ function resolvePlatformLabel(platform: string) {
 
 <template>
   <section v-if="displayAccount" class="account-detail-page">
-    <aside class="account-detail-sidebar">
-      <div class="account-detail-sidebar__brand">
-        <img :src="cybernomadsMarkUrl" alt="Nomad Operator Avatar" />
-        <div>
-          <h1>NOMAD_OS</h1>
-          <p>Protocol Active</p>
-        </div>
-      </div>
-
-      <nav class="account-detail-sidebar__nav">
-        <a class="account-detail-sidebar__link" href="#">
-          <span class="material-symbols-outlined">fingerprint</span>
-          <span>Identity</span>
-        </a>
-        <a class="account-detail-sidebar__link account-detail-sidebar__link--active" href="#">
-          <span class="material-symbols-outlined">vpn_key</span>
-          <span>Auth Keys</span>
-        </a>
-        <a class="account-detail-sidebar__link" href="#">
-          <span class="material-symbols-outlined">terminal</span>
-          <span>Diagnostics</span>
-        </a>
-        <a class="account-detail-sidebar__link" href="#">
-          <span class="material-symbols-outlined">manage_accounts</span>
-          <span>Profile</span>
-        </a>
-      </nav>
-
-      <button type="button" class="account-detail-sidebar__sync">
-        <span class="material-symbols-outlined">sync</span>
-        <span>SYNC_NODE</span>
-      </button>
-
-      <div class="account-detail-sidebar__footer">
-        <a class="account-detail-sidebar__link" href="#">
-          <span class="material-symbols-outlined">sensors</span>
-          <span>System Status</span>
-        </a>
-        <a class="account-detail-sidebar__link" href="#">
-          <span class="material-symbols-outlined">logout</span>
-          <span>Logout</span>
-        </a>
-      </div>
-    </aside>
-
     <main class="account-detail-main">
+      <div class="account-detail-context">
+        <RouterLink :to="backTo" class="account-detail-context__back">
+          <span class="material-symbols-outlined">arrow_back</span>
+          <span>{{ backLabel }}</span>
+        </RouterLink>
+        <span class="account-detail-context__crumb">/ 账号池 / 账号配置</span>
+      </div>
+
       <header class="account-detail-header">
         <div>
           <h1>账户配置</h1>
@@ -291,112 +255,52 @@ function resolvePlatformLabel(platform: string) {
 
 <style scoped lang="scss">
 .account-detail-page {
-  display: flex;
   min-height: 100vh;
   color: #fff;
-  background: #0e0e0e;
 }
 
-.account-detail-sidebar {
-  position: fixed;
-  inset: 0 auto 0 0;
-  z-index: 30;
-  display: none;
-  flex-direction: column;
-  width: 16rem;
-  padding: 2rem 1rem;
-  border-right: 1px solid rgb(72 72 71 / 0.2);
-  background: #131313;
-  box-shadow: 0 24px 48px rgb(0 0 0 / 0.5);
+.account-detail-main {
+  width: min(100%, 96rem);
+  margin: 0 auto;
+  padding: clamp(1.25rem, 2vw, 2rem);
 }
 
-.account-detail-sidebar__brand {
+.account-detail-context {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.85rem;
   align-items: center;
-  padding: 0 0.5rem;
-  margin-bottom: 2.5rem;
-}
-
-.account-detail-sidebar__brand img {
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 1px solid rgb(143 245 255 / 0.5);
-  border-radius: 999px;
-}
-
-.account-detail-sidebar__brand h1,
-.account-detail-sidebar__brand p {
-  margin: 0;
-}
-
-.account-detail-sidebar__brand h1 {
-  color: #00f0ff;
+  margin-bottom: 1.5rem;
+  color: #8b8888;
   font-family: var(--cn-font-display);
-  font-size: 1rem;
-  font-weight: 900;
-  letter-spacing: 0.2em;
+  font-size: 0.84rem;
 }
 
-.account-detail-sidebar__brand p {
-  color: #adaaaa;
-  font-size: 0.74rem;
-}
-
-.account-detail-sidebar__nav,
-.account-detail-sidebar__footer {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.account-detail-sidebar__nav {
-  flex: 1;
-}
-
-.account-detail-sidebar__link {
-  display: flex;
-  gap: 0.9rem;
-  align-items: center;
-  padding: 0.9rem 1rem;
-  border-radius: 0.75rem;
-  color: #adaaaa;
-  font-size: 0.9rem;
-  transition: background-color 180ms ease, color 180ms ease;
-}
-
-.account-detail-sidebar__link:hover {
-  color: #00f0ff;
-  background: #1a1919;
-}
-
-.account-detail-sidebar__link--active {
-  color: #00f0ff;
-  background: #262626;
-  border-left: 4px solid #00f0ff;
-  font-weight: 700;
-}
-
-.account-detail-sidebar__sync {
+.account-detail-context__back {
   display: inline-flex;
   gap: 0.45rem;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgb(72 72 71 / 0.3);
-  padding: 0.8rem 1rem;
-  margin: 1rem 0.5rem 1rem;
-  border-radius: 0.6rem;
-  color: #8ff5ff;
-  background: #201f1f;
-  font-family: var(--cn-font-display);
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  border: 1px solid rgb(72 72 71 / 0.2);
+  padding: 0.58rem 0.92rem;
+  border-radius: 999px;
+  color: #fff;
+  background: rgb(19 19 19 / 0.72);
+  transition:
+    color var(--cn-transition),
+    border-color var(--cn-transition),
+    background-color var(--cn-transition);
 }
 
-.account-detail-main {
-  flex: 1;
-  min-width: 0;
-  padding: 1.5rem;
+.account-detail-context__back:hover {
+  color: #8ff5ff;
+  border-color: rgb(143 245 255 / 0.3);
+  background: rgb(38 38 38 / 0.9);
+}
+
+.account-detail-context__crumb {
+  color: #767575;
+  letter-spacing: 0.04em;
 }
 
 .account-detail-header {
@@ -447,11 +351,12 @@ function resolvePlatformLabel(platform: string) {
   display: inline-flex;
   gap: 0.45rem;
   align-items: center;
-  padding: 0.45rem 0.8rem;
-  border: 1px solid rgb(72 72 71 / 0.3);
-  border-radius: 999px;
-  background: #201f1f;
-  font-size: 0.78rem;
+  padding: 0.34rem 0.65rem;
+  border: 1px solid rgb(72 72 71 / 0.22);
+  border-radius: 0.45rem;
+  background: #171717;
+  font-family: var(--cn-font-body);
+  font-size: 0.72rem;
 }
 
 .account-detail-grid,
@@ -625,12 +530,13 @@ function resolvePlatformLabel(platform: string) {
   display: inline-flex;
   gap: 0.25rem;
   align-items: center;
-  border: 1px solid rgb(72 72 71 / 0.35);
-  padding: 0.45rem 0.7rem;
-  border-radius: 0.5rem;
+  border: 1px solid rgb(72 72 71 / 0.22);
+  padding: 0.34rem 0.62rem;
+  border-radius: 0.35rem;
   color: #adaaaa;
-  background: #262626;
-  font-size: 0.78rem;
+  background: #151515;
+  font-family: var(--cn-font-body);
+  font-size: 0.72rem;
 }
 
 .account-tags button:first-child {
@@ -648,6 +554,9 @@ function resolvePlatformLabel(platform: string) {
   border: 0;
   color: #8ff5ff;
   background: transparent;
+  font-family: var(--cn-font-body);
+  font-size: 0.76rem;
+  font-weight: 500;
 }
 
 .account-token {
@@ -684,21 +593,24 @@ function resolvePlatformLabel(platform: string) {
   justify-content: center;
   width: 100%;
   border: 1px solid transparent;
-  padding: 0.9rem 1rem;
+  padding: 0.78rem 1rem;
   margin-top: 1rem;
-  border-radius: 0.75rem;
+  border-radius: 0.55rem;
+  font-family: var(--cn-font-body);
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
 .account-primary-button {
-  color: #005d63;
-  background: linear-gradient(135deg, #8ff5ff 0%, #00eefc 100%);
+  color: #041316;
+  background: #8ff5ff;
+  border-color: rgb(143 245 255 / 0.26);
 }
 
 .account-secondary-button {
   color: #8ff5ff;
   border-color: rgb(143 245 255 / 0.3);
-  background: transparent;
+  background: rgb(143 245 255 / 0.05);
 }
 
 .account-card--center {
@@ -880,13 +792,8 @@ function resolvePlatformLabel(platform: string) {
 }
 
 @media (min-width: 1024px) {
-  .account-detail-sidebar {
-    display: flex;
-  }
-
   .account-detail-main {
     padding: 2rem;
-    margin-left: 16rem;
   }
 
   .account-detail-header {

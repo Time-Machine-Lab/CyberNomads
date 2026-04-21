@@ -3,7 +3,6 @@ import { ref, watch } from 'vue'
 
 import { listAccounts } from '@/entities/account/api/account-service'
 import type { AccountRecord } from '@/entities/account/model/types'
-import { referenceTopbarAvatarUrl } from '@/shared/config/reference-ui'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const accounts = ref<AccountRecord[]>([])
@@ -46,22 +45,6 @@ function resolvePlatformColor(platform: string) {
 
 <template>
   <section class="accounts-page">
-    <header class="accounts-topbar">
-      <div class="accounts-topbar__title">NEURAL ARCHITECT</div>
-
-      <label class="accounts-topbar__search">
-        <span class="material-symbols-outlined">search</span>
-        <input type="text" placeholder="搜索账号, UID, 标签..." />
-      </label>
-
-      <div class="accounts-topbar__actions">
-        <button type="button"><span class="material-symbols-outlined">notifications_active</span></button>
-        <button type="button"><span class="material-symbols-outlined">account_balance_wallet</span></button>
-        <button type="button"><span class="material-symbols-outlined">settings_input_component</span></button>
-        <img :src="referenceTopbarAvatarUrl" alt="Architect profile" />
-      </div>
-    </header>
-
     <div class="accounts-canvas">
       <header class="accounts-header">
         <div>
@@ -150,9 +133,15 @@ function resolvePlatformColor(platform: string) {
           <div class="accounts-row__mono">{{ account.lastActiveLabel }}</div>
 
           <div class="accounts-row__actions">
-            <button type="button"><span class="material-symbols-outlined">login</span></button>
-            <button type="button"><span class="material-symbols-outlined">edit_square</span></button>
-            <button type="button"><span class="material-symbols-outlined">delete</span></button>
+            <button type="button" class="accounts-row__action-button accounts-row__action-button--login">
+              <span class="material-symbols-outlined">login</span>
+            </button>
+            <button type="button" class="accounts-row__action-button accounts-row__action-button--edit">
+              <span class="material-symbols-outlined">edit_square</span>
+            </button>
+            <button type="button" class="accounts-row__action-button accounts-row__action-button--delete">
+              <span class="material-symbols-outlined">delete</span>
+            </button>
           </div>
         </RouterLink>
       </section>
@@ -242,7 +231,9 @@ function resolvePlatformColor(platform: string) {
 }
 
 .accounts-canvas {
-  padding: 1.8rem 2rem 4rem;
+  width: min(100%, 100rem);
+  margin: 0 auto;
+  padding: 2.3rem 2rem 3.4rem;
 }
 
 .accounts-header {
@@ -273,28 +264,31 @@ function resolvePlatformColor(platform: string) {
   align-items: center;
   min-height: 3rem;
   padding: 0 1.2rem;
-  border-radius: 0.7rem;
+  border-radius: 0.75rem;
   color: #005d63;
   background: linear-gradient(135deg, #8ff5ff 0%, #00eefc 100%);
   font-family: var(--cn-font-display);
   font-size: 0.88rem;
   font-weight: 700;
+  box-shadow: 0 0 16px rgb(143 245 255 / 0.22);
 }
 
 .accounts-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .summary-card {
   position: relative;
-  flex: 1;
   min-height: 8.7rem;
   padding: 1.2rem;
   overflow: hidden;
   border: 1px solid rgb(72 72 71 / 0.14);
   border-radius: 1rem;
   background: #131313;
+  box-shadow: var(--cn-shadow-soft);
 }
 
 .summary-card__corner {
@@ -386,7 +380,6 @@ function resolvePlatformColor(platform: string) {
 .summary-card--add {
   display: grid;
   place-items: center;
-  flex: 0 0 9.8rem;
 }
 
 .summary-card__add-circle {
@@ -405,6 +398,7 @@ function resolvePlatformColor(platform: string) {
   border: 1px solid rgb(72 72 71 / 0.14);
   border-radius: 1rem;
   background: #1a1919;
+  box-shadow: var(--cn-shadow-ambient);
 }
 
 .accounts-board__head,
@@ -554,11 +548,48 @@ function resolvePlatformColor(platform: string) {
   gap: 0.3rem;
   justify-content: flex-end;
   color: #adaaaa;
+  opacity: 0;
+  transition: opacity var(--cn-transition);
+}
+
+.accounts-row:hover .accounts-row__actions,
+.accounts-row:focus-visible .accounts-row__actions {
+  opacity: 1;
+}
+
+.accounts-row__action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: #adaaaa;
+  background: transparent;
+  appearance: none;
+  transition: color var(--cn-transition);
+}
+
+.accounts-row__action-button .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.accounts-row__action-button--login:hover {
+  color: #8ff5ff;
+}
+
+.accounts-row__action-button--edit:hover {
+  color: #65afff;
+}
+
+.accounts-row__action-button--delete:hover {
+  color: #ff716c;
 }
 
 @media (max-width: 1200px) {
   .accounts-summary {
-    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

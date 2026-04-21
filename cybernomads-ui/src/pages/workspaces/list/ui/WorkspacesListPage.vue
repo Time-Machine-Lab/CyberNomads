@@ -11,7 +11,6 @@ import type { AgentNodeRecord } from '@/entities/agent/model/types'
 import type { AssetRecord } from '@/entities/asset/model/types'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
 import type { WorkspaceRecord } from '@/entities/workspace/model/types'
-import { referenceTopbarAvatarUrl } from '@/shared/config/reference-ui'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const workspaces = ref<WorkspaceRecord[]>([])
@@ -19,9 +18,6 @@ const assets = ref<AssetRecord[]>([])
 const strategies = ref<StrategyRecord[]>([])
 const accounts = ref<AccountRecord[]>([])
 const agentNodes = ref<AgentNodeRecord[]>([])
-const activeTab = ref('团队排班')
-
-const topTabs = ['核心概览', '团队排班', '流量监控']
 
 const hasActiveAgent = computed(() => agentNodes.value.some((node) => node.status === 'active'))
 const hasConnectedAccount = computed(() => accounts.value.some((account) => account.status === 'connected'))
@@ -82,107 +78,14 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
 
 <template>
   <section class="workspace-page">
-    <aside class="workspace-sidebar">
-      <div class="workspace-sidebar__brand">
-        <span class="material-symbols-outlined workspace-sidebar__brand-icon">hub</span>
-        <div>
-          <h1>CyberNomads</h1>
-          <p>AI 营销指挥中心</p>
-        </div>
-      </div>
-
-      <nav class="workspace-sidebar__nav">
-        <a class="workspace-sidebar__nav-link" href="#">
-          <span class="material-symbols-outlined">grid_view</span>
-          <span>仪表盘</span>
-        </a>
-        <RouterLink class="workspace-sidebar__nav-link workspace-sidebar__nav-link--active" to="/workspaces">
-          <span class="material-symbols-outlined fill">groups</span>
-          <span>团队协作</span>
-        </RouterLink>
-        <a class="workspace-sidebar__nav-link" href="#">
-          <span class="material-symbols-outlined">campaign</span>
-          <span>营销活动</span>
-        </a>
-        <RouterLink class="workspace-sidebar__nav-link" to="/assets">
-          <span class="material-symbols-outlined">database</span>
-          <span>资产管理</span>
-        </RouterLink>
-        <a class="workspace-sidebar__nav-link" href="#">
-          <span class="material-symbols-outlined">analytics</span>
-          <span>数据洞察</span>
-        </a>
-      </nav>
-
-      <div class="workspace-sidebar__footer">
-        <RouterLink class="workspace-sidebar__primary-action" to="/workspaces/new">
-          <span class="material-symbols-outlined">add</span>
-          <span>发起新项目</span>
-        </RouterLink>
-
-        <div class="workspace-sidebar__footer-links">
-          <RouterLink class="workspace-sidebar__footer-link" to="/agents/openclaw">
-            <span class="material-symbols-outlined">settings</span>
-            <span>系统配置</span>
-          </RouterLink>
-          <a class="workspace-sidebar__footer-link" href="#">
-            <span class="material-symbols-outlined">help_outline</span>
-            <span>支持中心</span>
-          </a>
-        </div>
-      </div>
-    </aside>
-
-    <main class="workspace-main">
-      <header class="workspace-topbar">
-        <div class="workspace-topbar__left">
-          <h2>指挥部管理</h2>
-          <nav class="workspace-topbar__tabs">
-            <button
-              v-for="tab in topTabs"
-              :key="tab"
-              type="button"
-              :class="{ 'workspace-topbar__tab--active': activeTab === tab }"
-              @click="activeTab = tab"
-            >
-              {{ tab }}
-            </button>
-          </nav>
-        </div>
-
-        <div class="workspace-topbar__right">
-          <label class="workspace-topbar__search">
-            <span class="material-symbols-outlined">search</span>
-            <input type="text" placeholder="搜索团队或资产..." />
-          </label>
-
-          <div class="workspace-topbar__actions">
-            <button type="button" aria-label="通知">
-              <span class="material-symbols-outlined">notifications</span>
-            </button>
-            <button type="button" aria-label="安全">
-              <span class="material-symbols-outlined">shield</span>
-            </button>
-            <button type="button" aria-label="树图">
-              <span class="material-symbols-outlined">account_tree</span>
-            </button>
-          </div>
-
-          <div class="workspace-topbar__profile">
-            <button type="button">同步数据</button>
-            <img :src="referenceTopbarAvatarUrl" alt="管理员头像" />
-          </div>
-        </div>
-      </header>
-
-      <div class="workspace-canvas">
+    <div class="workspace-canvas">
         <section v-if="!hasActiveAgent || !hasConnectedAccount" class="workspace-alerts">
           <div v-if="!hasActiveAgent" class="workspace-alert">
             <div>
               <strong>缺少可用 Agent</strong>
               <p>当前没有已初始化的执行节点，请先完成 OpenClaw 初始化。</p>
             </div>
-            <RouterLink to="/agents/openclaw">前往配置</RouterLink>
+            <RouterLink to="/console/openclaw">前往配置</RouterLink>
           </div>
           <div v-if="!hasConnectedAccount" class="workspace-alert">
             <div>
@@ -208,7 +111,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
           <RouterLink
             v-for="workspace in workspaces"
             :key="workspace.id"
-            :to="`/workspaces/${workspace.id}/execution`"
+            :to="`/workspaces/${workspace.id}/runtime`"
             class="workspace-card"
             :class="[
               `workspace-card--${resolveStatusTone(workspace)}`,
@@ -271,8 +174,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
             </div>
           </RouterLink>
         </section>
-      </div>
-    </main>
+    </div>
   </section>
 </template>
 
@@ -511,20 +413,22 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
 
 .workspace-canvas {
   position: relative;
+  width: min(100%, 100rem);
   min-height: 100vh;
-  padding: 6rem 2rem 2rem;
+  margin: 0 auto;
+  padding: 2.2rem 2rem 3rem;
 }
 
 .workspace-canvas::before {
   content: '';
   position: absolute;
-  top: 16%;
-  left: 20%;
-  width: 32rem;
-  height: 32rem;
-  background: rgb(0 240 255 / 0.05);
+  top: 6rem;
+  left: 12rem;
+  width: 28rem;
+  height: 28rem;
+  background: rgb(0 240 255 / 0.04);
   border-radius: 999px;
-  filter: blur(120px);
+  filter: blur(110px);
   pointer-events: none;
 }
 
@@ -543,9 +447,10 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   gap: 1rem;
   align-items: center;
   padding: 1rem 1.25rem;
-  background: #131313;
-  border: 1px solid rgb(255 184 0 / 0.2);
-  border-radius: 0.9rem;
+  background: rgb(19 19 19 / 0.86);
+  border: 1px solid rgb(255 184 0 / 0.22);
+  border-radius: 1rem;
+  box-shadow: 0 18px 32px rgb(0 0 0 / 0.18);
 }
 
 .workspace-alert strong,
@@ -579,6 +484,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
 }
 
 .workspace-header h3 {
+  font-family: var(--cn-font-display);
   font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.03em;
@@ -597,12 +503,14 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   gap: 0.5rem;
   align-items: center;
   justify-content: center;
-  min-height: 3rem;
-  padding: 0 1.25rem;
-  color: #000;
-  background: #00f0ff;
-  border-radius: 0.65rem;
-  box-shadow: 0 0 15px rgb(0 240 255 / 0.3);
+  min-height: 2.7rem;
+  padding: 0 1rem;
+  color: #041316;
+  background: #8ff5ff;
+  border: 1px solid rgb(143 245 255 / 0.28);
+  border-radius: 0.55rem;
+  font-family: var(--cn-font-body);
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
@@ -611,7 +519,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   z-index: 1;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 .workspace-card {
@@ -622,13 +530,16 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   color: #fff;
   background: #131313;
   border: 1px solid rgb(255 255 255 / 0.1);
-  border-radius: 0.75rem;
-  transition: all 0.3s ease;
+  border-radius: 1rem;
+  box-shadow: var(--cn-shadow-ambient);
+  transition:
+    border-color var(--cn-transition),
+    box-shadow var(--cn-transition),
+    background-color var(--cn-transition);
 }
 
 .workspace-card:hover {
   border-color: rgb(0 240 255 / 0.5);
-  box-shadow: 0 0 20px rgb(0 240 255 / 0.2);
 }
 
 .workspace-card__body {
@@ -660,7 +571,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   height: 3rem;
   background: rgb(26 26 26 / 1);
   border: 1px solid rgb(255 255 255 / 0.05);
-  border-radius: 0.4rem;
+  border-radius: 0.5rem;
 }
 
 .workspace-card__icon span {
@@ -674,9 +585,25 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
 }
 
 .workspace-card__top button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.95rem;
+  height: 1.95rem;
   color: var(--cn-on-surface-muted);
-  background: transparent;
-  border: 0;
+  background: #171717;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 0.4rem;
+  transition:
+    color var(--cn-transition),
+    border-color var(--cn-transition),
+    background-color var(--cn-transition);
+}
+
+.workspace-card__top button:hover {
+  color: #fff;
+  border-color: rgb(143 245 255 / 0.18);
+  background: #201f1f;
 }
 
 .workspace-card__status {
@@ -706,7 +633,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   padding: 0.8rem;
   background: rgb(26 26 26 / 0.5);
   border: 1px solid rgb(255 255 255 / 0.05);
-  border-radius: 0.4rem;
+  border-radius: 0.5rem;
 }
 
 .workspace-card__meta-label {
@@ -757,7 +684,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   height: 1.75rem;
   background: #262626;
   border: 1px solid rgb(255 255 255 / 0.1);
-  border-radius: 0.25rem;
+  border-radius: 0.35rem;
   font-family: var(--cn-font-mono);
   font-size: 0.72rem;
 }
