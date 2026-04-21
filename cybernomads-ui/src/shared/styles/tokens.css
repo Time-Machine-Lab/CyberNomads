@@ -5,29 +5,46 @@
   --cn-font-mono: 'SFMono-Regular', 'Cascadia Code', 'JetBrains Mono', monospace;
 
   --cn-surface: #0e0e0e;
+  --cn-surface-dim: #090909;
+  --cn-surface-grid: #101111;
   --cn-surface-container-low: #131313;
   --cn-surface-container: #1a1919;
-  --cn-surface-container-high: #202020;
+  --cn-surface-container-high: #201f1f;
   --cn-surface-container-highest: #262626;
+  --cn-surface-float: rgb(18 18 18 / 0.78);
+  --cn-surface-glass: rgb(19 19 19 / 0.72);
 
   --cn-on-surface: #f3f7f8;
   --cn-on-surface-soft: #c5c9cb;
   --cn-on-surface-muted: #adaaaa;
+  --cn-on-surface-faint: #7d7b7b;
 
   --cn-primary: #8ff5ff;
   --cn-primary-container: #00eefc;
+  --cn-primary-dim: #00deec;
   --cn-on-primary: #005d63;
   --cn-secondary: #c3f400;
+  --cn-secondary-dim: #b7e500;
   --cn-on-secondary: #455900;
   --cn-tertiary: #65afff;
+  --cn-tertiary-dim: #4aa2f9;
   --cn-error: #ff716c;
+  --cn-warning: #ffb800;
+  --cn-success: #c3f400;
 
   --cn-outline-ghost: rgb(72 72 71 / 0.2);
+  --cn-outline-soft: rgb(118 117 117 / 0.24);
+  --cn-outline-strong: rgb(143 245 255 / 0.26);
   --cn-shadow-ambient: 0 24px 48px rgb(0 0 0 / 0.5);
   --cn-shadow-soft: 0 18px 40px rgb(0 0 0 / 0.28);
+  --cn-shadow-glow: 0 0 24px rgb(143 245 255 / 0.22);
+  --cn-shadow-neon: 0 0 36px rgb(0 238 252 / 0.2);
 
+  --cn-radius-sm: 0.25rem;
   --cn-radius-md: 0.5rem;
   --cn-radius-lg: 0.75rem;
+  --cn-radius-xl: 1rem;
+  --cn-radius-pill: 999px;
 
   --cn-space-1: 0.25rem;
   --cn-space-2: 0.5rem;
@@ -37,6 +54,13 @@
   --cn-space-6: 2rem;
   --cn-space-7: 2.5rem;
   --cn-space-8: 3rem;
+  --cn-space-9: 4rem;
 
-  --cn-shell-width: 78rem;
+  --cn-sidebar-expanded: 16.75rem;
+  --cn-sidebar-collapsed: 5.75rem;
+  --cn-topbar-height: 4.5rem;
+  --cn-shell-width: 92rem;
+  --cn-content-width: 86rem;
+  --cn-grid-size: 40px;
+  --cn-transition: 180ms ease;
 }
