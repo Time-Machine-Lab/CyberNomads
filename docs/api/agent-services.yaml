@@ -1,0 +1,425 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Agent Services API
+  version: 1.0.0
+  description: >
+    Agent 服务接入域首版 API 契约。当前阶段围绕“唯一当前激活 Agent 服务”建模，
+    覆盖配置、更新、连接校验、状态查询与能力准备行为。
+    在 MVP 语义下，连接成功即可视为服务可被系统使用；能力准备是独立的业务状态，
+    不改变“已连接即可使用”的主状态判断。
+    当前阶段不提供多服务路由、自动恢复、失败重试或 provider 私有字段语义。
+  summary: Agent 服务接入域 MVP 对外契约
+
+tags:
+  - name: AgentServices
+    description: Agent 服务接入域接口
+
+x-runtime-minimum-development-checklist:
+  - 配置当前激活 Agent 服务
+  - 更新或替换当前激活 Agent 服务
+  - 显式校验当前 Agent 服务连接
+  - 查询当前 Agent 服务整体状态
+  - 触发并记录能力准备状态
+  - 获取当前激活 Agent 服务供上层编排使用
+
+x-provider-minimum-capabilities:
+  - 连通性检查
+  - 会话创建
+  - 消息发送
+  - 会话历史读取
+  - subagent 调用
+  - Cybernomads 所需能力准备
+
+paths:
+  /api/agent-services/current:
+    post:
+      tags:
+        - AgentServices
+      summary: 配置当前激活 Agent 服务
+      description: >
+        创建系统当前唯一激活的 Agent 服务连接配置。
+        当前阶段系统只允许存在一个当前激活服务；如果已存在当前服务，应返回冲突而不是创建第二个服务。
+      operationId: configureCurrentAgentService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigureAgentServiceRequest"
+      responses:
+        "201":
+          description: 配置成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentAgentService"
+        "400":
+          description: 请求参数不合法
+        "409":
+          description: 当前激活服务已存在
+    get:
+      tags:
+        - AgentServices
+      summary: 获取当前激活 Agent 服务
+      description: >
+        返回当前唯一激活 Agent 服务的连接元数据与状态摘要。
+        该接口用于上层业务编排获取统一 Agent 服务入口，不暴露 provider 私有执行语义。
+      operationId: getCurrentAgentService
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentAgentService"
+        "404":
+          description: 当前尚未配置激活服务
+    put:
+      tags:
+        - AgentServices
+      summary: 更新当前激活 Agent 服务
+      description: >
+        更新或替换当前唯一激活 Agent 服务的连接配置。
+        更新后应把连接状态重置为 `pending_verification`，
+        并把能力准备状态重置为 `not_ready`，要求用户重新显式校验连接与能力准备。
+      operationId: updateCurrentAgentService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentServiceRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentAgentService"
+        "400":
+          description: 请求参数不合法
+        "404":
+          description: 当前尚未配置激活服务
+
+  /api/agent-services/current/status:
+    get:
+      tags:
+        - AgentServices
+      summary: 查询当前 Agent 服务状态
+      description: >
+        返回当前 Agent 服务的整体业务状态快照。
+        `isUsable` 只取决于连接状态是否为 `connected`；
+        能力准备状态用于表达 Cybernomads 所需能力是否已就绪，但不会覆盖“连接成功即可使用”的 MVP 语义。
+      operationId: getCurrentAgentServiceStatus
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentServiceStatusSnapshot"
+
+  /api/agent-services/current/connection-verification:
+    post:
+      tags:
+        - AgentServices
+      summary: 校验当前 Agent 服务连接
+      description: >
+        对当前激活 Agent 服务执行一次显式连通性校验，并更新当前连接状态。
+        当前阶段不提供后台自动恢复或失败自动重试；每次校验都由用户或上层流程显式触发。
+      operationId: verifyCurrentAgentServiceConnection
+      responses:
+        "200":
+          description: 校验完成
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionVerificationResult"
+        "404":
+          description: 当前尚未配置激活服务
+
+  /api/agent-services/current/capability-provisioning:
+    post:
+      tags:
+        - AgentServices
+      summary: 准备当前 Agent 服务能力
+      description: >
+        触发 Cybernomads 所需能力准备流程，并返回更新后的能力准备状态。
+        该接口表达的是业务级“能力准备”语义，而不是暴露 provider 私有安装动作。
+        当前阶段不承诺能力准备失败后的后台自动恢复或自动重试。
+      operationId: prepareCurrentAgentServiceCapabilities
+      responses:
+        "200":
+          description: 触发完成
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapabilityProvisioningResult"
+        "404":
+          description: 当前尚未配置激活服务
+        "409":
+          description: 当前连接状态不允许执行能力准备
+
+components:
+  schemas:
+    ConfigureAgentServiceRequest:
+      type: object
+      required:
+        - providerCode
+        - endpointUrl
+        - authentication
+      properties:
+        providerCode:
+          type: string
+          description: provider 中立的服务提供方编码，例如 `openclaw`
+          minLength: 1
+        endpointUrl:
+          type: string
+          format: uri
+          description: 当前 Agent 服务的统一连接入口地址，对应 SQL 契约中的 `endpoint_url`
+        authentication:
+          $ref: "#/components/schemas/AgentServiceAuthenticationInput"
+
+    UpdateAgentServiceRequest:
+      type: object
+      required:
+        - providerCode
+        - endpointUrl
+        - authentication
+      properties:
+        providerCode:
+          type: string
+          description: >
+            provider 中立的服务提供方编码。更新时允许替换 provider，
+            但上层业务语义仍保持统一 Agent 服务抽象。
+          minLength: 1
+        endpointUrl:
+          type: string
+          format: uri
+          description: 更新后的统一连接入口地址，对应 SQL 契约中的 `endpoint_url`
+        authentication:
+          $ref: "#/components/schemas/AgentServiceAuthenticationInput"
+
+    AgentServiceAuthenticationInput:
+      type: object
+      description: >
+        provider 中立的认证输入模型。运行时可将明文或临时凭证输入转换为内部 `credential_ref`，
+        但顶层契约不绑定具体密文方案或 provider 私有字段结构。
+      required:
+        - kind
+        - secret
+      properties:
+        kind:
+          type: string
+          description: 认证方式标签，对应 SQL 契约中的 `authentication_kind`
+          minLength: 1
+        secret:
+          type: string
+          writeOnly: true
+          description: >
+            用户提交的认证密钥或令牌。运行时应将其转化为安全存储中的稳定引用，
+            而不是直接作为结构化字段对外返回。
+          minLength: 1
+
+    CurrentAgentService:
+      type: object
+      description: >
+        当前唯一激活 Agent 服务的对外模型。该模型只暴露 provider 中立的连接与状态语义，
+        不暴露任务调度、平台脚本、subagent 生命周期或 OpenClaw 私有协议细节。
+      required:
+        - agentServiceId
+        - providerCode
+        - endpointUrl
+        - authenticationKind
+        - hasCredential
+        - connectionStatus
+        - capabilityStatus
+        - isActive
+        - isUsable
+        - createdAt
+        - updatedAt
+      properties:
+        agentServiceId:
+          type: string
+          description: 当前激活服务的稳定标识，对应 SQL 契约中的 `agent_service_id`
+        providerCode:
+          type: string
+          description: 当前 provider 编码，对应 SQL 契约中的 `provider_code`
+        endpointUrl:
+          type: string
+          format: uri
+          description: 当前连接入口地址，对应 SQL 契约中的 `endpoint_url`
+        authenticationKind:
+          type: string
+          description: 当前认证方式标签，对应 SQL 契约中的 `authentication_kind`
+        hasCredential:
+          type: boolean
+          description: >
+            是否已存在可用凭证引用。对外只暴露布尔结果，不返回 `credential_ref`
+            或任何明文凭证内容。
+        connectionStatus:
+          $ref: "#/components/schemas/ConnectionStatus"
+        connectionStatusReason:
+          type:
+            - string
+            - "null"
+          description: 最近一次连接状态变化原因，对应 SQL 契约中的 `connection_status_reason`
+        capabilityStatus:
+          $ref: "#/components/schemas/CapabilityProvisioningStatus"
+        capabilityStatusReason:
+          type:
+            - string
+            - "null"
+          description: 最近一次能力准备状态变化原因，对应 SQL 契约中的 `capability_status_reason`
+        isActive:
+          type: boolean
+          const: true
+          description: >
+            当前阶段该对象恒为当前唯一激活 Agent 服务，因此始终为 `true`
+        isUsable:
+          type: boolean
+          description: >
+            当前是否可被系统使用。只要 `connectionStatus = connected` 即为 `true`，
+            不要求 `capabilityStatus = ready`
+        lastVerifiedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: 最近一次连接校验时间，对应 SQL 契约中的 `last_verified_at`
+        lastConnectedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: 最近一次确认连接成功时间，对应 SQL 契约中的 `last_connected_at`
+        capabilityPreparedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: 最近一次完成能力准备时间，对应 SQL 契约中的 `capability_prepared_at`
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间，对应 SQL 契约中的 `created_at`
+        updatedAt:
+          type: string
+          format: date-time
+          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
+
+    AgentServiceStatusSnapshot:
+      type: object
+      description: 当前 Agent 服务整体业务状态快照。
+      required:
+        - hasCurrentService
+        - connectionStatus
+        - capabilityStatus
+        - isUsable
+      properties:
+        hasCurrentService:
+          type: boolean
+          description: 当前是否存在已配置的唯一激活服务
+        currentService:
+          oneOf:
+            - $ref: "#/components/schemas/CurrentAgentService"
+            - type: "null"
+          description: 当前激活服务对象；未配置时返回 `null`
+        connectionStatus:
+          $ref: "#/components/schemas/ConnectionStatus"
+        capabilityStatus:
+          $ref: "#/components/schemas/CapabilityProvisioningStatus"
+        isUsable:
+          type: boolean
+          description: >
+            当前是否可被系统使用。未配置时恒为 `false`；
+            已配置时只取决于连接状态是否为 `connected`
+        warning:
+          type:
+            - string
+            - "null"
+          description: >
+            当前状态的补充说明，例如“连接失败需用户重试”或“能力准备尚未完成”
+
+    ConnectionVerificationResult:
+      type: object
+      description: 当前 Agent 服务一次显式连接校验的结果。
+      required:
+        - agentServiceId
+        - connectionStatus
+        - isUsable
+        - verifiedAt
+      properties:
+        agentServiceId:
+          type: string
+          description: 被校验的当前激活服务标识
+        connectionStatus:
+          $ref: "#/components/schemas/ConnectionStatus"
+        reason:
+          type:
+            - string
+            - "null"
+          description: 本次校验结果原因或错误说明
+        isUsable:
+          type: boolean
+          description: >
+            本次校验后是否可立即被系统使用。只要连接状态为 `connected` 即为 `true`
+        verifiedAt:
+          type: string
+          format: date-time
+          description: 本次校验完成时间
+
+    CapabilityProvisioningResult:
+      type: object
+      description: 当前 Agent 服务一次能力准备操作的结果。
+      required:
+        - agentServiceId
+        - capabilityStatus
+        - connectionStatus
+        - isUsable
+      properties:
+        agentServiceId:
+          type: string
+          description: 执行能力准备的当前激活服务标识
+        capabilityStatus:
+          $ref: "#/components/schemas/CapabilityProvisioningStatus"
+        reason:
+          type:
+            - string
+            - "null"
+          description: 本次能力准备结果原因或错误说明
+        connectionStatus:
+          $ref: "#/components/schemas/ConnectionStatus"
+        isUsable:
+          type: boolean
+          description: >
+            返回当前服务是否仍可被系统使用。即使能力准备失败，只要连接状态为 `connected`
+            仍可为 `true`
+        preparedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: 最近一次完成能力准备时间；若未完成则返回 `null`
+
+    ConnectionStatus:
+      type: string
+      description: >
+        当前服务连接状态。`not_configured` 仅用于 API 层表达“当前尚未配置激活服务”，
+        SQL 层通过缺少当前记录表达该语义。
+      enum:
+        - not_configured
+        - pending_verification
+        - connected
+        - connection_failed
+
+    CapabilityProvisioningStatus:
+      type: string
+      description: 当前服务能力准备状态。
+      enum:
+        - not_ready
+        - preparing
+        - ready
+        - prepare_failed
+
+  securitySchemes: {}
