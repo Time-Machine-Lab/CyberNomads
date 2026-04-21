@@ -5,6 +5,7 @@ import {
 } from "./bootstrap-runtime.js";
 import { FileSystemAgentServiceCredentialStore } from "../adapters/storage/file-system/agent-service-credential-store.js";
 import { FileSystemProductContentStore } from "../adapters/storage/file-system/product-content-store.js";
+import { OpenClawAgentProvider } from "../adapters/agent/openclaw/openclaw-adapter.js";
 import { SqliteAgentServiceStateRepository } from "../adapters/storage/sqlite/agent-services-sqlite-repository.js";
 import { SqliteProductRepository } from "../adapters/storage/sqlite/products-sqlite-repository.js";
 import { AgentAccessService } from "../modules/agent-access/service.js";
@@ -52,7 +53,7 @@ export async function startApplication(
   const agentAccessService = new AgentAccessService({
     stateStore: agentServiceStateRepository,
     credentialStore: agentServiceCredentialStore,
-    providers: options.agentProviders,
+    providers: [new OpenClawAgentProvider(), ...(options.agentProviders ?? [])],
   });
 
   try {
