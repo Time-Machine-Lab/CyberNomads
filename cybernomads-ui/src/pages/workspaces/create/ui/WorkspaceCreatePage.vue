@@ -52,14 +52,14 @@ async function loadPage() {
   ;[assets.value, strategies.value, accounts.value, agentNodes.value] = await Promise.all([
     listAssets(),
     listStrategies(),
-    listAccounts(),
+    listAccounts({ source: 'mock' }),
     listAgentNodes(),
   ])
 
   selectedAssetId.value ||= assets.value[0]?.id ?? ''
   selectedStrategyId.value ||= strategies.value[1]?.id ?? strategies.value[0]?.id ?? ''
   if (!selectedAccountIds.value.length) {
-    selectedAccountIds.value = accounts.value.filter((account) => account.status === 'connected').slice(0, 1).map((account) => account.id)
+    selectedAccountIds.value = accounts.value.filter((account) => account.isConsumable).slice(0, 1).map((account) => account.id)
   }
 }
 
@@ -122,7 +122,7 @@ function resolveAccountVisualState(account: AccountRecord) {
 }
 
 function isSelectableAccount(account: AccountRecord) {
-  return account.status !== 'needs-auth'
+  return account.isConsumable
 }
 
 function toggleAccount(accountId: string) {

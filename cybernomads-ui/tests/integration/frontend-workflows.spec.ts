@@ -22,13 +22,28 @@ async function mountWithRouter(
   routePath: string,
   extraRoutes: Array<{ path: string; component: object; meta?: Record<string, unknown> }> = [],
 ) {
+  const routes = [
+    { path: routePath, component },
+    { path: '/console', component: { template: '<div>console overview</div>' } },
+    { path: '/console/openclaw', component: { template: '<div>openclaw config route</div>' } },
+    { path: '/assets', component: { template: '<div>assets list</div>' } },
+    { path: '/strategies', component: { template: '<div>strategies list</div>' } },
+    { path: '/accounts', component: { template: '<div>accounts list</div>' } },
+    { path: '/workspaces', component: { template: '<div>workspaces list</div>' } },
+    { path: '/workspaces/new', component: { template: '<div>workspace create</div>' } },
+    { path: '/workspaces/:workspaceId/runtime', component: { template: '<div>runtime route</div>' } },
+    {
+      path: '/workspaces/:workspaceId/tasks/:taskId/intervention',
+      component: { template: '<div>intervention route</div>' },
+    },
+    ...extraRoutes,
+  ].filter((candidate, index, collection) => {
+    return collection.findIndex((item) => item.path === candidate.path) === index
+  })
+
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [
-      { path: routePath, component },
-      { path: '/assets', component: { template: '<div>assets list</div>' } },
-      ...extraRoutes,
-    ],
+    routes,
   })
 
   await router.push(path)
@@ -90,14 +105,15 @@ describe('frontend workflows', () => {
     resetMockRuntime()
 
     const { wrapper } = await mountWithRouter(
-      '/workspaces/workspace-nova-launch/execution',
+      '/workspaces/workspace-nova-launch/runtime',
       WorkspaceExecutionPage,
-      '/workspaces/:workspaceId/execution',
+      '/workspaces/:workspaceId/runtime',
     )
 
-    expect(wrapper.text()).toContain('任务编排')
+    expect(wrapper.text()).toContain('工作环境')
     expect(wrapper.text()).toContain('评论区线索提取')
-    expect(wrapper.text()).toContain('运行日志')
+    expect(wrapper.text()).toContain('实时执行日志')
+    expect(wrapper.text()).toContain('任务干预')
   })
 
   it('keeps shell context and supports sidebar collapse on child pages', async () => {
@@ -109,16 +125,44 @@ describe('frontend workflows', () => {
           component: AppShell,
           children: [
             {
-              path: 'agents/openclaw',
+              path: 'console',
+              component: { template: '<div>console home</div>' },
+            },
+            {
+              path: 'assets',
+              component: { template: '<div>assets home</div>' },
+            },
+            {
+              path: 'strategies',
+              component: { template: '<div>strategies home</div>' },
+            },
+            {
+              path: 'accounts',
+              component: { template: '<div>accounts home</div>' },
+            },
+            {
+              path: 'workspaces',
+              component: { template: '<div>workspaces home</div>' },
+            },
+            {
+              path: 'workspaces/new',
+              component: { template: '<div>workspace create</div>' },
+            },
+            {
+              path: 'console/openclaw',
               component: { template: '<div>openclaw child</div>' },
-              meta: { moduleTitle: 'Agent' },
+              meta: {
+                moduleTitle: 'Agent',
+                shellSectionTitle: '节点控制',
+                shellNavKey: 'console',
+              },
             },
           ],
         },
       ],
     })
 
-    await router.push('/agents/openclaw')
+    await router.push('/console/openclaw')
     await router.isReady()
 
     const wrapper = mount(AppShell, {
@@ -129,8 +173,8 @@ describe('frontend workflows', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Agent / 节点控制')
-    expect(wrapper.text()).toContain('系统设置')
+    expect(wrapper.text()).toContain('Agent / CyberNomads')
+    expect(wrapper.text()).toContain('节点控制')
     expect(wrapper.find('.app-shell').classes()).not.toContain('app-shell--collapsed')
 
     await wrapper.get('.app-shell__collapse').trigger('click')
@@ -163,17 +207,22 @@ describe('frontend workflows', () => {
     setMockScenario('setup')
     resetMockRuntime()
 
-    const { wrapper, router } = await mountWithRouter('/agents/openclaw', OpenClawConfigPage, '/agents/openclaw', [
-      { path: '/agents', component: { template: '<div>agents overview</div>' } },
+    const { wrapper, router } = await mountWithRouter('/console/openclaw', OpenClawConfigPage, '/console/openclaw', [
+      { path: '/console', component: { template: '<div>console overview</div>' } },
     ])
 
     const inputs = wrapper.findAll('input[type="text"]')
     await inputs[0]!.setValue('/srv/openclaw')
     await inputs[1]!.setValue('wss://edge.cybernomads.local:7443')
-    await wrapper.get('button').trigger('click')
+    const saveButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('保存配置'))
+
+    expect(saveButton).toBeTruthy()
+    await saveButton!.trigger('click')
     await flushPromises()
 
-    expect(router.currentRoute.value.fullPath).toBe('/agents')
+    expect(router.currentRoute.value.fullPath).toBe('/console')
 
     const nodes = await listAgentNodes()
     expect(nodes[0]?.config?.installPath).toBe('/srv/openclaw')
@@ -193,19 +242,19 @@ describe('frontend workflows', () => {
       `/workspaces/${workspace!.id}/tasks/${task!.id}/intervention`,
       TaskInterventionPage,
       '/workspaces/:workspaceId/tasks/:taskId/intervention',
-      [{ path: '/workspaces/:workspaceId/execution', component: { template: '<div>execution</div>' } }],
+      [{ path: '/workspaces/:workspaceId/runtime', component: { template: '<div>runtime</div>' } }],
     )
 
     await wrapper.get('textarea').setValue('# 干预\n\n请先汇总再继续发送。')
     const submitButton = wrapper
       .findAll('button')
-      .find((button) => button.text().includes('Save & Resume'))
+      .find((button) => button.text().includes('保存并恢复执行'))
 
     expect(submitButton).toBeTruthy()
     await submitButton!.trigger('click')
     await flushPromises()
 
-    expect(router.currentRoute.value.fullPath).toBe(`/workspaces/${workspace!.id}/execution`)
+    expect(router.currentRoute.value.fullPath).toBe(`/workspaces/${workspace!.id}/runtime`)
 
     const context = await getInterventionContext(workspace!.id, task!.id)
     expect(context?.records[0]?.command).toContain('请先汇总再继续发送')

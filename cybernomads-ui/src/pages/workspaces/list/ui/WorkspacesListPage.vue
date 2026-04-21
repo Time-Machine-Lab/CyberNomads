@@ -20,14 +20,14 @@ const accounts = ref<AccountRecord[]>([])
 const agentNodes = ref<AgentNodeRecord[]>([])
 
 const hasActiveAgent = computed(() => agentNodes.value.some((node) => node.status === 'active'))
-const hasConnectedAccount = computed(() => accounts.value.some((account) => account.status === 'connected'))
+const hasConnectedAccount = computed(() => accounts.value.some((account) => account.isConsumable))
 
 async function loadPage() {
   ;[workspaces.value, assets.value, strategies.value, accounts.value, agentNodes.value] = await Promise.all([
     listWorkspaces(),
     listAssets(),
     listStrategies(),
-    listAccounts(),
+    listAccounts({ source: 'mock' }),
     listAgentNodes(),
   ])
 }

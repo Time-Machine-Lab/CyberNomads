@@ -1,27 +1,205 @@
-import type { AccountRecord, AccountStatus } from '@/entities/account/model/types'
+import {
+  mapAccountDetailDtoToRecord,
+  mapAccountSummaryDtoToRecord,
+  mapLegacyMockAccountToDetailRecord,
+  mapLegacyMockAccountToRecord,
+} from '@/entities/account/model/mappers'
+import type {
+  AccountDetailDto,
+  AccountDetailRecord,
+  AccountRecord,
+  AccountStatus,
+  AuthorizationAttemptSummary,
+  AvailabilityCheckResultDto,
+  ListAccountsQuery,
+  ListAccountsResultDto,
+  StartAuthorizationAttemptInput,
+  UpdateAccountInput,
+  VerifyAuthorizationAttemptInput,
+  VerifyAuthorizationAttemptResponseDto,
+} from '@/entities/account/model/types'
+import { HttpClientError, requestJson } from '@/shared/api/http-client'
 import { env } from '@/shared/config/env'
 import { getAccountData, listAccountsData, updateAccountStatusData } from '@/shared/mocks/runtime'
 
-function assertMockOnly() {
-  if (!env.useMockApi) {
-    throw new Error('Real account APIs are not wired yet. Enable mock mode to continue.')
+type AccountDataSource = 'mock' | 'real'
+
+export interface AccountRequestOptions {
+  source?: AccountDataSource
+}
+
+export interface ListAccountsOptions extends ListAccountsQuery {
+  source?: AccountDataSource
+}
+
+const ACCOUNT_API_ROOT = '/accounts'
+
+export function isRealAccountApiEnabled() {
+  return env.useRealAccountApi
+}
+
+function resolveSource(source?: AccountDataSource): AccountDataSource {
+  return source ?? (env.useRealAccountApi ? 'real' : 'mock')
+}
+
+function assertRealAccountApi(source: AccountDataSource) {
+  if (source === 'real') {
+    return
+  }
+
+  throw new Error('当前未启用账号模块真实后端，请开启 VITE_USE_REAL_ACCOUNT_API 后重试。')
+}
+
+export async function listAccounts(options: ListAccountsOptions = {}): Promise<AccountRecord[]> {
+  const source = resolveSource(options.source)
+
+  if (source === 'mock') {
+    return listAccountsData().map(mapLegacyMockAccountToRecord)
+  }
+
+  const { source: _source, ...query } = options
+  const result = await requestJson<ListAccountsResultDto>(ACCOUNT_API_ROOT, {
+    query,
+  })
+
+  return result.items.map(mapAccountSummaryDtoToRecord)
+}
+
+export async function getAccountById(
+  id: string,
+  options: AccountRequestOptions = {},
+): Promise<AccountDetailRecord | null> {
+  const source = resolveSource(options.source)
+
+  if (source === 'mock') {
+    const mockAccount = getAccountData(id)
+    return mockAccount ? mapLegacyMockAccountToDetailRecord(mockAccount) : null
+  }
+
+  try {
+    const dto = await requestJson<AccountDetailDto>(`${ACCOUNT_API_ROOT}/${encodeURIComponent(id)}`)
+    return mapAccountDetailDtoToRecord(dto)
+  } catch (error) {
+    if (error instanceof HttpClientError && error.status === 404) {
+      return null
+    }
+
+    throw error
   }
 }
 
-export async function listAccounts(): Promise<AccountRecord[]> {
-  assertMockOnly()
-  return listAccountsData()
+export async function updateAccount(
+  id: string,
+  input: UpdateAccountInput,
+  options: AccountRequestOptions = {},
+): Promise<AccountDetailRecord> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  const dto = await requestJson<AccountDetailDto>(`${ACCOUNT_API_ROOT}/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: input,
+  })
+
+  return mapAccountDetailDtoToRecord(dto)
 }
 
-export async function getAccountById(id: string): Promise<AccountRecord | null> {
-  assertMockOnly()
-  return getAccountData(id)
+export async function deleteAccount(
+  id: string,
+  options: AccountRequestOptions = {},
+): Promise<AccountDetailRecord> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  const dto = await requestJson<AccountDetailDto>(`${ACCOUNT_API_ROOT}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+
+  return mapAccountDetailDtoToRecord(dto)
 }
 
+export async function restoreAccount(
+  id: string,
+  options: AccountRequestOptions = {},
+): Promise<AccountDetailRecord> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  const dto = await requestJson<AccountDetailDto>(`${ACCOUNT_API_ROOT}/${encodeURIComponent(id)}/restore`, {
+    method: 'POST',
+  })
+
+  return mapAccountDetailDtoToRecord(dto)
+}
+
+export async function startAuthorizationAttempt(
+  accountId: string,
+  input: StartAuthorizationAttemptInput,
+  options: AccountRequestOptions = {},
+): Promise<AuthorizationAttemptSummary> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  return requestJson<AuthorizationAttemptSummary>(
+    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/authorization-attempts`,
+    {
+      method: 'POST',
+      body: input,
+    },
+  )
+}
+
+export async function verifyAuthorizationAttempt(
+  accountId: string,
+  attemptId: string,
+  input: VerifyAuthorizationAttemptInput,
+  options: AccountRequestOptions = {},
+): Promise<VerifyAuthorizationAttemptResponseDto> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  return requestJson<VerifyAuthorizationAttemptResponseDto>(
+    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/authorization-attempts/${encodeURIComponent(attemptId)}/verify`,
+    {
+      method: 'POST',
+      body: input,
+    },
+  )
+}
+
+export async function runAvailabilityCheck(
+  accountId: string,
+  options: AccountRequestOptions = {},
+): Promise<AvailabilityCheckResultDto> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  return requestJson<AvailabilityCheckResultDto>(
+    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/availability-checks`,
+    {
+      method: 'POST',
+    },
+  )
+}
+
+// 兼容旧的 mock 页面动作，真实后端不再支持直接改状态。
 export async function updateAccountStatus(
   id: string,
   status: AccountStatus,
-): Promise<AccountRecord | null> {
-  assertMockOnly()
-  return updateAccountStatusData(id, status)
+  options: AccountRequestOptions = {},
+): Promise<AccountDetailRecord | null> {
+  const source = resolveSource(options.source)
+
+  if (source === 'real') {
+    throw new Error('Legacy updateAccountStatus 已废弃，请改用授权验证或可用性检查接口。')
+  }
+
+  const account = updateAccountStatusData(id, status)
+  return account ? mapLegacyMockAccountToDetailRecord(account) : null
 }

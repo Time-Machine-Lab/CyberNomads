@@ -13,7 +13,7 @@ export class HttpClientError extends Error {
 }
 
 export interface RequestJsonOptions extends Omit<RequestInit, 'body'> {
-  body?: BodyInit | null | Record<string, unknown>
+  body?: BodyInit | null | object
   query?: Record<string, string | number | boolean | null | undefined>
 }
 
@@ -54,16 +54,22 @@ function normalizeBody(body: RequestJsonOptions['body']) {
 
 export async function requestJson<T>(path: string, options: RequestJsonOptions = {}) {
   const { body, headers, query, ...rest } = options
+  const requestHeaders = new Headers(headers)
+
+  if (
+    body &&
+    !(body instanceof FormData) &&
+    !(body instanceof URLSearchParams) &&
+    typeof body !== 'string' &&
+    !requestHeaders.has('Content-Type')
+  ) {
+    requestHeaders.set('Content-Type', 'application/json')
+  }
+
   const response = await fetch(createUrl(path, query), {
     ...rest,
     body: normalizeBody(body),
-    headers: {
-      'Content-Type':
-        body && !(body instanceof FormData) && !(body instanceof URLSearchParams)
-          ? 'application/json'
-          : '',
-      ...headers,
-    },
+    headers: requestHeaders,
   })
 
   const contentType = response.headers.get('content-type') ?? ''

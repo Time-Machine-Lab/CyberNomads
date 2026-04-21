@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-import type { AccountStatus, AccountRecord } from '@/entities/account/model/types'
+import type { AccountStatus, LegacyMockAccountRecord } from '@/entities/account/model/types'
 import type {
   AgentNodeConfigRecord,
   SaveOpenClawConfigInput,
@@ -29,7 +29,7 @@ export interface MockScenarioOption {
 interface MockDatabase {
   assets: AssetRecord[]
   strategies: StrategyRecord[]
-  accounts: AccountRecord[]
+  accounts: LegacyMockAccountRecord[]
   agentNodes: AgentNodeRecord[]
   workspaces: WorkspaceRecord[]
   taskRuns: TaskRunRecord[]
@@ -197,7 +197,7 @@ function createBaseStrategies(): StrategyRecord[] {
   ]
 }
 
-function createBaseAccounts(statusMap?: Partial<Record<string, AccountStatus>>): AccountRecord[] {
+function createBaseAccounts(statusMap?: Partial<Record<string, AccountStatus>>): LegacyMockAccountRecord[] {
   const statusFor = (id: string, fallback: AccountStatus) => statusMap?.[id] ?? fallback
 
   return [
