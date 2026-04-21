@@ -2,6 +2,8 @@ import { createServer, type Server } from "node:http";
 
 import { createAgentAccessController } from "../modules/agent-access/controller.js";
 import type { AgentAccessService } from "../modules/agent-access/service.js";
+import { createAccountsController } from "../modules/accounts/controller.js";
+import type { AccountService } from "../modules/accounts/service.js";
 import {
   createProductsController,
   handleControllerError,
@@ -14,6 +16,7 @@ const DEFAULT_PORT = 3000;
 
 export interface StartHttpServerOptions {
   productService: ProductService;
+  accountService: AccountService;
   agentAccessService: AgentAccessService;
   host?: string;
   port?: number;
@@ -34,13 +37,18 @@ export async function startHttpServer(
   const handleProductsRequest = createProductsController(
     options.productService,
   );
+  const handleAccountsRequest = createAccountsController(options.accountService);
   const handleAgentAccessRequest = createAgentAccessController(
     options.agentAccessService,
   );
 
   const server = createServer(async (request, response) => {
     try {
-      const handlers = [handleAgentAccessRequest, handleProductsRequest];
+      const handlers = [
+        handleAgentAccessRequest,
+        handleAccountsRequest,
+        handleProductsRequest,
+      ];
       let handled = false;
 
       for (const handleRequest of handlers) {
