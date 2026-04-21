@@ -4,6 +4,18 @@
 
 ## Startup
 
+后端当前依赖 Node 22 的内置 `node:sqlite`。如果你本机默认版本不是 Node 22，请先切到仓库根目录并执行：
+
+```bash
+nvm use
+```
+
+如果本机没有安装 `nvm`，也可以临时用：
+
+```bash
+npx -y node@22 -v
+```
+
 ```bash
 npm install
 npm run dev

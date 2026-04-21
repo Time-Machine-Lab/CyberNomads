@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Cybernomads backend scaffold initialized from architecture and backend development specifications.",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

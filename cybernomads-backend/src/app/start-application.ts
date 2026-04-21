@@ -7,13 +7,16 @@ import { BilibiliStubAccountPlatformAdapter } from "../adapters/platform/bilibil
 import { FileSystemAccountSecretStore } from "../adapters/storage/file-system/account-secret-store.js";
 import { FileSystemAgentServiceCredentialStore } from "../adapters/storage/file-system/agent-service-credential-store.js";
 import { FileSystemProductContentStore } from "../adapters/storage/file-system/product-content-store.js";
+import { FileSystemStrategyContentStore } from "../adapters/storage/file-system/strategy-content-store.js";
 import { OpenClawAgentProvider } from "../adapters/agent/openclaw/openclaw-adapter.js";
 import { SqliteAccountsRepository } from "../adapters/storage/sqlite/accounts-sqlite-repository.js";
 import { SqliteAgentServiceStateRepository } from "../adapters/storage/sqlite/agent-services-sqlite-repository.js";
 import { SqliteProductRepository } from "../adapters/storage/sqlite/products-sqlite-repository.js";
+import { SqliteStrategyRepository } from "../adapters/storage/sqlite/strategies-sqlite-repository.js";
 import { AgentAccessService } from "../modules/agent-access/service.js";
 import { AccountService } from "../modules/accounts/service.js";
 import { ProductService } from "../modules/products/service.js";
+import { StrategyService } from "../modules/strategies/service.js";
 import type { AccountPlatformPort } from "../ports/account-platform-port.js";
 import type { AgentProviderPort } from "../ports/agent-provider-port.js";
 import {
@@ -43,6 +46,9 @@ export async function startApplication(
   const productRepository = new SqliteProductRepository(
     runtime.paths.databaseFile,
   );
+  const strategyRepository = new SqliteStrategyRepository(
+    runtime.paths.databaseFile,
+  );
   const accountRepository = new SqliteAccountsRepository(
     runtime.paths.databaseFile,
   );
@@ -51,6 +57,9 @@ export async function startApplication(
   );
   const productContentStore = new FileSystemProductContentStore(
     runtime.paths.productDirectory,
+  );
+  const strategyContentStore = new FileSystemStrategyContentStore(
+    runtime.paths.strategyDirectory,
   );
   const accountSecretStore = new FileSystemAccountSecretStore(
     runtime.paths.runtimeRoot,
@@ -61,6 +70,10 @@ export async function startApplication(
   const productService = new ProductService({
     metadataStore: productRepository,
     contentStore: productContentStore,
+  });
+  const strategyService = new StrategyService({
+    metadataStore: strategyRepository,
+    contentStore: strategyContentStore,
   });
   const accountService = new AccountService({
     stateStore: accountRepository,
@@ -79,6 +92,7 @@ export async function startApplication(
   try {
     const http = await startHttpServer({
       productService,
+      strategyService,
       accountService,
       agentAccessService,
       host: options.host,
@@ -92,12 +106,14 @@ export async function startApplication(
       async close() {
         await stopHttpServer(http.server);
         productService.close();
+        strategyService.close();
         accountService.close();
         agentAccessService.close();
       },
     };
   } catch (error) {
     productService.close();
+    strategyService.close();
     accountService.close();
     agentAccessService.close();
     throw error;

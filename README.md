@@ -61,7 +61,10 @@ flowchart LR
 ### 1. 环境要求
 
 - [Git](https://git-scm.com/) >= 2.30
+- [Node.js](https://nodejs.org/) >= 22
 - Markdown 阅读工具或 GitHub 网页界面
+
+> 当前仓库后端已经使用内置 `node:sqlite`，本地开发与测试请直接使用 Node 22。仓库根目录已提供 `.nvmrc` 和 `.node-version`。
 
 ### 2. 安装
 

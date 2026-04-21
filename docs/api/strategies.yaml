@@ -27,15 +27,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateStrategyRequest'
+              $ref: "#/components/schemas/CreateStrategyRequest"
       responses:
-        '201':
+        "201":
           description: 创建成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StrategyDetail'
-        '400':
+                $ref: "#/components/schemas/StrategyDetail"
+        "400":
           description: 请求参数不合法
     get:
       tags:
@@ -46,7 +46,7 @@ paths:
         以避免把详情视图职责混入列表接口。
       operationId: listStrategies
       responses:
-        '200':
+        "200":
           description: 查询成功
           content:
             application/json:
@@ -58,28 +58,28 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: '#/components/schemas/StrategySummary'
+                      $ref: "#/components/schemas/StrategySummary"
 
   /api/strategies/{strategyId}:
     parameters:
-      - $ref: '#/components/parameters/StrategyId'
+      - $ref: "#/components/parameters/StrategyId"
     get:
       tags:
         - Strategies
       summary: 查询策略详情
       description: >
         返回策略完整详情，其中 `contentMarkdown` 为完整 Markdown 正文。
-        详情同时返回标签和从正文解析得到的占位符集合，但不额外返回导入来源列表；
+        详情同时返回标签和从正文解析得到的参数占位符集合，但不额外返回导入来源列表；
         快照导入来源继续通过正文中的注释标记承载。
       operationId: getStrategyDetail
       responses:
-        '200':
+        "200":
           description: 查询成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StrategyDetail'
-        '404':
+                $ref: "#/components/schemas/StrategyDetail"
+        "404":
           description: 策略不存在
     put:
       tags:
@@ -94,17 +94,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateStrategyRequest'
+              $ref: "#/components/schemas/UpdateStrategyRequest"
       responses:
-        '200':
+        "200":
           description: 更新成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StrategyDetail'
-        '400':
+                $ref: "#/components/schemas/StrategyDetail"
+        "400":
           description: 请求参数不合法
-        '404':
+        "404":
           description: 策略不存在
 
 components:
@@ -142,7 +142,7 @@ components:
           type: string
           description: >
             策略完整 Markdown 正文。运行时应将其持久化为由 `content_ref`
-            关联的正文内容。整篇快照插入来源标记与对象占位符也保留在这份正文中。
+            关联的正文内容。整篇快照插入来源标记与参数占位符也保留在这份正文中。
           minLength: 1
 
     UpdateStrategyRequest:
@@ -204,18 +204,30 @@ components:
     StrategyPlaceholder:
       type: object
       description: >
-        从策略正文解析得到的对象占位符。
-        当前契约固定正文规范语法为 `{{objectType:objectKey}}`。
+        从策略正文解析得到的参数占位符声明。
+        当前契约固定正文规范语法为 `{{string:title="默认标题"}}`、
+        `{{string:cta_text=""}}` 或 `{{int:max_retry=3}}`。
       required:
-        - objectType
-        - objectKey
+        - type
+        - key
+        - defaultValue
       properties:
-        objectType:
+        type:
           type: string
-          description: 占位符中的对象类型，例如 `account`、`asset`、`product`
-        objectKey:
+          enum:
+            - string
+            - int
+          description: 参数占位符类型。当前仅支持 `string` 与 `int`
+        key:
           type: string
-          description: 占位符中的对象稳定键，不依赖展示名
+          description: 参数稳定键，用于标识正文中的可填写字段
+        defaultValue:
+          oneOf:
+            - type: string
+            - type: integer
+          description: >
+            参数默认值。`string` 类型必须提供字符串默认值，可为空字符串；
+            `int` 类型必须提供整数默认值。
 
     StrategyDetail:
       type: object
@@ -251,12 +263,15 @@ components:
           type: string
           description: >
             策略完整 Markdown 正文。运行时通过 SQL 契约中的 `content_ref`
-            关联并装配得到；导入块标记与占位符语法同样保留在这份正文中。
+            关联并装配得到；导入块标记与参数占位符语法同样保留在这份正文中。
         placeholders:
           type: array
-          description: 从正文解析得到的对象占位符集合。
+          description: >
+            从正文解析得到的参数占位符声明集合。
+            当前阶段仅返回 `type`、`key` 和 `defaultValue`，
+            不返回位置信息，也不返回运行时填充值。
           items:
-            $ref: '#/components/schemas/StrategyPlaceholder'
+            $ref: "#/components/schemas/StrategyPlaceholder"
         createdAt:
           type: string
           format: date-time
