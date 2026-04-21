@@ -14,7 +14,10 @@ import { OpenClawAgentProvider } from "../adapters/agent/openclaw/openclaw-adapt
 import { SqliteAccountsRepository } from "../adapters/storage/sqlite/accounts-sqlite-repository.js";
 import { SqliteAgentServiceStateRepository } from "../adapters/storage/sqlite/agent-services-sqlite-repository.js";
 import { SqliteProductRepository } from "../adapters/storage/sqlite/products-sqlite-repository.js";
-import { SqliteStrategyReferenceRepository } from "../adapters/storage/sqlite/strategies-sqlite-repository.js";
+import {
+  SqliteStrategyReferenceRepository,
+  SqliteStrategyRepository,
+} from "../adapters/storage/sqlite/strategies-sqlite-repository.js";
 import { SqliteTrafficWorkRepository } from "../adapters/storage/sqlite/traffic-works-sqlite-repository.js";
 import { AgentAccessService } from "../modules/agent-access/service.js";
 import { AccountService } from "../modules/accounts/service.js";
