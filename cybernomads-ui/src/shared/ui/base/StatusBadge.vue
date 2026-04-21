@@ -43,13 +43,14 @@ const className = computed(() =>
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  min-height: 1.95rem;
-  padding: 0.25rem 0.75rem;
+  min-height: 1.8rem;
+  padding: 0.2rem 0.7rem;
   border-radius: var(--cn-radius-pill);
-  background: rgb(255 255 255 / 0.05);
-  color: var(--cn-on-surface-soft);
+  background: var(--cn-surface-container-low);
+  color: var(--cn-on-surface-muted);
   box-shadow: inset 0 0 0 1px var(--cn-outline-ghost);
-  font-size: 0.82rem;
+  font-family: var(--cn-font-body);
+  font-size: 0.76rem;
   font-weight: 600;
 }
 

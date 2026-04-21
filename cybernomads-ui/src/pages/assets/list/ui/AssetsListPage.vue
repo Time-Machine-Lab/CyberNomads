@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 import { listAssets } from '@/entities/asset/api/asset-service'
 import type { AssetRecord } from '@/entities/asset/model/types'
@@ -17,6 +18,7 @@ interface AssetDisplayCard extends AssetRecord {
 
 const assets = ref<AssetRecord[]>([])
 const activeFilter = ref('全部')
+const router = useRouter()
 
 const filters = ['全部', 'SEO优化', '病毒传播', '社群增长', '长图文', '短视频'] as const
 
@@ -91,6 +93,10 @@ const filteredAssets = computed(() => {
     [asset.primaryCategory, ...asset.displayTags].includes(activeFilter.value),
   )
 })
+
+const openAssetEditor = (assetId: string) => {
+  void router.push(`/assets/${assetId}/edit`)
+}
 </script>
 
 <template>
@@ -126,6 +132,12 @@ const filteredAssets = computed(() => {
           v-for="asset in filteredAssets"
           :key="asset.id"
           class="asset-card"
+          tabindex="0"
+          role="link"
+          :aria-label="`打开 ${asset.displayName}`"
+          @click="openAssetEditor(asset.id)"
+          @keydown.enter.prevent="openAssetEditor(asset.id)"
+          @keydown.space.prevent="openAssetEditor(asset.id)"
         >
           <div class="asset-card__halo" />
 
@@ -153,9 +165,9 @@ const filteredAssets = computed(() => {
               </div>
             </div>
 
-            <button type="button" class="asset-card__more" aria-label="更多操作">
+            <span class="asset-card__more" aria-hidden="true">
               <span class="material-symbols-outlined">more_vert</span>
-            </button>
+            </span>
           </div>
 
           <p class="asset-card__summary">{{ asset.displaySummary }}</p>
@@ -165,11 +177,6 @@ const filteredAssets = computed(() => {
               <span class="material-symbols-outlined">calendar_today</span>
               <span>创建于: {{ asset.displayDate }}</span>
             </div>
-
-            <RouterLink :to="`/assets/${asset.id}/edit`" class="asset-card__edit">
-              <span class="material-symbols-outlined">edit</span>
-              <span>编辑</span>
-            </RouterLink>
           </div>
         </article>
       </section>
@@ -185,7 +192,9 @@ const filteredAssets = computed(() => {
 }
 
 .assets-canvas {
-  padding: 2.9rem 2.25rem 4rem;
+  width: min(100%, 100rem);
+  margin: 0 auto;
+  padding: 2.3rem 2rem 3.4rem;
 }
 
 .assets-header {
@@ -217,16 +226,16 @@ const filteredAssets = computed(() => {
 
 .assets-header__action {
   display: inline-flex;
-  gap: 0.55rem;
+  gap: 0.5rem;
   align-items: center;
-  min-height: 3rem;
-  padding: 0 1.05rem;
-  border-radius: 0.7rem;
-  border: 1px solid rgb(72 72 71 / 0.2);
+  min-height: 2.8rem;
+  padding: 0 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(72 72 71 / 0.16);
   color: #8ff5ff;
   background: #1a1919;
   font-family: var(--cn-font-display);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 600;
   transition:
     border-color var(--cn-transition),
@@ -235,30 +244,33 @@ const filteredAssets = computed(() => {
 }
 
 .assets-header__action:hover {
-  border-color: rgb(143 245 255 / 0.28);
+  border-color: rgb(72 72 71 / 0.22);
   background: #201f1f;
 }
 
 .assets-filters {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  padding: 0.55rem;
-  margin-bottom: 1.35rem;
-  border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.85rem;
+  gap: 0.45rem;
+  padding: 0.45rem;
+  margin-bottom: 2rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 1rem;
   background: #131313;
 }
 
 .assets-filters__button {
-  min-height: 2.45rem;
-  padding: 0 0.95rem;
-  border-radius: 0.6rem;
+  min-height: 2.35rem;
+  padding: 0 1rem;
+  border-radius: 0.5rem;
   color: #adaaaa;
-  font-size: 0.83rem;
-  font-weight: 600;
+  font-family: var(--cn-font-body);
+  font-size: 0.82rem;
+  font-weight: 500;
   background: transparent;
+  border: 1px solid transparent;
   transition:
+    border-color var(--cn-transition),
     background-color var(--cn-transition),
     color var(--cn-transition);
 }
@@ -270,13 +282,14 @@ const filteredAssets = computed(() => {
 
 .assets-filters__button--active {
   color: #8ff5ff;
+  border-color: rgb(72 72 71 / 0.18);
   background: #262626;
 }
 
 .assets-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .asset-card {
@@ -284,21 +297,23 @@ const filteredAssets = computed(() => {
   display: flex;
   flex-direction: column;
   min-height: 15rem;
-  padding: 1.55rem;
+  padding: 1.6rem;
   overflow: hidden;
+  cursor: pointer;
   border: 1px solid rgb(72 72 71 / 0.2);
   border-radius: 1rem;
   background: #1a1919;
+  box-shadow: var(--cn-shadow-ambient);
   transition:
     border-color var(--cn-transition),
-    transform var(--cn-transition),
-    box-shadow var(--cn-transition);
+    box-shadow var(--cn-transition),
+    background-color var(--cn-transition);
 }
 
-.asset-card:hover {
-  transform: translateY(-2px);
+.asset-card:hover,
+.asset-card:focus-visible {
   border-color: rgb(143 245 255 / 0.3);
-  box-shadow: 0 0 18px rgb(143 245 255 / 0.08);
+  outline: 0;
 }
 
 .asset-card__halo {
@@ -317,8 +332,7 @@ const filteredAssets = computed(() => {
 .asset-card__top,
 .asset-card__identity,
 .asset-card__footer,
-.asset-card__meta,
-.asset-card__edit {
+.asset-card__meta {
   display: flex;
   align-items: flex-start;
 }
@@ -336,12 +350,13 @@ const filteredAssets = computed(() => {
 .asset-card__icon {
   display: grid;
   place-items: center;
-  width: 2.55rem;
-  height: 2.55rem;
+  width: 3rem;
+  height: 3rem;
   flex-shrink: 0;
   border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.55rem;
+  border-radius: 0.7rem;
   background: #262626;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.015);
 }
 
 .asset-card__icon--primary {
@@ -357,27 +372,29 @@ const filteredAssets = computed(() => {
 }
 
 .asset-card h2 {
-  font-size: 1.35rem;
+  font-size: 1.05rem;
   line-height: 1.2;
 }
 
 .asset-card__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.55rem;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
 }
 
 .asset-card__chip {
   display: inline-flex;
   align-items: center;
-  min-height: 1.45rem;
-  padding: 0 0.45rem;
-  border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.32rem;
+  min-height: 1.4rem;
+  padding: 0 0.48rem;
+  border: 1px solid rgb(72 72 71 / 0.16);
+  border-radius: 0.3rem;
   color: #adaaaa;
-  background: #131313;
-  font-size: 0.69rem;
+  background: #151515;
+  font-family: var(--cn-font-body);
+  font-size: 0.7rem;
+  line-height: 1;
 }
 
 .asset-card__chip--primary {
@@ -396,15 +413,34 @@ const filteredAssets = computed(() => {
 }
 
 .asset-card__more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  flex-shrink: 0;
+  padding-top: 0.1rem;
   color: #adaaaa;
+  background: transparent;
+  border-radius: 0;
+}
+
+.asset-card__more .material-symbols-outlined {
+  font-size: 1.2rem;
+  line-height: 1;
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 20;
 }
 
 .asset-card__summary {
   flex: 1;
-  margin: 1.2rem 0 1.5rem;
+  margin: 1.35rem 0 1.6rem;
   color: #adaaaa;
-  font-size: 0.9rem;
-  line-height: 1.72;
+  font-size: 0.88rem;
+  line-height: 1.78;
 }
 
 .asset-card__footer {
@@ -412,21 +448,12 @@ const filteredAssets = computed(() => {
   border-top: 1px solid rgb(72 72 71 / 0.2);
 }
 
-.asset-card__meta,
-.asset-card__edit {
+.asset-card__meta {
   gap: 0.38rem;
   color: #adaaaa;
-  font-size: 0.76rem;
-}
-
-.asset-card__edit {
   align-items: center;
-  color: #adaaaa;
-  transition: color var(--cn-transition);
-}
-
-.asset-card__edit:hover {
-  color: #8ff5ff;
+  font-family: var(--cn-font-body);
+  font-size: 0.72rem;
 }
 
 @media (max-width: 1200px) {

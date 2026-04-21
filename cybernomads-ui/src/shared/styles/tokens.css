@@ -1,23 +1,23 @@
 :root {
   color-scheme: dark;
-  --cn-font-display: 'Space Grotesk', 'Inter', 'Segoe UI', sans-serif;
-  --cn-font-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --cn-font-display: 'Space Grotesk', sans-serif;
+  --cn-font-body: 'Inter', sans-serif;
   --cn-font-mono: 'SFMono-Regular', 'Cascadia Code', 'JetBrains Mono', monospace;
 
   --cn-surface: #0e0e0e;
-  --cn-surface-dim: #090909;
-  --cn-surface-grid: #101111;
+  --cn-surface-dim: #0e0e0e;
+  --cn-surface-grid: #101010;
   --cn-surface-container-low: #131313;
   --cn-surface-container: #1a1919;
   --cn-surface-container-high: #201f1f;
   --cn-surface-container-highest: #262626;
-  --cn-surface-float: rgb(18 18 18 / 0.78);
-  --cn-surface-glass: rgb(19 19 19 / 0.72);
+  --cn-surface-float: rgb(14 14 14 / 0.8);
+  --cn-surface-glass: rgb(26 25 25 / 0.6);
 
-  --cn-on-surface: #f3f7f8;
-  --cn-on-surface-soft: #c5c9cb;
+  --cn-on-surface: #ffffff;
+  --cn-on-surface-soft: #e4e7e8;
   --cn-on-surface-muted: #adaaaa;
-  --cn-on-surface-faint: #7d7b7b;
+  --cn-on-surface-faint: #767575;
 
   --cn-primary: #8ff5ff;
   --cn-primary-container: #00eefc;
@@ -33,12 +33,12 @@
   --cn-success: #c3f400;
 
   --cn-outline-ghost: rgb(72 72 71 / 0.2);
-  --cn-outline-soft: rgb(118 117 117 / 0.24);
-  --cn-outline-strong: rgb(143 245 255 / 0.26);
+  --cn-outline-soft: rgb(72 72 71 / 0.3);
+  --cn-outline-strong: rgb(143 245 255 / 0.3);
   --cn-shadow-ambient: 0 24px 48px rgb(0 0 0 / 0.5);
   --cn-shadow-soft: 0 18px 40px rgb(0 0 0 / 0.28);
-  --cn-shadow-glow: 0 0 24px rgb(143 245 255 / 0.22);
-  --cn-shadow-neon: 0 0 36px rgb(0 238 252 / 0.2);
+  --cn-shadow-glow: 0 0 20px rgb(143 245 255 / 0.16);
+  --cn-shadow-neon: 0 0 24px rgb(0 238 252 / 0.12);
 
   --cn-radius-sm: 0.25rem;
   --cn-radius-md: 0.5rem;

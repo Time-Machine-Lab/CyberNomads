@@ -6,6 +6,7 @@ import type {
   SaveOpenClawConfigInput,
   AgentNodeRecord,
 } from '@/entities/agent/model/types'
+import type { ConsoleOverviewRecord, ConsoleSetupState } from '@/entities/console/model/types'
 import type { AssetAttachmentRecord, AssetRecord, SaveAssetInput } from '@/entities/asset/model/types'
 import type { InterventionRecord } from '@/entities/intervention-record/model/types'
 import type { ExecutionLogEntry, TaskRunRecord } from '@/entities/task-run/model/types'
@@ -331,6 +332,47 @@ function createMissingAgent(): AgentNodeRecord {
     latencyMs: 0,
     config: createOpenClawConfig('offline'),
   }
+}
+
+function createConsoleCandidateAgents(): AgentNodeRecord[] {
+  return [
+    {
+      id: 'agent-openclaw-setup',
+      name: 'OpenClaw',
+      type: 'openclaw',
+      endpoint: '',
+      status: 'missing',
+      capabilityStatus: 'missing',
+      notes: '专为高精度自主操作和复杂系统集成而设计。具有卓越的多步推理能力。',
+      roleLabel: '推荐',
+      badgeLabel: '推荐',
+      config: createOpenClawConfig('offline'),
+    },
+    {
+      id: 'agent-codex-setup',
+      name: 'Codex Agent',
+      type: 'codex',
+      endpoint: '',
+      status: 'idle',
+      capabilityStatus: 'pending',
+      notes: '优化的代码生成和协议分析引擎。适用于深度系统调试和自动化脚本编写。',
+      roleLabel: '待机',
+      versionLabel: 'v5.4',
+      latencyMs: 21,
+    },
+    {
+      id: 'agent-bridge-setup',
+      name: 'Claude/GPT Bridge',
+      type: 'bridge',
+      endpoint: '',
+      status: 'missing',
+      capabilityStatus: 'missing',
+      notes: '通用语言模型桥接器。提供灵活的自然语言处理和广泛的上下文理解能力。',
+      roleLabel: '离线',
+      versionLabel: 'bridge',
+      latencyMs: 0,
+    },
+  ]
 }
 
 function createBaseWorkspaces(
@@ -789,6 +831,22 @@ function normalizeScenario(value: string): MockScenarioId {
 export const mockScenarioId = ref<MockScenarioId>(normalizeScenario(env.mockScenario))
 
 let database = createScenarioDatabase(mockScenarioId.value)
+let consoleSetupState: ConsoleSetupState = 'unconfigured'
+let sessionOpenClawNode: AgentNodeRecord | null = null
+
+function getLiveAgentNodes() {
+  if (consoleSetupState === 'configured') {
+    const nodes = createActiveAgents(sessionOpenClawNode?.config?.diagnosticsStatus ?? 'connected')
+
+    if (sessionOpenClawNode) {
+      nodes[0] = clone(sessionOpenClawNode)
+    }
+
+    return nodes
+  }
+
+  return createConsoleCandidateAgents()
+}
 
 export function getMockScenarioOptions() {
   return scenarioOptions
@@ -801,10 +859,35 @@ export function setMockScenario(next: MockScenarioId) {
 
 export function resetMockRuntime() {
   database = createScenarioDatabase(mockScenarioId.value)
+  consoleSetupState = 'unconfigured'
+  sessionOpenClawNode = null
 }
 
 export function snapshotMockDatabase() {
   return clone(database)
+}
+
+export function getConsoleOverviewData(): ConsoleOverviewRecord {
+  const nodes = getLiveAgentNodes()
+
+  if (consoleSetupState === 'configured') {
+    return clone({
+      state: 'configured',
+      statusLabel: '在线',
+      statusTone: 'secondary',
+      description: '所有核心节点运行正常。准备执行调度。',
+      networkLatencyLabel: '网络延迟: 12ms',
+      nodes,
+    })
+  }
+
+  return clone({
+    state: 'unconfigured',
+    statusLabel: '未配置',
+    statusTone: 'error',
+    description: '神经架构目前处于待机状态。请配置并初始化一个代理节点以开始编排任务和处理数据流。',
+    nodes,
+  })
 }
 
 export function listAssetsData() {
@@ -906,11 +989,11 @@ export function updateAccountStatusData(id: string, status: AccountStatus) {
 }
 
 export function listAgentNodesData() {
-  return clone(database.agentNodes)
+  return clone(getLiveAgentNodes())
 }
 
 export function saveOpenClawConfigData(input: SaveOpenClawConfigInput) {
-  const existing = database.agentNodes.find((item) => item.type === 'openclaw')
+  const existing = sessionOpenClawNode ?? getLiveAgentNodes().find((item) => item.type === 'openclaw')
   const config: AgentNodeConfigRecord = {
     installPath: input.installPath ?? existing?.config?.installPath ?? '/opt/cybernomads/openclaw',
     gatewayUrl:
@@ -945,7 +1028,10 @@ export function saveOpenClawConfigData(input: SaveOpenClawConfigInput) {
     config,
   }
 
-  const index = database.agentNodes.findIndex((item) => item.id === record.id)
+  consoleSetupState = 'configured'
+  sessionOpenClawNode = clone(record)
+
+  const index = database.agentNodes.findIndex((item) => item.type === 'openclaw')
   if (index >= 0) {
     database.agentNodes[index] = record
   } else {

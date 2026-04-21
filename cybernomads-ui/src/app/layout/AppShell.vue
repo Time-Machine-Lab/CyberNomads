@@ -2,9 +2,9 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { referenceSidebarBrandUrl } from '@/shared/config/reference-ui'
+import cybernomadsMarkUrl from '@/shared/assets/branding/cybernomads-mark.svg'
 
-type ShellNavKey = 'workspaces' | 'assets' | 'strategies' | 'accounts' | 'agents'
+type ShellNavKey = 'console' | 'assets' | 'strategies' | 'accounts' | 'workspaces'
 
 const route = useRoute()
 const collapsed = ref(false)
@@ -15,39 +15,45 @@ const navItems: Array<{
   icon: string
   label: string
 }> = [
-  { key: 'workspaces', to: '/workspaces', icon: 'account_tree', label: '工作区' },
-  { key: 'assets', to: '/assets', icon: 'inventory_2', label: '资产库' },
+  { key: 'console', to: '/console', icon: 'dashboard', label: '控制台' },
+  { key: 'assets', to: '/assets', icon: 'inventory_2', label: '资产列表' },
   { key: 'strategies', to: '/strategies', icon: 'psychology', label: '策略库' },
-  { key: 'accounts', to: '/accounts', icon: 'group_work', label: '账号池' },
-  { key: 'agents', to: '/agents/openclaw', icon: 'settings_input_component', label: '节点控制' },
+  { key: 'accounts', to: '/accounts', icon: 'group', label: '账号池' },
+  { key: 'workspaces', to: '/workspaces', icon: 'workspaces', label: '推广工作区' },
 ]
 
-const moduleLabel = computed(() => `${String(route.meta.moduleTitle ?? '模块')} / 节点控制`)
+const moduleLabel = computed(() => `${String(route.meta.moduleTitle ?? '模块')} / CyberNomads`)
 const sectionLabel = computed(() => String(route.meta.shellSectionTitle ?? '系统设置'))
 
 const activeNavKey = computed<ShellNavKey>(() => {
   const metaKey = route.meta.shellNavKey
-  if (metaKey === 'workspaces' || metaKey === 'assets' || metaKey === 'strategies' || metaKey === 'accounts' || metaKey === 'agents') {
+  if (
+    metaKey === 'console' ||
+    metaKey === 'workspaces' ||
+    metaKey === 'assets' ||
+    metaKey === 'strategies' ||
+    metaKey === 'accounts'
+  ) {
     return metaKey
   }
 
+  if (route.path.startsWith('/console')) return 'console'
   if (route.path.startsWith('/assets')) return 'assets'
   if (route.path.startsWith('/strategies')) return 'strategies'
   if (route.path.startsWith('/accounts')) return 'accounts'
-  if (route.path.startsWith('/agents')) return 'agents'
   return 'workspaces'
 })
 
 const primaryAction = computed(() => {
   switch (activeNavKey.value) {
+    case 'console':
+      return { to: '/console/openclaw', icon: 'tune', label: '配置主控' }
     case 'assets':
       return { to: '/assets/new', icon: 'add', label: '新建资产' }
     case 'strategies':
       return { to: '/strategies/new', icon: 'add', label: '新建策略' }
     case 'accounts':
       return { to: '/accounts', icon: 'add', label: '添加账号' }
-    case 'agents':
-      return { to: '/agents/openclaw', icon: 'power_settings_new', label: '初始化节点' }
     case 'workspaces':
     default:
       return { to: '/workspaces/new', icon: 'add', label: '创建团队' }
@@ -59,14 +65,14 @@ const primaryAction = computed(() => {
   <div class="app-shell" :class="{ 'app-shell--collapsed': collapsed }">
     <aside class="app-shell__sidebar">
       <div class="app-shell__header">
-        <RouterLink class="app-shell__brand" to="/workspaces">
+        <RouterLink class="app-shell__brand" to="/console">
           <div class="app-shell__brand-mark">
-            <img :src="referenceSidebarBrandUrl" alt="CyberNomads" />
+            <img :src="cybernomadsMarkUrl" alt="CyberNomads" />
           </div>
 
           <div class="app-shell__brand-copy">
             <h1>CyberNomads</h1>
-            <p>Arch-Level Access</p>
+            <p>AI 营销指挥中心</p>
           </div>
         </RouterLink>
 
@@ -128,10 +134,11 @@ const primaryAction = computed(() => {
 .app-shell {
   --app-shell-sidebar-size: 16rem;
   min-height: 100vh;
+  display: flex;
   color: var(--cn-on-surface);
   background:
-    radial-gradient(circle at top right, rgb(0 238 252 / 0.06), transparent 28rem),
-    linear-gradient(180deg, #0a0b0b 0%, #0e0e0e 40%, #090909 100%);
+    radial-gradient(circle at top left, rgb(0 238 252 / 0.03), transparent 24rem),
+    linear-gradient(180deg, #0d0d0d 0%, #0e0e0e 40%, #0b0b0b 100%);
 }
 
 .app-shell--collapsed {
@@ -145,11 +152,22 @@ const primaryAction = computed(() => {
   display: flex;
   flex-direction: column;
   width: var(--app-shell-sidebar-size);
-  padding: 1.5rem 1rem 1rem;
+  padding: 1.75rem 1rem 1rem;
   background: #131313;
-  border-right: 0;
-  box-shadow: 4px 0 24px rgb(0 0 0 / 0.5);
+  border-right: 1px solid rgb(72 72 71 / 0.18);
+  box-shadow: 24px 0 48px rgb(0 0 0 / 0.5);
   transition: width var(--cn-transition);
+}
+
+.app-shell__sidebar::after {
+  position: absolute;
+  inset: 1.5rem 0 auto auto;
+  width: 1px;
+  height: calc(100% - 3rem);
+  background: linear-gradient(180deg, rgb(143 245 255 / 0.12), transparent 18%, transparent 82%, rgb(143 245 255 / 0.06));
+  content: '';
+  opacity: 0.3;
+  pointer-events: none;
 }
 
 .app-shell__header {
@@ -157,7 +175,7 @@ const primaryAction = computed(() => {
   gap: 0.75rem;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 1.85rem;
+  margin-bottom: 2rem;
 }
 
 .app-shell__collapse {
@@ -195,18 +213,21 @@ const primaryAction = computed(() => {
 .app-shell__brand-mark {
   display: grid;
   place-items: center;
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 2.5rem;
+  height: 2.5rem;
   overflow: hidden;
-  border: 1px solid rgb(72 72 71 / 0.2);
+  border: 1px solid rgb(143 245 255 / 0.24);
   border-radius: 999px;
-  background: #262626;
+  background: linear-gradient(180deg, #1a1919 0%, #262626 100%);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.03),
+    0 0 18px rgb(0 240 255 / 0.12);
 }
 
 .app-shell__brand-mark img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  width: 74%;
+  height: 74%;
+  object-fit: contain;
 }
 
 .app-shell__brand-copy h1,
@@ -218,7 +239,7 @@ const primaryAction = computed(() => {
   color: #00f0ff;
   font-family: var(--cn-font-display);
   font-size: 1.18rem;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: -0.04em;
   line-height: 1;
 }
@@ -226,13 +247,13 @@ const primaryAction = computed(() => {
 .app-shell__brand-copy p {
   color: var(--cn-on-surface-muted);
   margin-top: 0.28rem;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   letter-spacing: 0.01em;
 }
 
 .app-shell__nav {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.35rem;
   flex: 1;
   margin-top: 0.5rem;
 }
@@ -242,16 +263,18 @@ const primaryAction = computed(() => {
   display: flex;
   gap: 0.95rem;
   align-items: center;
-  min-height: 3.15rem;
+  min-height: 3.1rem;
   padding: 0 1rem;
   border-radius: 0.75rem;
   color: var(--cn-on-surface-muted);
-  font-family: var(--cn-font-display);
+  font-family: var(--cn-font-body);
   font-size: 0.92rem;
+  font-weight: 500;
+  letter-spacing: 0;
   transition:
     color var(--cn-transition),
     background-color var(--cn-transition),
-    transform var(--cn-transition);
+    border-color var(--cn-transition);
 }
 
 .app-shell__nav-icon {
@@ -259,75 +282,76 @@ const primaryAction = computed(() => {
   flex-shrink: 0;
 }
 
+.app-shell__nav-link {
+  border-right: 3px solid transparent;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
 .app-shell__nav-link:hover,
 .app-shell__support-link:hover {
-  color: #00f0ff;
-  background: #262626;
+  color: var(--cn-primary);
+  background: #1a1919;
 }
 
 .app-shell__nav-link--active {
-  color: #00f0ff;
-  font-weight: 700;
-  background: linear-gradient(90deg, rgb(0 240 255 / 0.1), transparent 85%);
-  border-left: 2px solid #00f0ff;
-  transform: scale(0.96);
-  transform-origin: center left;
+  color: var(--cn-primary);
+  border-right-color: var(--cn-primary);
+  background: linear-gradient(90deg, rgb(0 240 255 / 0.08), transparent 92%);
+  box-shadow: 0 0 15px rgb(0 240 255 / 0.08);
 }
 
 .app-shell__footer {
+  display: grid;
+  gap: 1rem;
   padding-top: 1.35rem;
-  margin-top: auto;
-  border-top: 1px solid rgb(72 72 71 / 0.2);
+  border-top: 1px solid rgb(72 72 71 / 0.16);
 }
 
 .app-shell__cta {
-  display: flex;
-  gap: 0.55rem;
+  display: inline-flex;
+  gap: 0.65rem;
   align-items: center;
   justify-content: center;
-  min-height: 3.15rem;
-  margin-bottom: 1rem;
+  width: 100%;
+  min-height: 3rem;
   padding: 0 1rem;
-  border: 1px solid rgb(143 245 255 / 0.24);
   border-radius: 0.75rem;
-  color: #005d63;
-  background: #8ff5ff;
-  font-family: var(--cn-font-display);
+  color: var(--cn-primary);
+  background: rgb(143 245 255 / 0.1);
+  border: 1px solid rgb(143 245 255 / 0.22);
+  font-family: var(--cn-font-body);
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   transition:
-    color var(--cn-transition),
     background-color var(--cn-transition),
     border-color var(--cn-transition);
 }
 
 .app-shell__cta:hover {
-  background: #9af6ff;
-  box-shadow: 0 0 18px rgb(143 245 255 / 0.28);
+  background: rgb(143 245 255 / 0.16);
+  border-color: rgb(143 245 255 / 0.32);
 }
 
 .app-shell__support {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.35rem;
   padding-top: 0.9rem;
-  border-top: 1px solid rgb(72 72 71 / 0.2);
+  border-top: 1px solid rgb(72 72 71 / 0.08);
 }
 
 .app-shell__support-link {
-  min-height: 2.7rem;
-  font-family: var(--cn-font-display);
+  min-height: 2.8rem;
+  font-family: var(--cn-font-body);
   font-size: 0.84rem;
+  font-weight: 500;
 }
 
 .app-shell__main {
+  flex: 1;
   min-height: 100vh;
   margin-left: var(--app-shell-sidebar-size);
   transition: margin-left var(--cn-transition);
-}
-
-.app-shell--collapsed .app-shell__brand {
-  justify-content: center;
-  padding: 0 0.1rem;
 }
 
 .app-shell--collapsed .app-shell__brand-copy,
@@ -337,140 +361,36 @@ const primaryAction = computed(() => {
   display: none;
 }
 
-.app-shell--collapsed .app-shell__header {
-  flex-direction: column;
-  align-items: center;
-  gap: 0.85rem;
+.app-shell--collapsed .app-shell__brand {
+  justify-content: center;
 }
 
 .app-shell--collapsed .app-shell__nav-link,
-.app-shell--collapsed .app-shell__support-link,
+.app-shell--collapsed .app-shell__support-link {
+  justify-content: center;
+  padding-inline: 0;
+}
+
 .app-shell--collapsed .app-shell__cta {
   justify-content: center;
   padding-inline: 0;
 }
 
 .app-shell__sr-only {
-  position: fixed;
-  top: -10000px;
-  left: -10000px;
+  position: absolute;
   width: 1px;
   height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.app-shell .workspace-sidebar,
-.app-shell .create-sidebar,
-.app-shell .assets-sidebar,
-.app-shell .asset-editor-sidebar,
-.app-shell .agents-sidebar,
-.app-shell .openclaw-sidebar,
-.app-shell .strategies-sidebar,
-.app-shell .accounts-sidebar,
-.app-shell .account-detail-sidebar {
-  display: none !important;
-}
-
-.app-shell .workspace-page,
-.app-shell .create-page,
-.app-shell .assets-page,
-.app-shell .asset-editor-page,
-.app-shell .agents-page,
-.app-shell .openclaw-page,
-.app-shell .strategies-page,
-.app-shell .accounts-page,
-.app-shell .account-detail-page,
-.app-shell .execution-shell,
-.app-shell .intervention-page {
-  min-height: 100vh;
-  background: transparent;
-}
-
-.app-shell .workspace-main,
-.app-shell .create-main,
-.app-shell .assets-main,
-.app-shell .asset-editor-main,
-.app-shell .agents-main,
-.app-shell .openclaw-main,
-.app-shell .strategies-main,
-.app-shell .accounts-main,
-.app-shell .account-detail-main {
-  width: 100%;
-  min-width: 0;
-  margin-left: 0 !important;
-}
-
-.app-shell .workspace-topbar,
-.app-shell .asset-editor-topbar,
-.app-shell .agents-topbar,
-.app-shell .openclaw-topbar {
-  width: calc(100% - var(--app-shell-sidebar-size)) !important;
-}
-
-.app-shell .execution-topbar {
-  inset: 0 0 auto var(--app-shell-sidebar-size) !important;
-  width: auto !important;
-}
-
-.app-shell .create-bottom-bar {
-  left: var(--app-shell-sidebar-size) !important;
-}
-
-.app-shell .assets-canvas,
-.app-shell .asset-editor-canvas,
-.app-shell .agents-canvas,
-.app-shell .openclaw-canvas,
-.app-shell .strategies-canvas,
-.app-shell .accounts-canvas {
-  margin-left: 0 !important;
-}
-
-@media (max-width: 1023px) {
+@media (width <= 1280px) {
   .app-shell {
-    --app-shell-sidebar-size: 5rem;
-  }
-
-  .app-shell__main {
-    margin-left: 5rem;
-  }
-
-  .app-shell__brand {
-    justify-content: center;
-    padding: 0;
-  }
-
-  .app-shell__header {
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .app-shell__brand-copy,
-  .app-shell__nav-label,
-  .app-shell__cta-label,
-  .app-shell__support-label {
-    display: none;
-  }
-
-  .app-shell__nav-link,
-  .app-shell__support-link,
-  .app-shell__cta {
-    justify-content: center;
-    padding-inline: 0;
-  }
-
-  .app-shell .workspace-topbar,
-  .app-shell .asset-editor-topbar,
-  .app-shell .agents-topbar,
-  .app-shell .openclaw-topbar {
-    width: calc(100% - 5rem) !important;
-  }
-
-  .app-shell .execution-topbar {
-    inset: 0 0 auto 5rem !important;
-  }
-
-  .app-shell .create-bottom-bar {
-    left: 5rem !important;
+    --app-shell-sidebar-size: 15rem;
   }
 }
 </style>

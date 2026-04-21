@@ -85,17 +85,15 @@ withDefaults(
 
 .surface-card--interactive {
   transition:
-    transform var(--cn-transition),
     box-shadow var(--cn-transition),
     border-color var(--cn-transition);
 }
 
 .surface-card--interactive:hover {
-  transform: translateY(-2px);
   box-shadow:
     inset 0 0 0 1px rgb(143 245 255 / 0.22),
     var(--cn-shadow-soft),
-    var(--cn-shadow-glow);
+    var(--cn-shadow-soft);
 }
 
 .surface-card--glow {

@@ -27,8 +27,8 @@ withDefaults(defineProps<Props>(), {
   min-height: 8.5rem;
   border-radius: var(--cn-radius-xl);
   background:
-    radial-gradient(circle at top, rgb(255 255 255 / 0.05), transparent 55%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.02), rgb(0 0 0 / 0.08));
+    radial-gradient(circle at top, rgb(255 255 255 / 0.03), transparent 55%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.015), rgb(0 0 0 / 0.08));
   box-shadow: inset 0 0 0 1px var(--cn-outline-ghost);
 }
 
@@ -57,42 +57,34 @@ withDefaults(defineProps<Props>(), {
   place-items: center;
   width: 4rem;
   height: 4rem;
-  border-radius: 1.2rem;
-  background: rgb(255 255 255 / 0.04);
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 0.03);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04);
 }
 
 .placeholder-asset__core span {
-  font-family: var(--cn-font-display);
-  font-size: 0.92rem;
-  font-weight: 700;
+  font-family: var(--cn-font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .placeholder-asset--cyan .placeholder-asset__core {
   color: var(--cn-primary);
-  box-shadow:
-    inset 0 0 0 1px rgb(143 245 255 / 0.16),
-    0 0 22px rgb(143 245 255 / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(143 245 255 / 0.16);
 }
 
 .placeholder-asset--lime .placeholder-asset__core {
   color: var(--cn-secondary);
-  box-shadow:
-    inset 0 0 0 1px rgb(195 244 0 / 0.16),
-    0 0 18px rgb(195 244 0 / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(195 244 0 / 0.16);
 }
 
 .placeholder-asset--blue .placeholder-asset__core {
   color: var(--cn-tertiary);
-  box-shadow:
-    inset 0 0 0 1px rgb(101 175 255 / 0.16),
-    0 0 18px rgb(101 175 255 / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(101 175 255 / 0.16);
 }
 
 .placeholder-asset--red .placeholder-asset__core {
   color: var(--cn-error);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 113 108 / 0.16),
-    0 0 18px rgb(255 113 108 / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(255 113 108 / 0.16);
 }
 </style>

@@ -4,8 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { getAssetById, saveAsset } from '@/entities/asset/api/asset-service'
 import type { AssetAttachmentRecord } from '@/entities/asset/model/types'
-import cybernomadsMarkUrl from '@/shared/assets/branding/cybernomads-mark.svg'
-import { referenceNeuralOperatorAvatarUrl } from '@/shared/config/reference-ui'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const route = useRoute()
@@ -27,6 +25,8 @@ const form = reactive({
 
 const attachments = ref<AssetAttachmentRecord[]>([])
 const lineCount = computed(() => Math.max(form.markdown.split('\n').length, 10))
+const wordCount = computed(() => form.markdown.trim().split(/\s+/).filter(Boolean).length)
+const characterCount = computed(() => form.markdown.length)
 
 watch(
   [assetId, mockScenarioId],
@@ -74,7 +74,7 @@ function resolveAttachmentIcon(kind: AssetAttachmentRecord['kind']) {
   if (kind === 'video') return 'movie'
   if (kind === 'image') return 'image'
   if (kind === 'link') return 'link'
-  return 'description'
+  return 'picture_as_pdf'
 }
 
 async function handleSave(status: 'draft' | 'ready') {
@@ -102,75 +102,8 @@ async function handleSave(status: 'draft' | 'ready') {
 
 <template>
   <section class="asset-editor-page">
-    <aside class="asset-editor-sidebar">
-      <div class="asset-editor-sidebar__brand">
-        <img :src="cybernomadsMarkUrl" alt="CyberNomads" />
-        <div>
-          <h1>CyberNomads</h1>
-          <p>神经架构师 v1.0</p>
-        </div>
-      </div>
-
-      <button type="button" class="asset-editor-sidebar__cta">
-        <span class="material-symbols-outlined">add</span>
-        <span>新建活动</span>
-      </button>
-
-      <nav class="asset-editor-sidebar__nav">
-        <a class="asset-editor-sidebar__link" href="#">
-          <span class="material-symbols-outlined">dashboard</span>
-          <span>仪表盘</span>
-        </a>
-        <RouterLink class="asset-editor-sidebar__link asset-editor-sidebar__link--active" to="/assets">
-          <span class="material-symbols-outlined fill">description</span>
-          <span>资产</span>
-        </RouterLink>
-        <RouterLink class="asset-editor-sidebar__link" to="/strategies">
-          <span class="material-symbols-outlined">auto_awesome</span>
-          <span>策略</span>
-        </RouterLink>
-        <RouterLink class="asset-editor-sidebar__link" to="/workspaces">
-          <span class="material-symbols-outlined">hub</span>
-          <span>工作区</span>
-        </RouterLink>
-      </nav>
-
-      <div class="asset-editor-sidebar__footer">
-        <RouterLink class="asset-editor-sidebar__link" to="/agents/openclaw">
-          <span class="material-symbols-outlined">settings</span>
-          <span>设置</span>
-        </RouterLink>
-        <a class="asset-editor-sidebar__link" href="#">
-          <span class="material-symbols-outlined">contact_support</span>
-          <span>支持</span>
-        </a>
-      </div>
-    </aside>
-
-    <div class="asset-editor-main">
-      <header class="asset-editor-topbar">
-        <label class="asset-editor-topbar__search">
-          <span class="material-symbols-outlined">search</span>
-          <input type="text" placeholder="搜索参数、资产或日志..." />
-        </label>
-
-        <div class="asset-editor-topbar__brand">CyberNomads</div>
-
-        <div class="asset-editor-topbar__actions">
-          <button type="button">
-            <span class="material-symbols-outlined">notifications</span>
-          </button>
-          <button type="button">
-            <span class="material-symbols-outlined">grid_view</span>
-          </button>
-          <button type="button">
-            <span class="material-symbols-outlined">history</span>
-          </button>
-          <img :src="referenceNeuralOperatorAvatarUrl" alt="Neural Operator" />
-        </div>
-      </header>
-
-      <main class="asset-editor-canvas">
+    <main class="asset-editor-main">
+      <div class="asset-editor-canvas">
         <section class="asset-editor-meta">
           <div class="asset-editor-meta__title">
             <div class="asset-editor-meta__row">
@@ -209,20 +142,20 @@ async function handleSave(status: 'draft' | 'ready') {
           <div class="asset-editor-editor">
             <div class="asset-editor-toolbar">
               <div class="asset-editor-toolbar__group">
-                <button type="button">
+                <button type="button" title="Bold">
                   <span class="material-symbols-outlined">format_bold</span>
                 </button>
-                <button type="button">
+                <button type="button" title="Italic">
                   <span class="material-symbols-outlined">format_italic</span>
                 </button>
                 <div class="asset-editor-toolbar__separator" />
-                <button type="button">
+                <button type="button" title="Code Block">
                   <span class="material-symbols-outlined">code</span>
                 </button>
-                <button type="button">
+                <button type="button" title="Insert Link">
                   <span class="material-symbols-outlined">link</span>
                 </button>
-                <button type="button">
+                <button type="button" title="Insert AI Variable">
                   <span class="material-symbols-outlined">data_object</span>
                 </button>
               </div>
@@ -235,58 +168,43 @@ async function handleSave(status: 'draft' | 'ready') {
               </div>
               <textarea v-model="form.markdown" placeholder="在此处初始化传输序列..." />
             </div>
+
+            <div class="asset-editor-statusbar">
+              <span>支持 Markdown</span>
+              <span>字数: {{ wordCount }} | 字符: {{ characterCount }}</span>
+            </div>
           </div>
 
           <aside class="asset-editor-side">
             <section class="asset-editor-side__panel">
               <header class="asset-editor-side__panel-header">
                 <div>
-                  <h3>本地资源</h3>
-                  <p>支持拖拽文档、图片、视频与链接。</p>
+                  <h3>
+                    <span class="material-symbols-outlined">folder_open</span>
+                    <span>本地资源</span>
+                  </h3>
                 </div>
-                <button type="button">
-                  <span class="material-symbols-outlined">add</span>
-                </button>
+                <span class="asset-editor-side__count">{{ attachments.length }} 个文件</span>
               </header>
 
               <div class="asset-editor-side__dropzone">
                 <div class="asset-editor-side__dropzone-icon">
-                  <span class="material-symbols-outlined">upload_file</span>
+                  <span class="material-symbols-outlined">cloud_upload</span>
                 </div>
-                <span>拖拽资源到这里或点击上传</span>
+                <span><strong>点击注入</strong> 或拖拽文件</span>
               </div>
 
               <div class="asset-editor-files">
-                <div
-                  v-for="file in attachments"
-                  :key="file.id"
-                  class="asset-editor-file"
-                >
+                <div v-for="file in attachments" :key="file.id" class="asset-editor-file">
                   <div class="asset-editor-file__info">
                     <span class="material-symbols-outlined">{{ resolveAttachmentIcon(file.kind) }}</span>
                     <span>{{ file.name }}</span>
                   </div>
-                  <button type="button">
+                  <button type="button" aria-label="删除文件">
                     <span class="material-symbols-outlined">delete</span>
                   </button>
                 </div>
               </div>
-            </section>
-
-            <section class="asset-editor-side__panel">
-              <header class="asset-editor-side__panel-header">
-                <div>
-                  <h3>摘要说明</h3>
-                  <p>补充资产用途、场景和目标说明。</p>
-                </div>
-              </header>
-
-              <textarea
-                v-model="form.summary"
-                class="asset-editor-side__summary"
-                rows="6"
-                placeholder="在此填写资产摘要"
-              />
             </section>
           </aside>
         </section>
@@ -295,10 +213,6 @@ async function handleSave(status: 'draft' | 'ready') {
           <button type="button" class="asset-editor-footer__button">
             <span class="material-symbols-outlined">visibility</span>
             <span>生成预览</span>
-          </button>
-          <button type="button" class="asset-editor-footer__button" :disabled="isSaving" @click="handleSave('draft')">
-            <span class="material-symbols-outlined">draft</span>
-            <span>保存草稿</span>
           </button>
           <button
             type="button"
@@ -310,225 +224,63 @@ async function handleSave(status: 'draft' | 'ready') {
             <span>{{ isSaving ? '提交中…' : '提交资产' }}</span>
           </button>
         </footer>
-      </main>
-    </div>
+      </div>
+    </main>
   </section>
 </template>
 
 <style scoped lang="scss">
 .asset-editor-page {
-  display: flex;
   min-height: 100vh;
   color: #fff;
-  background: #0e0e0e;
-}
-
-.asset-editor-sidebar {
-  position: fixed;
-  inset: 0 auto 0 0;
-  z-index: 30;
-  display: none;
-  flex-direction: column;
-  width: 16rem;
-  padding: 1.5rem 1rem;
-  background: #131313;
-  box-shadow: 4px 0 24px rgb(0 0 0 / 0.5);
-}
-
-.asset-editor-sidebar__brand {
-  display: flex;
-  gap: 0.85rem;
-  align-items: center;
-  padding: 0 0.5rem;
-  margin-bottom: 2rem;
-}
-
-.asset-editor-sidebar__brand img {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.75rem;
-}
-
-.asset-editor-sidebar__brand h1,
-.asset-editor-sidebar__brand p {
-  margin: 0;
-}
-
-.asset-editor-sidebar__brand h1 {
-  color: #8ff5ff;
-  font-size: 1.3rem;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-}
-
-.asset-editor-sidebar__brand p {
-  color: #adaaaa;
-  font-size: 0.76rem;
-}
-
-.asset-editor-sidebar__cta {
-  display: inline-flex;
-  gap: 0.45rem;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgb(143 245 255 / 0.3);
-  padding: 0.85rem 1rem;
-  margin: 0 0.5rem 1.75rem;
-  border-radius: 0.75rem;
-  color: #8ff5ff;
-  background: rgb(143 245 255 / 0.08);
-}
-
-.asset-editor-sidebar__nav,
-.asset-editor-sidebar__footer {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.asset-editor-sidebar__nav {
-  flex: 1;
-}
-
-.asset-editor-sidebar__link {
-  display: flex;
-  gap: 0.8rem;
-  align-items: center;
-  padding: 0.85rem 1rem;
-  border-radius: 0.75rem;
-  color: #adaaaa;
-  font-family: var(--cn-font-display);
-  font-size: 0.9rem;
-  transition: background-color 180ms ease, color 180ms ease;
-}
-
-.asset-editor-sidebar__link:hover {
-  color: #8ff5ff;
-  background: #1a1919;
-}
-
-.asset-editor-sidebar__link--active {
-  color: #8ff5ff;
-  font-weight: 600;
-  background: #1a1919;
-  border-right: 2px solid #8ff5ff;
 }
 
 .asset-editor-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.asset-editor-topbar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  z-index: 20;
-  display: none;
-  align-items: center;
-  justify-content: space-between;
-  width: calc(100% - 16rem);
-  height: 4rem;
-  padding: 0 2rem;
-  background: rgb(14 14 14 / 0.8);
-  backdrop-filter: blur(20px);
-}
-
-.asset-editor-topbar__search {
-  position: relative;
-  display: flex;
-  gap: 0.55rem;
-  align-items: center;
   width: 100%;
-  max-width: 22rem;
-  padding: 0.65rem 1rem;
-  border-radius: 999px;
-  background: #131313;
-  color: #adaaaa;
-}
-
-.asset-editor-topbar__search input {
-  width: 100%;
-  border: 0;
-  color: #fff;
-  background: transparent;
-  outline: 0;
-}
-
-.asset-editor-topbar__brand {
-  color: #8ff5ff;
-  font-family: var(--cn-font-display);
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.asset-editor-topbar__actions {
-  display: flex;
-  gap: 0.9rem;
-  align-items: center;
-  color: #adaaaa;
-}
-
-.asset-editor-topbar__actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  color: inherit;
-  background: transparent;
-}
-
-.asset-editor-topbar__actions button:hover {
-  color: #8ff5ff;
-}
-
-.asset-editor-topbar__actions img {
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid rgb(72 72 71 / 0.3);
-  border-radius: 999px;
+  padding: 1.5rem;
 }
 
 .asset-editor-canvas {
   display: grid;
   gap: 1.5rem;
-  padding: 1.5rem;
+  width: min(100%, 90rem);
+  margin: 0 auto;
 }
 
 .asset-editor-meta {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid rgb(72 72 71 / 0.12);
+  gap: 1.25rem;
+  padding: 0 0.25rem 0.5rem;
 }
 
 .asset-editor-meta__title,
 .asset-editor-meta__targets {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.5rem;
 }
 
 .asset-editor-meta__row {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+  margin-bottom: 0.05rem;
 }
 
 .asset-editor-meta__row label,
 .asset-editor-meta__targets label {
   color: #adaaaa;
   font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .asset-editor-meta__status {
   display: inline-flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   align-items: center;
-  padding: 0.35rem 0.65rem;
+  padding: 0.3rem 0.55rem;
   border: 1px solid rgb(72 72 71 / 0.2);
   border-radius: 999px;
   background: #131313;
@@ -553,9 +305,9 @@ async function handleSave(status: 'draft' | 'ready') {
   color: #fff;
   background: transparent;
   font-family: var(--cn-font-display);
-  font-size: clamp(2rem, 4vw, 2.9rem);
+  font-size: clamp(2.1rem, 3vw, 3rem);
   font-weight: 700;
-  line-height: 1.05;
+  line-height: 1.1;
   outline: 0;
 }
 
@@ -568,19 +320,21 @@ async function handleSave(status: 'draft' | 'ready') {
 .asset-editor-meta__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .asset-editor-meta__chips button {
   display: inline-flex;
-  gap: 0.3rem;
+  gap: 0.25rem;
   align-items: center;
-  border: 1px solid rgb(72 72 71 / 0.3);
-  padding: 0.45rem 0.75rem;
-  border-radius: 0.5rem;
+  border: 1px solid rgb(72 72 71 / 0.22);
+  padding: 0.32rem 0.62rem;
+  border-radius: 0.3rem;
   color: #adaaaa;
   background: #000;
-  font-size: 0.78rem;
+  font-family: var(--cn-font-body);
+  font-size: 0.72rem;
+  font-weight: 500;
 }
 
 .asset-editor-meta__chip--primary {
@@ -597,12 +351,15 @@ async function handleSave(status: 'draft' | 'ready') {
 .asset-editor-workspace {
   display: grid;
   gap: 1.5rem;
+  min-height: 0;
+  align-items: stretch;
 }
 
 .asset-editor-editor {
   display: flex;
   flex-direction: column;
-  min-height: 34rem;
+  min-height: 42rem;
+  height: 100%;
   overflow: hidden;
   border: 1px solid rgb(72 72 71 / 0.2);
   border-radius: 1rem;
@@ -614,7 +371,7 @@ async function handleSave(status: 'draft' | 'ready') {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.9rem 1rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid rgb(72 72 71 / 0.2);
   background: rgb(19 19 19 / 0.45);
 }
@@ -623,9 +380,9 @@ async function handleSave(status: 'draft' | 'ready') {
   display: flex;
   gap: 0.2rem;
   align-items: center;
-  padding: 0.25rem;
+  padding: 0.2rem;
   border: 1px solid rgb(72 72 71 / 0.1);
-  border-radius: 0.75rem;
+  border-radius: 0.5rem;
   background: #000;
 }
 
@@ -636,9 +393,12 @@ async function handleSave(status: 'draft' | 'ready') {
   width: 2rem;
   height: 2rem;
   border: 0;
-  border-radius: 0.5rem;
+  border-radius: 0.3rem;
   color: #adaaaa;
   background: transparent;
+  transition:
+    color var(--cn-transition),
+    background-color var(--cn-transition);
 }
 
 .asset-editor-toolbar button:hover {
@@ -652,7 +412,7 @@ async function handleSave(status: 'draft' | 'ready') {
   background: rgb(72 72 71 / 0.3);
 }
 
-.asset-editor-toolbar span:last-child {
+.asset-editor-toolbar > span {
   color: #767575;
   font-family: var(--cn-font-mono);
   font-size: 0.72rem;
@@ -694,18 +454,37 @@ async function handleSave(status: 'draft' | 'ready') {
 .asset-editor-body textarea {
   padding: 1rem;
   font-family: var(--cn-font-mono);
-  font-size: 0.92rem;
-  line-height: 1.85;
+  font-size: 0.88rem;
+  line-height: 1.8;
+}
+
+.asset-editor-statusbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 1rem;
+  border-top: 1px solid rgb(72 72 71 / 0.2);
+  background: #000;
+  color: #767575;
+  font-family: var(--cn-font-mono);
+  font-size: 0.72rem;
 }
 
 .asset-editor-side {
-  display: grid;
-  gap: 1rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-right: 0.5rem;
+  padding-bottom: 0.5rem;
+  min-height: 42rem;
 }
 
 .asset-editor-side__panel {
   display: grid;
   gap: 1rem;
+  height: 100%;
   padding: 1.25rem;
   border: 1px solid rgb(72 72 71 / 0.2);
   border-radius: 1rem;
@@ -720,71 +499,95 @@ async function handleSave(status: 'draft' | 'ready') {
 }
 
 .asset-editor-side__panel-header h3 {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
   margin: 0;
   font-family: var(--cn-font-display);
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.asset-editor-side__panel-header p {
-  margin: 0.35rem 0 0;
-  color: #adaaaa;
-  font-size: 0.82rem;
-  line-height: 1.6;
+.asset-editor-side__panel-header h3 .material-symbols-outlined {
+  color: #65afff;
+  font-size: 1rem;
 }
 
-.asset-editor-side__panel-header button {
+.asset-editor-side__count {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 999px;
-  color: #adaaaa;
-  background: #131313;
+  min-height: 1.6rem;
+  padding: 0 0.55rem;
+  border-radius: 0.45rem;
+  color: #767575;
+  background: #000;
+  font-size: 0.72rem;
 }
 
 .asset-editor-side__dropzone {
   display: grid;
   gap: 0.75rem;
   justify-items: center;
-  padding: 1.25rem;
-  border: 1px dashed rgb(72 72 71 / 0.4);
-  border-radius: 0.9rem;
+  padding: 1.5rem;
+  border: 2px dashed rgb(72 72 71 / 0.2);
+  border-radius: 0.5rem;
   text-align: center;
+  background: rgb(19 19 19 / 0.5);
+  transition:
+    border-color var(--cn-transition),
+    background-color var(--cn-transition);
+  cursor: pointer;
+}
+
+.asset-editor-side__dropzone:hover {
+  border-color: rgb(143 245 255 / 0.4);
   background: #131313;
 }
 
 .asset-editor-side__dropzone-icon {
   display: grid;
   place-items: center;
-  width: 3rem;
-  height: 3rem;
-  border: 1px solid rgb(72 72 71 / 0.2);
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
   border-radius: 999px;
-  color: #8ff5ff;
-  background: #262626;
+  color: #767575;
+  background: #1a1919;
 }
 
 .asset-editor-side__dropzone span:last-child {
   color: #adaaaa;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
+  text-align: center;
+}
+
+.asset-editor-side__dropzone strong {
+  color: #8ff5ff;
+  font-weight: 600;
 }
 
 .asset-editor-files {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  overflow-y: auto;
 }
 
 .asset-editor-file {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.65rem 0.75rem;
+  padding: 0.55rem 0.7rem;
   border: 1px solid rgb(72 72 71 / 0.1);
-  border-radius: 0.75rem;
+  border-radius: 0.5rem;
   background: #000;
+  transition: border-color var(--cn-transition);
+}
+
+.asset-editor-file:hover {
+  border-color: rgb(72 72 71 / 0.3);
 }
 
 .asset-editor-file__info {
@@ -797,38 +600,48 @@ async function handleSave(status: 'draft' | 'ready') {
   font-size: 0.82rem;
 }
 
+.asset-editor-file__info .material-symbols-outlined {
+  font-size: 1.1rem;
+}
+
+.asset-editor-file:nth-child(1) .asset-editor-file__info .material-symbols-outlined {
+  color: #4aa2f9;
+}
+
+.asset-editor-file:nth-child(2) .asset-editor-file__info .material-symbols-outlined {
+  color: #b7e500;
+}
+
 .asset-editor-file__info span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #fff;
+  font-size: 0.76rem;
 }
 
 .asset-editor-file button {
   border: 0;
+  opacity: 0;
   color: #767575;
   background: transparent;
+  transition:
+    opacity var(--cn-transition),
+    color var(--cn-transition);
 }
 
 .asset-editor-file:hover button {
+  opacity: 1;
   color: #ff716c;
-}
-
-.asset-editor-side__summary {
-  min-height: 8rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid rgb(72 72 71 / 0.15);
-  border-radius: 0.9rem;
-  background: #131313;
-  line-height: 1.7;
 }
 
 .asset-editor-footer {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.75rem;
   justify-content: flex-end;
-  padding-top: 1rem;
-  border-top: 1px solid rgb(72 72 71 / 0.1);
+  padding-top: 0.25rem;
 }
 
 .asset-editor-footer__button {
@@ -837,12 +650,17 @@ async function handleSave(status: 'draft' | 'ready') {
   align-items: center;
   justify-content: center;
   border: 1px solid rgb(72 72 71 / 0.3);
-  padding: 0.85rem 1.1rem;
-  border-radius: 0.75rem;
+  padding: 0.72rem 1.25rem;
+  border-radius: 0.5rem;
   color: #adaaaa;
   background: transparent;
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-family: var(--cn-font-body);
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition:
+    border-color var(--cn-transition),
+    background-color var(--cn-transition),
+    color var(--cn-transition);
 }
 
 .asset-editor-footer__button:hover {
@@ -851,28 +669,18 @@ async function handleSave(status: 'draft' | 'ready') {
 }
 
 .asset-editor-footer__button--primary {
-  color: #005d63;
+  color: #041316;
   background: linear-gradient(135deg, #8ff5ff 0%, #00eefc 100%);
   border-color: transparent;
   font-weight: 600;
 }
 
 .asset-editor-footer__button--primary:hover {
-  color: #005d63;
-  box-shadow: 0 0 16px rgb(0 238 252 / 0.3);
+  color: #041316;
+  background: linear-gradient(135deg, #8ff5ff 0%, #00eefc 100%);
 }
 
 @media (min-width: 1024px) {
-  .asset-editor-sidebar,
-  .asset-editor-topbar {
-    display: flex;
-  }
-
-  .asset-editor-canvas {
-    padding: 5.5rem 1.5rem 1.5rem;
-    margin-left: 16rem;
-  }
-
   .asset-editor-meta {
     flex-direction: row;
     align-items: flex-end;
@@ -893,12 +701,31 @@ async function handleSave(status: 'draft' | 'ready') {
   }
 
   .asset-editor-workspace {
-    grid-template-columns: minmax(0, 1fr) 22rem;
+    grid-template-columns: minmax(0, 1fr) 20rem;
     align-items: start;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .asset-editor-main {
+    padding: 1rem;
+  }
+
+  .asset-editor-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .asset-editor-side {
+    padding-right: 0;
   }
 
   .asset-editor-footer {
-    padding-top: 1.25rem;
+    justify-content: stretch;
+  }
+
+  .asset-editor-footer__button {
+    flex: 1 1 100%;
   }
 }
 </style>
