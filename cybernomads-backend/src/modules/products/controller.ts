@@ -3,8 +3,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { isProductModuleError, ProductValidationError } from "./errors.js";
 import type { ProductService } from "./service.js";
 import type { CreateProductInput, UpdateProductInput } from "./types.js";
-
-const MAX_REQUEST_BODY_BYTES = 1_000_000;
+import {
+  readJsonBody,
+  sendJson,
+  sendMethodNotAllowed,
+} from "../../shared/http.js";
 
 export function createProductsController(productService: ProductService) {
   return async function handleProductsRequest(
@@ -81,32 +84,32 @@ export async function handleControllerError(
     return;
   }
 
+  if (error instanceof Error && error.message === "REQUEST_BODY_TOO_LARGE") {
+    const validationError = new ProductValidationError(
+      "Request body is too large.",
+    );
+    sendJson(response, validationError.statusCode, {
+      code: validationError.code,
+      message: validationError.message,
+    });
+    return;
+  }
+
+  if (error instanceof Error && error.message === "REQUEST_BODY_REQUIRED") {
+    const validationError = new ProductValidationError(
+      "Request body is required.",
+    );
+    sendJson(response, validationError.statusCode, {
+      code: validationError.code,
+      message: validationError.message,
+    });
+    return;
+  }
+
   sendJson(response, 500, {
     code: "INTERNAL_SERVER_ERROR",
     message: "An unexpected error occurred.",
   });
-}
-
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  const chunks: Uint8Array[] = [];
-  let totalLength = 0;
-
-  for await (const chunk of request) {
-    const chunkBuffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
-    totalLength += chunkBuffer.byteLength;
-
-    if (totalLength > MAX_REQUEST_BODY_BYTES) {
-      throw new ProductValidationError("Request body is too large.");
-    }
-
-    chunks.push(chunkBuffer);
-  }
-
-  if (chunks.length === 0) {
-    throw new ProductValidationError("Request body is required.");
-  }
-
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
 }
 
 function matchProductDetailPath(
@@ -121,27 +124,4 @@ function matchProductDetailPath(
   return {
     productId: decodeURIComponent(match[1]),
   };
-}
-
-function sendMethodNotAllowed(
-  response: ServerResponse,
-  allowedMethods: string[],
-): void {
-  response.setHeader("Allow", allowedMethods.join(", "));
-  sendJson(response, 405, {
-    code: "METHOD_NOT_ALLOWED",
-    message: "The requested method is not supported for this route.",
-  });
-}
-
-function sendJson(
-  response: ServerResponse,
-  statusCode: number,
-  payload: unknown,
-): void {
-  const body = JSON.stringify(payload);
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("Content-Length", Buffer.byteLength(body));
-  response.end(body);
 }

@@ -1,16 +1,20 @@
 import { createServer, type Server } from "node:http";
 
+import { createAgentAccessController } from "../modules/agent-access/controller.js";
+import type { AgentAccessService } from "../modules/agent-access/service.js";
 import {
   createProductsController,
   handleControllerError,
 } from "../modules/products/controller.js";
 import type { ProductService } from "../modules/products/service.js";
+import { sendJson } from "../shared/http.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
 
 export interface StartHttpServerOptions {
   productService: ProductService;
+  agentAccessService: AgentAccessService;
   host?: string;
   port?: number;
 }
@@ -30,23 +34,33 @@ export async function startHttpServer(
   const handleProductsRequest = createProductsController(
     options.productService,
   );
+  const handleAgentAccessRequest = createAgentAccessController(
+    options.agentAccessService,
+  );
 
   const server = createServer(async (request, response) => {
     try {
-      const handled = await handleProductsRequest(request, response);
+      const handlers = [handleAgentAccessRequest, handleProductsRequest];
+      let handled = false;
+
+      for (const handleRequest of handlers) {
+        handled = await handleRequest(request, response);
+
+        if (handled) {
+          break;
+        }
+      }
 
       if (!handled) {
-        response.statusCode = 404;
-        response.setHeader("Content-Type", "application/json; charset=utf-8");
-        response.end(
-          JSON.stringify({
-            code: "ROUTE_NOT_FOUND",
-            message: "The requested route was not found.",
-          }),
-        );
+        sendJson(response, 404, {
+          code: "ROUTE_NOT_FOUND",
+          message: "The requested route was not found.",
+        });
       }
     } catch (error) {
-      await handleControllerError(error, response);
+      if (!response.writableEnded) {
+        await handleControllerError(error, response);
+      }
     }
   });
 
