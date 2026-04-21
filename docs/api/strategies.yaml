@@ -1,0 +1,269 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Strategy API
+  version: 1.0.0
+  description: >
+    策略模块首版 API 契约。当前阶段只提供创建、更新、列表、详情能力；
+    策略详情返回完整 Markdown 正文、标签以及从正文解析得到的占位符信息，
+    不提供独立的快照插入接口。
+  summary: 策略模块 MVP 对外契约
+
+tags:
+  - name: Strategies
+    description: 策略模块接口
+
+paths:
+  /api/strategies:
+    post:
+      tags:
+        - Strategies
+      summary: 创建策略
+      description: >
+        创建一个新的策略对象，并提交完整 Markdown 正文。
+        `summary` 可显式提供；若缺省，运行时可从正文自动派生。
+      operationId: createStrategy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStrategyRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyDetail'
+        '400':
+          description: 请求参数不合法
+    get:
+      tags:
+        - Strategies
+      summary: 查询策略列表
+      description: >
+        返回用于选择和展示的策略摘要列表。列表结果不返回完整 Markdown 正文，
+        以避免把详情视图职责混入列表接口。
+      operationId: listStrategies
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StrategySummary'
+
+  /api/strategies/{strategyId}:
+    parameters:
+      - $ref: '#/components/parameters/StrategyId'
+    get:
+      tags:
+        - Strategies
+      summary: 查询策略详情
+      description: >
+        返回策略完整详情，其中 `contentMarkdown` 为完整 Markdown 正文。
+        详情同时返回标签和从正文解析得到的占位符集合，但不额外返回导入来源列表；
+        快照导入来源继续通过正文中的注释标记承载。
+      operationId: getStrategyDetail
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyDetail'
+        '404':
+          description: 策略不存在
+    put:
+      tags:
+        - Strategies
+      summary: 更新策略
+      description: >
+        更新已有策略的名称、摘要、标签与完整 Markdown 正文。
+        当前阶段不提供独立的快照插入接口，整篇快照插入通过正文内容本身表达。
+      operationId: updateStrategy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStrategyRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyDetail'
+        '400':
+          description: 请求参数不合法
+        '404':
+          description: 策略不存在
+
+components:
+  parameters:
+    StrategyId:
+      name: strategyId
+      in: path
+      required: true
+      description: 策略稳定标识
+      schema:
+        type: string
+
+  schemas:
+    CreateStrategyRequest:
+      type: object
+      required:
+        - name
+        - contentMarkdown
+      properties:
+        name:
+          type: string
+          description: 策略可读名称，不要求全局唯一；对应 SQL 契约中的 `name`
+          minLength: 1
+        summary:
+          type: string
+          description: >
+            策略摘要，对应 SQL 契约中的 `summary`。允许省略；
+            若缺省，运行时可从正文自动派生后再持久化。
+        tags:
+          type: array
+          description: 策略标签集合，对应 SQL 契约中的 `tags_json`
+          items:
+            type: string
+        contentMarkdown:
+          type: string
+          description: >
+            策略完整 Markdown 正文。运行时应将其持久化为由 `content_ref`
+            关联的正文内容。整篇快照插入来源标记与对象占位符也保留在这份正文中。
+          minLength: 1
+
+    UpdateStrategyRequest:
+      type: object
+      required:
+        - name
+        - contentMarkdown
+      properties:
+        name:
+          type: string
+          description: 策略可读名称，不要求全局唯一；对应 SQL 契约中的 `name`
+          minLength: 1
+        summary:
+          type: string
+          description: >
+            策略摘要，对应 SQL 契约中的 `summary`。允许省略；
+            若缺省，运行时可从正文自动派生后再持久化。
+        tags:
+          type: array
+          description: 策略标签集合，对应 SQL 契约中的 `tags_json`
+          items:
+            type: string
+        contentMarkdown:
+          type: string
+          description: >
+            策略完整 Markdown 正文。更新后需继续作为同一 `strategyId`
+            的完整策略详情内容返回。
+          minLength: 1
+
+    StrategySummary:
+      type: object
+      description: 用于列表选择与展示的策略摘要模型，不返回完整 Markdown 正文。
+      required:
+        - strategyId
+        - name
+        - summary
+        - tags
+        - updatedAt
+      properties:
+        strategyId:
+          type: string
+          description: 策略稳定标识，对应 SQL 契约中的 `strategy_id`
+        name:
+          type: string
+          description: 策略可读名称，对应 SQL 契约中的 `name`
+        summary:
+          type: string
+          description: 策略摘要，对应 SQL 契约中的 `summary`
+        tags:
+          type: array
+          description: 策略标签集合，对应 SQL 契约中的 `tags_json`
+          items:
+            type: string
+        updatedAt:
+          type: string
+          format: date-time
+          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
+
+    StrategyPlaceholder:
+      type: object
+      description: >
+        从策略正文解析得到的对象占位符。
+        当前契约固定正文规范语法为 `{{objectType:objectKey}}`。
+      required:
+        - objectType
+        - objectKey
+      properties:
+        objectType:
+          type: string
+          description: 占位符中的对象类型，例如 `account`、`asset`、`product`
+        objectKey:
+          type: string
+          description: 占位符中的对象稳定键，不依赖展示名
+
+    StrategyDetail:
+      type: object
+      description: >
+        用于详情查看和完整策略消费的模型。
+        当前阶段不新增独立的快照插入接口，也不返回导入来源列表；
+        快照标记仍保留在 `contentMarkdown` 中。
+      required:
+        - strategyId
+        - name
+        - summary
+        - tags
+        - contentMarkdown
+        - placeholders
+        - createdAt
+        - updatedAt
+      properties:
+        strategyId:
+          type: string
+          description: 策略稳定标识，对应 SQL 契约中的 `strategy_id`
+        name:
+          type: string
+          description: 策略可读名称，对应 SQL 契约中的 `name`
+        summary:
+          type: string
+          description: 策略摘要，对应 SQL 契约中的 `summary`
+        tags:
+          type: array
+          description: 策略标签集合，对应 SQL 契约中的 `tags_json`
+          items:
+            type: string
+        contentMarkdown:
+          type: string
+          description: >
+            策略完整 Markdown 正文。运行时通过 SQL 契约中的 `content_ref`
+            关联并装配得到；导入块标记与占位符语法同样保留在这份正文中。
+        placeholders:
+          type: array
+          description: 从正文解析得到的对象占位符集合。
+          items:
+            $ref: '#/components/schemas/StrategyPlaceholder'
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间，对应 SQL 契约中的 `created_at`
+        updatedAt:
+          type: string
+          format: date-time
+          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
+
+  securitySchemes: {}
