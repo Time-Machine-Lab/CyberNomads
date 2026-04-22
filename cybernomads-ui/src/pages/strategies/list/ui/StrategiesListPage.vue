@@ -1,127 +1,134 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
-import { listStrategies } from '@/entities/strategy/api/strategy-service'
+import { isRealStrategyApiEnabled, listStrategies } from '@/entities/strategy/api/strategy-service'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
 interface StrategyDisplayCard extends StrategyRecord {
   icon: string
   accent: 'primary' | 'tertiary' | 'error' | 'secondary'
-  displayName: string
-  displaySummary: string
   displayTag: string
-  displayRate: number
-  displayPlatform: string
-  displayLevel: string
-  rateTone?: 'primary' | 'secondary' | 'tertiary' | 'error'
-  levelTone: 'secondary' | 'tertiary' | 'error'
 }
 
+const route = useRoute()
 const router = useRouter()
+
 const strategies = ref<StrategyRecord[]>([])
+const keyword = ref('')
+const isLoading = ref(false)
+const errorMessage = ref('')
 
-const strategyDisplayMap = {
-  'strategy-high-frequency-comments': {
-    icon: 'radar',
-    accent: 'primary',
-    displayName: '大范围扫射策略',
-    displaySummary: '针对漏斗顶部品牌认知设计的大规模数据收集方法。同时跨多个节点部署非定向互动探测。',
-    displayTag: '热门',
-    displayRate: 85,
-    displayPlatform: 'Bilibili',
-    displayLevel: '低',
-    rateTone: 'primary',
-    levelTone: 'secondary',
-  },
-  'strategy-deep-dm': {
-    icon: 'forum',
-    accent: 'tertiary',
-    displayName: '私信转化策略',
-    displaySummary: '利用个性化私信从特定竞品集群中提取高意向线索的精准定向协议。',
-    displayTag: '线索',
-    displayRate: 62,
-    displayPlatform: 'QQ',
-    displayLevel: '高',
-    rateTone: 'secondary',
-    levelTone: 'error',
-  },
-  'strategy-natural-growth': {
-    icon: 'group_work',
-    accent: 'primary',
-    displayName: '垂直社区互动',
-    displaySummary: '在部署软推销提示之前，旨在特定技术子论坛内建立权威的隐蔽渗透策略。',
-    displayTag: '社区',
-    displayRate: 91,
-    displayPlatform: '知乎',
-    displayLevel: '中',
-    rateTone: 'primary',
-    levelTone: 'tertiary',
-  },
-  'strategy-flash-t1': {
-    icon: 'bolt',
-    accent: 'error',
-    displayName: '趋势植入',
-    displaySummary: '高风险，高回报。借助快速加速的微趋势，将核心信息注入主流算法信息流。',
-    displayTag: '病毒传播',
-    displayRate: 45,
-    displayPlatform: '抖音',
-    displayLevel: '专家',
-    levelTone: 'error',
-  },
-  'strategy-precision-private-message': {
-    icon: 'route',
-    accent: 'tertiary',
-    displayName: '算法劫持',
-    displaySummary: '操纵 SEO 元数据和用户交互序列，在孤立的平台生态系统内人为提升帖子可见度。',
-    displayTag: '曝光',
-    displayRate: 78,
-    displayPlatform: '小红书',
-    displayLevel: '中',
-    rateTone: 'primary',
-    levelTone: 'tertiary',
-  },
-} as const
+const dataSourceLabel = computed(() => (isRealStrategyApiEnabled() ? '真实后端' : 'Mock'))
 
-watch(
-  mockScenarioId,
-  async () => {
-    strategies.value = await listStrategies()
-  },
-  { immediate: true },
-)
+const filteredStrategies = computed(() => {
+  const normalizedKeyword = keyword.value.trim().toLowerCase()
 
-const strategyCards = computed(() => {
-  const cards: StrategyDisplayCard[] = []
-
-  for (const id of Object.keys(strategyDisplayMap) as Array<keyof typeof strategyDisplayMap>) {
-    const strategy = strategies.value.find((item) => item.id === id)
-    const display = strategyDisplayMap[id]
-
-    if (!strategy) {
-      continue
-    }
-
-    cards.push({
-      ...strategy,
-      ...display,
-    })
+  if (!normalizedKeyword) {
+    return strategies.value
   }
 
-  return cards
+  return strategies.value.filter((strategy) => {
+    return [strategy.name, strategy.summary, strategy.tags.join(' '), strategy.id]
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedKeyword)
+  })
+})
+
+const strategyCards = computed(() => {
+  return filteredStrategies.value
+    .slice()
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .map((strategy, index) => {
+      const primaryTag = strategy.tags[0] ?? '未分类'
+
+      return {
+        ...strategy,
+        icon: resolveStrategyIcon(strategy, index),
+        accent: resolveStrategyAccent(strategy, index),
+        displayTag: primaryTag,
+      } satisfies StrategyDisplayCard
+    })
 })
 
 const featured = computed(() => strategyCards.value[0] ?? null)
 const secondaryStrategies = computed(() => strategyCards.value.slice(1))
+const stateMessage = computed(() => {
+  if (isLoading.value) {
+    return '正在同步策略列表...'
+  }
+
+  if (errorMessage.value) {
+    return errorMessage.value
+  }
+
+  if (keyword.value.trim()) {
+    return '没有匹配当前检索条件的策略。'
+  }
+
+  return '当前还没有策略，可以直接创建第一条。'
+})
+
+watch([mockScenarioId, () => route.query.refresh], () => {
+  void loadStrategies()
+}, { immediate: true })
+
+async function loadStrategies() {
+  isLoading.value = true
+  errorMessage.value = ''
+
+  try {
+    strategies.value = await listStrategies()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '策略列表加载失败，请稍后重试。'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+function resolveStrategyIcon(strategy: StrategyRecord, index: number) {
+  if (strategy.tags.some((tag) => tag.includes('私信'))) return 'forum'
+  if (strategy.tags.some((tag) => tag.includes('活动'))) return 'bolt'
+  if (strategy.tags.some((tag) => tag.includes('滴灌'))) return 'water_drop'
+  return index % 2 === 0 ? 'radar' : 'route'
+}
+
+function resolveStrategyAccent(
+  strategy: StrategyRecord,
+  index: number,
+): StrategyDisplayCard['accent'] {
+  if (strategy.tags.some((tag) => tag.includes('活动'))) return 'error'
+  if (strategy.tags.some((tag) => tag.includes('私信'))) return 'tertiary'
+  return index % 3 === 0 ? 'primary' : 'secondary'
+}
 
 function openStrategyEditor(strategyId: string) {
   void router.push(`/strategies/${strategyId}/edit`)
+}
+
+function openCreatePage() {
+  void router.push('/strategies/new')
 }
 </script>
 
 <template>
   <section class="strategies-page">
+    <div class="strategies-topbar">
+      <label class="strategies-topbar__search">
+        <span class="material-symbols-outlined">search</span>
+        <input v-model="keyword" type="text" placeholder="搜索策略名称、摘要、标签或 ID" data-testid="strategy-search" />
+      </label>
+
+      <div class="strategies-topbar__actions">
+        <span class="strategies-topbar__brand">CN</span>
+        <button type="button" aria-label="刷新策略列表" data-testid="strategy-refresh" @click="loadStrategies">
+          <span class="material-symbols-outlined">refresh</span>
+        </button>
+      </div>
+    </div>
+
     <div class="strategies-canvas">
       <header class="strategies-header">
         <div>
@@ -132,7 +139,7 @@ function openStrategyEditor(strategyId: string) {
         <div class="strategies-header__actions">
           <div class="strategies-header__meta">
             <span>活动矢量:</span>
-            <strong>12</strong>
+            <strong>{{ filteredStrategies.length }}</strong>
           </div>
 
           <RouterLink class="strategies-header__button" to="/strategies/new">
@@ -144,33 +151,33 @@ function openStrategyEditor(strategyId: string) {
 
       <div class="strategies-toolbar">
         <div class="strategies-toolbar__label">
-          <span class="material-symbols-outlined">filter_list</span>
-          <span>筛选</span>
+          <span class="material-symbols-outlined">database</span>
+          <span>{{ dataSourceLabel }}</span>
         </div>
 
-        <button type="button" class="strategies-toolbar__filter">
-          <span>平台</span>
-          <strong>全部</strong>
-          <span class="material-symbols-outlined">arrow_drop_down</span>
+        <button type="button" class="strategies-toolbar__filter" @click="keyword = ''">
+          <span>检索</span>
+          <strong>{{ keyword.trim() || '全部' }}</strong>
+          <span class="material-symbols-outlined">close_small</span>
         </button>
 
-        <button type="button" class="strategies-toolbar__filter">
-          <span>目标</span>
-          <strong>线索</strong>
-          <span class="material-symbols-outlined">arrow_drop_down</span>
+        <button type="button" class="strategies-toolbar__filter" @click="loadStrategies">
+          <span>数据</span>
+          <strong>{{ strategies.length }} 条</strong>
+          <span class="material-symbols-outlined">sync</span>
         </button>
 
         <div class="strategies-toolbar__view">
-          <button type="button" class="strategies-toolbar__view-button strategies-toolbar__view-button--active">
-            <span class="material-symbols-outlined">grid_view</span>
+          <button type="button" class="strategies-toolbar__view-button strategies-toolbar__view-button--active" @click="loadStrategies">
+            <span class="material-symbols-outlined">refresh</span>
           </button>
-          <button type="button" class="strategies-toolbar__view-button">
-            <span class="material-symbols-outlined">view_list</span>
+          <button type="button" class="strategies-toolbar__view-button" @click="openCreatePage">
+            <span class="material-symbols-outlined">add</span>
           </button>
         </div>
       </div>
 
-      <section v-if="featured" class="strategies-grid">
+      <section v-if="featured" class="strategies-grid" data-testid="strategy-list">
         <article
           class="strategy-card strategy-card--featured"
           role="link"
@@ -186,7 +193,7 @@ function openStrategyEditor(strategyId: string) {
               <div class="strategy-card__icon strategy-card__icon--primary">
                 <span class="material-symbols-outlined">{{ featured.icon }}</span>
               </div>
-              <h2>{{ featured.displayName }}</h2>
+              <h2>{{ featured.name }}</h2>
             </div>
 
             <div class="strategy-card__top-actions">
@@ -194,23 +201,22 @@ function openStrategyEditor(strategyId: string) {
             </div>
           </div>
 
-          <p class="strategy-card__summary">{{ featured.displaySummary }}</p>
+          <p class="strategy-card__summary">{{ featured.summary }}</p>
 
           <div class="strategy-card__stats strategy-card__stats--featured">
             <div>
-              <small>成功率</small>
-              <strong class="strategy-card__value strategy-card__value--primary">{{ featured.displayRate }}%</strong>
+              <small>最近更新</small>
+              <strong class="strategy-card__value strategy-card__value--primary">{{ featured.updatedAtLabel }}</strong>
             </div>
             <div>
-              <small>平台</small>
-              <strong class="strategy-card__value">{{ featured.displayPlatform }}</strong>
+              <small>标签数</small>
+              <strong class="strategy-card__value">{{ featured.tags.length }}</strong>
             </div>
             <div>
-              <small>难度</small>
-              <strong class="strategy-card__value strategy-card__value--secondary">{{ featured.displayLevel }}</strong>
+              <small>策略 ID</small>
+              <strong class="strategy-card__value strategy-card__value--secondary">{{ featured.id }}</strong>
             </div>
           </div>
-
         </article>
 
         <article
@@ -233,28 +239,57 @@ function openStrategyEditor(strategyId: string) {
             </div>
           </div>
 
-          <h2>{{ strategy.displayName }}</h2>
-          <p class="strategy-card__summary">{{ strategy.displaySummary }}</p>
+          <h2>{{ strategy.name }}</h2>
+          <p class="strategy-card__summary">{{ strategy.summary }}</p>
 
           <div class="strategy-card__stats">
             <div>
-              <small>成功率</small>
-              <strong class="strategy-card__value" :class="strategy.rateTone ? `strategy-card__value--${strategy.rateTone}` : undefined">
-                {{ strategy.displayRate }}%
+              <small>最近更新</small>
+              <strong class="strategy-card__value" :class="strategy.accent === 'primary' ? 'strategy-card__value--primary' : undefined">
+                {{ strategy.updatedAtLabel }}
               </strong>
             </div>
             <div>
-              <small>目标平台</small>
-              <strong class="strategy-card__value">{{ strategy.displayPlatform }}</strong>
+              <small>主标签</small>
+              <strong class="strategy-card__value">{{ strategy.displayTag }}</strong>
             </div>
             <div>
-              <small>等级</small>
-              <strong class="strategy-card__value" :class="`strategy-card__value--${strategy.levelTone}`">
-                {{ strategy.displayLevel }}
+              <small>标签数</small>
+              <strong class="strategy-card__value" :class="`strategy-card__value--${strategy.accent}`">
+                {{ strategy.tags.length }}
               </strong>
             </div>
           </div>
+        </article>
+      </section>
 
+      <section v-else class="strategies-grid">
+        <article class="strategy-card strategy-card--featured strategy-card--state">
+          <div class="strategy-card__top">
+            <div class="strategy-card__title-wrap">
+              <div class="strategy-card__icon strategy-card__icon--tertiary">
+                <span class="material-symbols-outlined">{{ errorMessage ? 'error' : isLoading ? 'progress_activity' : 'inventory_2' }}</span>
+              </div>
+              <h2>{{ errorMessage ? '策略列表加载失败' : isLoading ? '正在加载策略' : '暂无策略' }}</h2>
+            </div>
+          </div>
+
+          <p class="strategy-card__summary">{{ stateMessage }}</p>
+
+          <div class="strategy-card__stats strategy-card__stats--featured">
+            <div>
+              <small>数据源</small>
+              <strong class="strategy-card__value strategy-card__value--primary">{{ dataSourceLabel }}</strong>
+            </div>
+            <div>
+              <small>当前检索</small>
+              <strong class="strategy-card__value">{{ keyword.trim() || '全部' }}</strong>
+            </div>
+            <div>
+              <small>策略总数</small>
+              <strong class="strategy-card__value strategy-card__value--secondary">{{ strategies.length }}</strong>
+            </div>
+          </div>
         </article>
       </section>
     </div>
@@ -532,6 +567,10 @@ function openStrategyEditor(strategyId: string) {
   min-height: 17.5rem;
   overflow: hidden;
   border-color: transparent;
+}
+
+.strategy-card--state {
+  cursor: default;
 }
 
 .strategy-card__feature-glow {

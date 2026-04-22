@@ -78,38 +78,17 @@ function resolveAttachmentLabel(kind: AssetAttachmentRecord['kind']) {
 }
 
 function resolveStrategyGlyph(strategy: StrategyRecord, index: number) {
-  if (strategy.id === 'strategy-high-frequency-comments') return 'hub'
-  if (strategy.id === 'strategy-deep-dm') return 'forum'
-  if (strategy.id === 'strategy-natural-growth') return 'scatter_plot'
-  return index % 2 === 0 ? 'hub' : 'forum'
+  if (strategy.tags.some((tag) => tag.includes('私信'))) return 'forum'
+  if (strategy.tags.some((tag) => tag.includes('活动'))) return 'bolt'
+  return index % 2 === 0 ? 'hub' : 'description'
 }
 
-function resolveStrategyFrequency(strategy: StrategyRecord) {
-  if (strategy.id === 'strategy-high-frequency-comments') return '15次 / 小时'
-  if (strategy.id === 'strategy-deep-dm') return '50条 / 天 / 号'
-  if (strategy.id === 'strategy-natural-growth') return '12次 / 小时'
-  if (strategy.id === 'strategy-flash-t1') return '30条 / 小时'
-  return '50条 / 天 / 号'
+function resolveStrategyUpdatedAt(strategy: StrategyRecord) {
+  return strategy.updatedAtLabel
 }
 
-function resolveStrategyRisk(strategy: StrategyRecord) {
-  if (strategy.id === 'strategy-high-frequency-comments') {
-    return { label: '高风险', tone: 'high' as const }
-  }
-
-  if (strategy.id === 'strategy-deep-dm') {
-    return { label: '低风险', tone: 'low' as const }
-  }
-
-  if (strategy.id === 'strategy-natural-growth') {
-    return { label: '低风险', tone: 'low' as const }
-  }
-
-  if (strategy.id === 'strategy-flash-t1') {
-    return { label: '专家级', tone: 'warning' as const }
-  }
-
-  return { label: '中风险', tone: 'warning' as const }
+function resolveStrategyTag(strategy: StrategyRecord) {
+  return strategy.tags[0] ?? '未分类'
 }
 
 function resolveAccountVisualState(account: AccountRecord) {
@@ -275,14 +254,12 @@ async function handleSubmit() {
                 <p>{{ strategy.summary }}</p>
                 <div class="strategy-card__stats">
                   <div>
-                    <small>执行频率</small>
-                    <strong>{{ resolveStrategyFrequency(strategy) }}</strong>
+                    <small>最近更新</small>
+                    <strong>{{ resolveStrategyUpdatedAt(strategy) }}</strong>
                   </div>
                   <div>
-                    <small>风险等级</small>
-                    <strong :class="`strategy-card__risk strategy-card__risk--${resolveStrategyRisk(strategy).tone}`">
-                      {{ resolveStrategyRisk(strategy).label }}
-                    </strong>
+                    <small>主标签</small>
+                    <strong class="strategy-card__risk strategy-card__risk--low">{{ resolveStrategyTag(strategy) }}</strong>
                   </div>
                 </div>
               </article>

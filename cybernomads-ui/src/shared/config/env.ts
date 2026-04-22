@@ -21,5 +21,6 @@ export const env = {
   pollingIntervalMs: parsePositiveInteger(import.meta.env.VITE_POLLING_INTERVAL_MS, 4000),
   useMockApi: import.meta.env.VITE_USE_MOCK_API !== 'false',
   useRealAccountApi: parseBooleanFlag(import.meta.env.VITE_USE_REAL_ACCOUNT_API, false),
+  useRealStrategyApi: parseBooleanFlag(import.meta.env.VITE_USE_REAL_STRATEGY_API, false),
   mockScenario: import.meta.env.VITE_MOCK_SCENARIO?.trim() || 'running',
 } as const

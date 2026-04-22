@@ -1,101 +1,272 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { getStrategyById, saveStrategy } from '@/entities/strategy/api/strategy-service'
+import { getStrategyById, listStrategies, saveStrategy } from '@/entities/strategy/api/strategy-service'
+import {
+  buildPlaceholderDeclaration,
+  mapStrategyPlaceholderDtoToRecord,
+  parseStrategyPlaceholdersFromMarkdown,
+} from '@/entities/strategy/model/mappers'
+import type {
+  StrategyDetailRecord,
+  StrategyPlaceholderRecord,
+  StrategyRecord,
+} from '@/entities/strategy/model/types'
 import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const route = useRoute()
 const router = useRouter()
 
+const editorRef = ref<HTMLTextAreaElement | null>(null)
 const strategyId = computed(() => String(route.params.strategyId ?? ''))
 const isEditMode = computed(() => Boolean(strategyId.value))
 const isSaving = ref(false)
+const isLoading = ref(false)
+const isCatalogLoading = ref(false)
+const pageErrorMessage = ref('')
+const catalogErrorMessage = ref('')
+const insertingStrategyId = ref('')
+const moduleKeyword = ref('')
+const currentStrategy = ref<StrategyDetailRecord | null>(null)
+const strategyCatalog = ref<StrategyRecord[]>([])
+
+const snapshotMarkerPreview = [
+  '<!-- cn-strategy-import:start source-id="strategy-demo" -->',
+  '# 来源策略正文',
+  '<!-- cn-strategy-import:end -->',
+].join('\n')
 
 const form = reactive({
   name: '',
   summary: '',
   markdown: '',
-  moduleCount: 3,
+  tagsText: '',
 })
 
-const modules = [
-  {
-    title: '视频关键字搜索',
-    subtitle: 'Discovery',
-    description: '定义目标平台的搜索算法参数，提取高权重相关视频数据流。',
-    icon: 'video_search',
-    tone: 'tertiary',
-  },
-  {
-    title: '潜在客户发现',
-    subtitle: 'Lead Gen',
-    description: '基于评论情感分析和用户画像提取高意向目标账户。',
-    icon: 'person_search',
-    tone: 'secondary',
-  },
-  {
-    title: '评论触点生成',
-    subtitle: 'Engagement',
-    description: '生成上下文相关的非侵入式评论，建立初步连接。',
-    icon: 'chat_bubble',
-    tone: 'primary',
-    active: true,
-  },
-  {
-    title: '跟进 / DM 序列',
-    subtitle: 'Conversion',
-    description: '配置多阶段直接消息模板，处理常见异议并引导转化。',
-    icon: 'send',
-    tone: 'error',
-  },
-]
+const parsedTags = computed(() => {
+  const tokens = form.tagsText
+    .split(/[\n,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
 
-watch(
-  [strategyId, mockScenarioId],
-  async () => {
+  return [...new Set(tokens)]
+})
+
+const filteredCatalog = computed(() => {
+  const normalizedKeyword = moduleKeyword.value.trim().toLowerCase()
+
+  return strategyCatalog.value.filter((strategy) => {
+    if (strategy.id === strategyId.value) {
+      return false
+    }
+
+    if (!normalizedKeyword) {
+      return true
+    }
+
+    return [strategy.name, strategy.summary, strategy.tags.join(' ')]
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedKeyword)
+  })
+})
+
+const placeholderPreview = computed<StrategyPlaceholderRecord[]>(() => {
+  if (currentStrategy.value && form.markdown === currentStrategy.value.contentMarkdown) {
+    return currentStrategy.value.placeholders
+  }
+
+  const deduplicated = new Map<string, StrategyPlaceholderRecord>()
+
+  for (const placeholder of parseStrategyPlaceholdersFromMarkdown(form.markdown)) {
+    deduplicated.set(placeholder.key, mapStrategyPlaceholderDtoToRecord(placeholder))
+  }
+
+  return [...deduplicated.values()]
+})
+
+function createDefaultMarkdown() {
+  return [
+    '# 新策略',
+    '',
+    '## 使用说明',
+    '- 在这里编写 Markdown 提示词正文。',
+    '- 需要参数时，使用 {{string:title="默认标题"}} 或 {{int:max_retry=3}}。',
+  ].join('\n')
+}
+
+function applyStrategy(detail: StrategyDetailRecord | null) {
+  currentStrategy.value = detail
+  form.name = detail?.name ?? ''
+  form.summary = detail?.summary ?? ''
+  form.markdown = detail?.contentMarkdown ?? createDefaultMarkdown()
+  form.tagsText = detail?.tags.join(', ') ?? ''
+}
+
+async function loadCatalog() {
+  isCatalogLoading.value = true
+  catalogErrorMessage.value = ''
+
+  try {
+    strategyCatalog.value = await listStrategies()
+  } catch (error) {
+    catalogErrorMessage.value = error instanceof Error ? error.message : '策略侧栏加载失败。'
+  } finally {
+    isCatalogLoading.value = false
+  }
+}
+
+async function loadStrategy() {
+  isLoading.value = true
+  pageErrorMessage.value = ''
+
+  try {
     if (!isEditMode.value) {
-      form.name = 'TikTok 增长策略 - 亚太区'
-      form.summary = '自动化社交媒体互动与线索生成策略，专注亚太区高意向用户转化。'
-      form.markdown =
-        'name: "TikTok 增长策略 - 亚太区"\nplatform: SocialMedia\n\n## 系统提示词配置\n1. 当发现高潜目标时，首先使用备用账户 @[账号A] 进行点赞与初步互动。\n2. 若目标回复互动，则切换至主理人账户 @[账号B] 进行深度沟通。\n3. 沟通成熟后，发送私域引流卡片，附带 @[QQ加群二维码图片A] 引导转化。'
-      form.moduleCount = 4
+      applyStrategy(null)
       return
     }
 
     const strategy = await getStrategyById(strategyId.value)
-    if (!strategy) return
 
-    form.name = strategy.name
-    form.summary = strategy.summary
-    form.markdown = strategy.markdown
-    form.moduleCount = strategy.moduleCount
-  },
-  { immediate: true },
-)
+    if (!strategy) {
+      pageErrorMessage.value = '未找到该策略，已切换为空白编辑状态。'
+      applyStrategy(null)
+      return
+    }
 
-async function handleSave(status: 'draft' | 'deployed') {
+    applyStrategy(strategy)
+  } catch (error) {
+    pageErrorMessage.value = error instanceof Error ? error.message : '策略详情加载失败。'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+watch([strategyId, mockScenarioId], () => {
+  void loadCatalog()
+  void loadStrategy()
+}, { immediate: true })
+
+function resolveModuleTone(index: number) {
+  if (index % 4 === 0) return 'tertiary'
+  if (index % 4 === 1) return 'secondary'
+  if (index % 4 === 2) return 'primary'
+  return 'error'
+}
+
+function resolveModuleIcon(strategy: StrategyRecord) {
+  if (strategy.tags.some((tag) => tag.includes('私信'))) return 'forum'
+  if (strategy.tags.some((tag) => tag.includes('活动'))) return 'bolt'
+  if (strategy.tags.some((tag) => tag.includes('滴灌'))) return 'water_drop'
+  return 'description'
+}
+
+async function insertTextAtCursor(text: string) {
+  const editor = editorRef.value
+
+  if (!editor) {
+    form.markdown = [form.markdown.trimEnd(), text].filter(Boolean).join('\n\n')
+    return
+  }
+
+  const selectionStart = editor.selectionStart ?? form.markdown.length
+  const selectionEnd = editor.selectionEnd ?? selectionStart
+  const before = form.markdown.slice(0, selectionStart)
+  const after = form.markdown.slice(selectionEnd)
+  const prefix = before && !before.endsWith('\n') ? '\n\n' : ''
+  const suffix = after && !after.startsWith('\n') ? '\n\n' : ''
+  const insertion = `${prefix}${text}${suffix}`
+
+  form.markdown = `${before}${insertion}${after}`
+
+  await nextTick()
+  const cursor = before.length + insertion.length
+  editor.focus()
+  editor.setSelectionRange(cursor, cursor)
+}
+
+function composeSnapshotBlock(strategy: StrategyDetailRecord) {
+  return [
+    `<!-- cn-strategy-import:start source-id="${strategy.id}" -->`,
+    strategy.contentMarkdown.trim(),
+    '<!-- cn-strategy-import:end -->',
+  ].join('\n')
+}
+
+async function handleInsertStrategy(strategySummary: StrategyRecord) {
+  insertingStrategyId.value = strategySummary.id
+  catalogErrorMessage.value = ''
+
+  try {
+    const detail = await getStrategyById(strategySummary.id)
+
+    if (!detail) {
+      catalogErrorMessage.value = `策略「${strategySummary.name}」不存在或不可读取。`
+      return
+    }
+
+    await insertTextAtCursor(composeSnapshotBlock(detail))
+  } catch (error) {
+    catalogErrorMessage.value = error instanceof Error ? error.message : '策略插入失败。'
+  } finally {
+    insertingStrategyId.value = ''
+  }
+}
+
+async function handleSave() {
+  if (!form.name.trim() || !form.markdown.trim()) {
+    return
+  }
+
   isSaving.value = true
+  pageErrorMessage.value = ''
 
   try {
     await saveStrategy({
       id: isEditMode.value ? strategyId.value : undefined,
-      name: form.name,
-      summary: form.summary,
-      markdown: form.markdown,
-      moduleCount: form.moduleCount,
-      status,
-      platform: 'SocialMedia',
-      category: '线索',
-      tags: ['LeadGen'],
-      successRate: 76,
-      difficulty: '中',
+      name: form.name.trim(),
+      summary: form.summary.trim() || undefined,
+      tags: parsedTags.value,
+      contentMarkdown: form.markdown,
     })
 
-    await router.push('/strategies')
+    await router.push({
+      path: '/strategies',
+      query: {
+        refresh: String(Date.now()),
+      },
+    })
+  } catch (error) {
+    pageErrorMessage.value = error instanceof Error ? error.message : '策略保存失败。'
   } finally {
     isSaving.value = false
   }
+}
+
+function handleReload() {
+  void loadStrategy()
+  void loadCatalog()
+}
+
+async function handleInsertHeading() {
+  await insertTextAtCursor('## 新章节')
+}
+
+async function handleInsertStringPlaceholder() {
+  await insertTextAtCursor(buildPlaceholderDeclaration({
+    type: 'string',
+    key: 'title',
+    defaultValue: '默认标题',
+  }))
+}
+
+async function handleInsertIntPlaceholder() {
+  await insertTextAtCursor(buildPlaceholderDeclaration({
+    type: 'int',
+    key: 'max_retry',
+    defaultValue: 3,
+  }))
 }
 </script>
 
@@ -107,30 +278,35 @@ async function handleSave(status: 'draft' | 'deployed') {
           <span class="material-symbols-outlined">arrow_back</span>
         </RouterLink>
         <div class="strategy-editor-header__divider" />
-        <input v-model="form.name" type="text" placeholder="策略名称" />
+        <input v-model="form.name" type="text" placeholder="策略名称" data-testid="strategy-editor-name" />
       </div>
 
       <div class="strategy-editor-header__right">
         <div class="strategy-editor-header__tags">
-          <span>SocialMedia</span>
-          <span>LeadGen</span>
-          <span class="strategy-editor-header__tag-add" role="button" tabindex="0">
-            <span class="material-symbols-outlined">add</span>
-          </span>
+          <span v-for="tag in parsedTags" :key="tag">{{ tag }}</span>
+          <span v-if="parsedTags.length === 0">未分类</span>
+          <input
+            v-model="form.tagsText"
+            class="strategy-editor-header__tag-input"
+            type="text"
+            placeholder="标签，逗号分隔"
+            data-testid="strategy-editor-tags"
+          />
         </div>
         <div class="strategy-editor-header__divider" />
         <div class="strategy-editor-header__actions">
-          <button type="button" class="strategy-editor-header__action" :disabled="isSaving" @click="handleSave('draft')">
-            保存草稿
+          <button type="button" class="strategy-editor-header__action" :disabled="isSaving" @click="handleReload">
+            {{ isLoading ? '加载中…' : '重新加载' }}
           </button>
           <button
             type="button"
             class="strategy-editor-header__action strategy-editor-header__action--primary"
-            :disabled="isSaving || !form.name.trim()"
-            @click="handleSave('deployed')"
+            data-testid="strategy-editor-save"
+            :disabled="isSaving || !form.name.trim() || !form.markdown.trim()"
+            @click="handleSave"
           >
-            <span class="material-symbols-outlined">rocket_launch</span>
-            <span>{{ isSaving ? '部署中…' : '部署策略' }}</span>
+            <span class="material-symbols-outlined">save</span>
+            <span>{{ isSaving ? '保存中…' : '保存策略' }}</span>
           </button>
         </div>
       </div>
@@ -140,42 +316,73 @@ async function handleSave(status: 'draft' | 'deployed') {
       <aside class="strategy-modules">
         <div class="strategy-modules__header">
           <h2>
-            <span class="material-symbols-outlined">extension</span>
-            <span>模块池</span>
+            <span class="material-symbols-outlined">library_books</span>
+            <span>策略池</span>
           </h2>
-          <p>拖拽或点击添加代码片段至主编辑区</p>
+          <p>从左侧选择已有策略并整篇插入到当前正文，插入后仅保留快照内容。</p>
           <label class="strategy-modules__search">
             <span class="material-symbols-outlined">search</span>
-            <input type="text" placeholder="搜索模块..." />
+            <input v-model="moduleKeyword" type="text" placeholder="搜索策略..." />
           </label>
+          <p v-if="catalogErrorMessage" class="strategy-modules__alert">{{ catalogErrorMessage }}</p>
         </div>
 
         <div class="strategy-modules__list">
+          <article v-if="isCatalogLoading" class="strategy-module strategy-module--secondary">
+            <div class="strategy-module__top">
+              <div class="strategy-module__identity">
+                <div class="strategy-module__icon">
+                  <span class="material-symbols-outlined">progress_activity</span>
+                </div>
+                <div>
+                  <h3>正在加载策略</h3>
+                  <span>Catalog</span>
+                </div>
+              </div>
+            </div>
+            <p>正在同步可插入的策略列表。</p>
+          </article>
+
           <article
-            v-for="module in modules"
-            :key="module.title"
+            v-for="(strategy, index) in filteredCatalog"
+            :key="strategy.id"
             class="strategy-module"
             :class="[
-              `strategy-module--${module.tone}`,
-              { 'strategy-module--active': module.active },
+              `strategy-module--${resolveModuleTone(index)}`,
+              { 'strategy-module--active': insertingStrategyId === strategy.id },
             ]"
           >
             <div class="strategy-module__top">
               <div class="strategy-module__identity">
                 <div class="strategy-module__icon">
-                  <span class="material-symbols-outlined">{{ module.icon }}</span>
+                  <span class="material-symbols-outlined">{{ resolveModuleIcon(strategy) }}</span>
                 </div>
                 <div>
-                  <h3>{{ module.title }}</h3>
-                  <span>{{ module.subtitle }}</span>
+                  <h3>{{ strategy.name }}</h3>
+                  <span>{{ strategy.updatedAtLabel }}</span>
                 </div>
               </div>
 
-              <button type="button" class="strategy-module__action">
-                <span class="material-symbols-outlined">{{ module.active ? 'check' : 'add' }}</span>
+              <button type="button" class="strategy-module__action" :disabled="insertingStrategyId === strategy.id" @click="handleInsertStrategy(strategy)">
+                <span class="material-symbols-outlined">{{ insertingStrategyId === strategy.id ? 'sync' : 'add' }}</span>
               </button>
             </div>
-            <p>{{ module.description }}</p>
+            <p>{{ strategy.summary }}</p>
+          </article>
+
+          <article v-if="!isCatalogLoading && filteredCatalog.length === 0" class="strategy-module strategy-module--primary">
+            <div class="strategy-module__top">
+              <div class="strategy-module__identity">
+                <div class="strategy-module__icon">
+                  <span class="material-symbols-outlined">inventory_2</span>
+                </div>
+                <div>
+                  <h3>没有可插入策略</h3>
+                  <span>Catalog</span>
+                </div>
+              </div>
+            </div>
+            <p>调整检索条件后重试，或者先创建新的策略。</p>
           </article>
         </div>
       </aside>
@@ -183,55 +390,63 @@ async function handleSave(status: 'draft' | 'deployed') {
       <section class="strategy-canvas">
         <div class="strategy-canvas__toolbar">
           <div class="strategy-canvas__toolbar-left">
-            <button type="button">
+            <button type="button" @click="handleInsertHeading">
               <span class="material-symbols-outlined">format_h1</span>
             </button>
-            <button type="button">
+            <button type="button" @click="handleInsertStringPlaceholder">
               <span class="material-symbols-outlined">format_bold</span>
             </button>
-            <button type="button">
+            <button type="button" @click="handleInsertIntPlaceholder">
               <span class="material-symbols-outlined">code</span>
             </button>
             <div class="strategy-canvas__toolbar-divider" />
-            <button type="button">
+            <button type="button" @click="handleReload">
               <span class="material-symbols-outlined">data_object</span>
             </button>
           </div>
-          <span>Line 48, Col 12 | UTF-8 | Markdown</span>
+          <span>{{ placeholderPreview.length }} placeholders | Markdown</span>
         </div>
 
         <div class="strategy-canvas__content">
-          <textarea v-model="form.summary" class="strategy-editor-hidden-field" placeholder="摘要说明" />
           <div class="strategy-canvas__frontmatter">
-            <span class="strategy-canvas__key">name:</span>
-            <span class="strategy-canvas__value">"{{ form.name || 'TikTok 增长策略 - 亚太区' }}"</span>
-            <br />
-            <span class="strategy-canvas__key">description:</span>
-            <span class="strategy-canvas__value">"{{ form.summary || '自动化社交媒体互动与线索生成策略，专注亚太区高意向用户转化。' }}"</span>
+            <div class="strategy-canvas__meta-row">
+              <span class="strategy-canvas__key">name:</span>
+              <span class="strategy-canvas__value">"{{ form.name || '未命名策略' }}"</span>
+            </div>
+            <div class="strategy-canvas__meta-row">
+              <span class="strategy-canvas__key">tags:</span>
+              <span class="strategy-canvas__value">[{{ parsedTags.join(', ') || '未分类' }}]</span>
+            </div>
+            <div class="strategy-canvas__meta-row">
+              <span class="strategy-canvas__key">summary:</span>
+            </div>
+            <textarea
+              v-model="form.summary"
+              class="strategy-canvas__meta-textarea"
+              rows="3"
+              placeholder="摘要说明"
+              data-testid="strategy-editor-summary"
+            />
           </div>
 
-          <textarea v-model="form.markdown" />
+          <textarea ref="editorRef" v-model="form.markdown" data-testid="strategy-editor-markdown" />
 
           <div class="strategy-snippet">
             <div class="strategy-snippet__rail" />
             <div class="strategy-snippet__header">
-              <span class="material-symbols-outlined">chat_bubble</span>
-              <span>模块: 评论触点生成</span>
+              <span class="material-symbols-outlined">library_add</span>
+              <span>整篇插入约定</span>
             </div>
             <div class="strategy-snippet__body">
-              <p>### 评论生成逻辑</p>
-              <p>当识别到目标潜在客户发布的视频内容时，根据以下规则生成互动评论：</p>
-              <div class="strategy-snippet__code">
-                <span class="strategy-canvas__key">IF</span> sentiment == <span class="strategy-canvas__value">"positive"</span>
-                <span class="strategy-canvas__key"> AND</span> intent_score &gt; 0.7
-              </div>
-              <p class="strategy-snippet__hint">* 约束：绝对不要包含直接的销售链接。保持在 15-25 个字以内。</p>
+              <p>从左侧插入策略时，会把完整正文包裹在导入块标记中，后续仍然可以继续手工修改。</p>
+              <div class="strategy-snippet__code">{{ snapshotMarkerPreview }}</div>
+              <p class="strategy-snippet__hint">* 插入后的内容是静态快照，不会和来源策略保持实时引用关系。</p>
             </div>
           </div>
 
           <div class="strategy-canvas__cursor">
             <span />
-            <p>继续输入或从左侧拖拽模块...</p>
+            <p>{{ pageErrorMessage || '继续输入正文，或从左侧插入整篇策略...' }}</p>
           </div>
         </div>
       </section>
@@ -240,49 +455,36 @@ async function handleSave(status: 'draft' | 'deployed') {
         <div class="strategy-objects__header">
           <h2>
             <span class="material-symbols-outlined">data_object</span>
-            <span>对象引用</span>
+            <span>参数占位符</span>
           </h2>
-          <p>自动检测当前策略中的对象引用</p>
+          <p>自动识别当前策略中的 `type / key / defaultValue` 声明。</p>
         </div>
 
         <div class="strategy-objects__list">
-          <div class="strategy-object">
+          <div v-for="placeholder in placeholderPreview" :key="placeholder.key" class="strategy-object">
             <div class="strategy-object__icon">
-              <span class="material-symbols-outlined">person</span>
+              <span class="material-symbols-outlined">tune</span>
             </div>
             <div class="strategy-object__content">
-              <h3>账号A</h3>
-              <span>备用互动账号</span>
+              <h3>{{ placeholder.key }}</h3>
+              <span>{{ placeholder.type }} / {{ placeholder.displayDefaultValue || '空字符串' }}</span>
             </div>
             <span class="material-symbols-outlined strategy-object__check">check_circle</span>
           </div>
 
-          <div class="strategy-object">
+          <div v-if="placeholderPreview.length === 0" class="strategy-object strategy-object--asset">
             <div class="strategy-object__icon">
-              <span class="material-symbols-outlined">person</span>
+              <span class="material-symbols-outlined">data_object</span>
             </div>
             <div class="strategy-object__content">
-              <h3>账号B</h3>
-              <span>主理人转化账号</span>
+              <h3>暂无占位符</h3>
+              <span>可使用 {{ buildPlaceholderDeclaration({ type: 'string', key: 'title', defaultValue: '默认标题' }) }}</span>
             </div>
-            <span class="material-symbols-outlined strategy-object__check">check_circle</span>
-          </div>
-
-          <div class="strategy-object strategy-object--asset">
-            <div class="strategy-object__icon">
-              <span class="material-symbols-outlined">image</span>
-            </div>
-            <div class="strategy-object__content">
-              <h3>QQ加群二维码图片A</h3>
-              <span>引流媒体资产</span>
-            </div>
-            <span class="material-symbols-outlined strategy-object__check">check_circle</span>
+            <span class="material-symbols-outlined strategy-object__check strategy-object__check--muted">remove</span>
           </div>
         </div>
       </aside>
     </main>
-
-    <button type="button" class="strategy-editor-hidden-submit" @click="handleSave('deployed')">deploy</button>
   </section>
 </template>
 
@@ -381,6 +583,20 @@ async function handleSave(status: 'draft' | 'deployed') {
   color: #adaaaa;
 }
 
+.strategy-editor-header__tag-input {
+  min-width: 7rem;
+  max-width: 10rem;
+  border: 0;
+  color: #fff;
+  background: transparent;
+  font-size: 0.75rem;
+  outline: 0;
+}
+
+.strategy-editor-header__tag-input::placeholder {
+  color: #767575;
+}
+
 .strategy-editor-header__action {
   border: 0;
   padding: 0.7rem 1rem;
@@ -445,6 +661,10 @@ async function handleSave(status: 'draft' | 'deployed') {
   margin: 0.4rem 0 0;
   color: #adaaaa;
   font-size: 0.78rem;
+}
+
+.strategy-modules__alert {
+  color: #ff716c !important;
 }
 
 .strategy-modules__search {
@@ -649,15 +869,21 @@ async function handleSave(status: 'draft' | 'deployed') {
   font-size: 0.8rem;
 }
 
-.strategy-editor-hidden-field,
-.strategy-editor-hidden-submit {
-  position: fixed;
-  top: -10000px;
-  left: -10000px;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
+.strategy-canvas__meta-row {
+  margin-bottom: 0.5rem;
+}
+
+.strategy-canvas__meta-textarea {
+  width: 100%;
+  min-height: 4.5rem;
+  border: 0;
+  color: #c5c9cb;
+  background: transparent;
+  font-family: var(--cn-font-mono);
+  font-size: 0.8rem;
+  line-height: 1.65;
+  outline: 0;
+  resize: vertical;
 }
 
 .strategy-canvas__key {
@@ -723,6 +949,7 @@ async function handleSave(status: 'draft' | 'deployed') {
   background: #0a0a0a;
   font-family: var(--cn-font-mono);
   font-size: 0.8rem;
+  white-space: pre-wrap;
 }
 
 .strategy-snippet__hint {
@@ -780,6 +1007,10 @@ async function handleSave(status: 'draft' | 'deployed') {
 
 .strategy-object__check {
   color: #8ff5ff;
+}
+
+.strategy-object__check--muted {
+  color: #adaaaa;
 }
 
 @media (min-width: 1280px) {

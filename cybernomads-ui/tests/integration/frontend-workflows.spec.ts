@@ -6,6 +6,7 @@ import AppShell from '@/app/layout/AppShell.vue'
 import AssetEditorPage from '@/pages/assets/editor/ui/AssetEditorPage.vue'
 import OpenClawConfigPage from '@/pages/agents/openclaw/ui/OpenClawConfigPage.vue'
 import StrategyEditorPage from '@/pages/strategies/editor/ui/StrategyEditorPage.vue'
+import StrategiesListPage from '@/pages/strategies/list/ui/StrategiesListPage.vue'
 import TaskInterventionPage from '@/pages/workspaces/intervention/ui/TaskInterventionPage.vue'
 import WorkspacesListPage from '@/pages/workspaces/list/ui/WorkspacesListPage.vue'
 import WorkspaceExecutionPage from '@/pages/workspaces/detail/ui/WorkspaceExecutionPage.vue'
@@ -100,6 +101,17 @@ describe('frontend workflows', () => {
     expect(after.some((asset) => asset.name === '新建测试资产')).toBe(true)
   })
 
+  it('renders strategy summaries on the list page', async () => {
+    setMockScenario('editing')
+    resetMockRuntime()
+
+    const { wrapper } = await mountWithRouter('/strategies', StrategiesListPage, '/strategies')
+
+    expect(wrapper.get('[data-testid="strategy-list"]').text()).toContain('高频评论截流')
+    expect(wrapper.text()).toContain('最近更新')
+    expect(wrapper.text()).not.toContain('成功率')
+  })
+
   it('renders workspace execution data for the execution workflow', async () => {
     setMockScenario('running')
     resetMockRuntime()
@@ -181,7 +193,7 @@ describe('frontend workflows', () => {
     expect(wrapper.find('.app-shell').classes()).toContain('app-shell--collapsed')
   })
 
-  it('deploys a strategy from the editor workflow', async () => {
+  it('saves a strategy from the editor workflow', async () => {
     setMockScenario('editing')
     resetMockRuntime()
 
@@ -190,17 +202,21 @@ describe('frontend workflows', () => {
       { path: '/strategies', component: { template: '<div>strategies list</div>' } },
     ])
 
-    await wrapper.get('input[placeholder="策略名称"]').setValue('高保真部署策略')
-    await wrapper.get('textarea[placeholder="摘要说明"]').setValue('用于验证部署动作是否完整保留。')
-    await wrapper.get('button:last-of-type').trigger('click')
+    await wrapper.get('[data-testid="strategy-editor-name"]').setValue('高保真保存策略')
+    await wrapper.get('[data-testid="strategy-editor-summary"]').setValue('用于验证保存动作是否保留真实字段。')
+    await wrapper.get('[data-testid="strategy-editor-tags"]').setValue('保存测试, 编辑器')
+    await wrapper.get('[data-testid="strategy-editor-markdown"]').setValue(
+      '# 高保真保存策略\n\n占位符：{{string:title="默认标题"}}\n',
+    )
+    await wrapper.get('[data-testid="strategy-editor-save"]').trigger('click')
     await flushPromises()
 
-    expect(router.currentRoute.value.fullPath).toBe('/strategies')
+    expect(router.currentRoute.value.fullPath.startsWith('/strategies')).toBe(true)
 
     const after = await listStrategies()
     expect(after).toHaveLength(before.length + 1)
-    expect(after[0]?.name).toBe('高保真部署策略')
-    expect(after[0]?.status).toBe('deployed')
+    expect(after[0]?.name).toBe('高保真保存策略')
+    expect(after[0]?.tags).toContain('保存测试')
   })
 
   it('saves OpenClaw config through the shared mock boundary', async () => {

@@ -10,7 +10,13 @@ import type { ConsoleOverviewRecord, ConsoleSetupState } from '@/entities/consol
 import type { AssetAttachmentRecord, AssetRecord, SaveAssetInput } from '@/entities/asset/model/types'
 import type { InterventionRecord } from '@/entities/intervention-record/model/types'
 import type { ExecutionLogEntry, TaskRunRecord } from '@/entities/task-run/model/types'
-import type { SaveStrategyInput, StrategyRecord } from '@/entities/strategy/model/types'
+import { parseStrategyPlaceholdersFromMarkdown } from '@/entities/strategy/model/mappers'
+import type {
+  ListStrategiesResultDto,
+  SaveStrategyInput,
+  StrategyDetailDto,
+  StrategySummaryDto,
+} from '@/entities/strategy/model/types'
 import type { CreateWorkspaceInput, WorkspaceRecord } from '@/entities/workspace/model/types'
 import { env } from '@/shared/config/env'
 import {
@@ -28,7 +34,7 @@ export interface MockScenarioOption {
 
 interface MockDatabase {
   assets: AssetRecord[]
-  strategies: StrategyRecord[]
+  strategies: StrategyDetailDto[]
   accounts: LegacyMockAccountRecord[]
   agentNodes: AgentNodeRecord[]
   workspaces: WorkspaceRecord[]
@@ -117,82 +123,85 @@ function createBaseAssets(): AssetRecord[] {
   ]
 }
 
-function createBaseStrategies(): StrategyRecord[] {
+function createBaseStrategies(): StrategyDetailDto[] {
   return [
     {
-      id: 'strategy-high-frequency-comments',
+      strategyId: 'strategy-high-frequency-comments',
       name: '高频评论截流',
       summary: '在目标竞品账号下高频发布带有诱饵的专业评论。',
-      markdown:
-        'name: "高频评论截流"\nplatform: Bilibili\n\n## 系统提示词配置\n- 搜索竞品热视频\n- 分析评论区用户意图\n- 按节奏发布诱饵评论\n',
-      moduleCount: 4,
-      status: 'deployed',
+      contentMarkdown:
+        '# 高频评论截流\n\n## 系统提示词配置\n- 搜索竞品热视频\n- 分析评论区用户意图\n- 按节奏发布诱饵评论\n- 输出标题使用 {{string:title=\"默认标题\"}}\n',
+      placeholders: [
+        {
+          type: 'string',
+          key: 'title',
+          defaultValue: '默认标题',
+        },
+      ],
+      createdAt: '2026-04-18T08:10:00.000Z',
       updatedAt: '2026-04-20T11:00:00.000Z',
-      platform: 'Bilibili',
-      category: '线索',
       tags: ['截流'],
-      successRate: 71,
-      difficulty: '高',
     },
     {
-      id: 'strategy-deep-dm',
+      strategyId: 'strategy-deep-dm',
       name: '深度内容私信',
       summary: '通过自然语义匹配，向潜在目标用户发送深度定制化私信。',
-      markdown:
-        'name: "深度内容私信"\nplatform: Telegram\n\n## 互动执行配置\n1. 抽取高潜评论\n2. 生成价值评论\n3. 发送深度私信\n',
-      moduleCount: 5,
-      status: 'deployed',
+      contentMarkdown:
+        '# 深度内容私信\n\n## 互动执行配置\n1. 抽取高潜评论\n2. 生成价值评论\n3. 发送深度私信\n4. 单次跟进间隔不低于 {{int:followup_interval_hours=6}} 小时\n',
+      placeholders: [
+        {
+          type: 'int',
+          key: 'followup_interval_hours',
+          defaultValue: 6,
+        },
+      ],
+      createdAt: '2026-04-17T12:20:00.000Z',
       updatedAt: '2026-04-20T09:15:00.000Z',
-      platform: 'Telegram',
-      category: '线索',
       tags: ['私信'],
-      successRate: 84,
-      difficulty: '低',
     },
     {
-      id: 'strategy-natural-growth',
+      strategyId: 'strategy-natural-growth',
       name: '自然增长滴灌',
       summary: '围绕内容节奏和评论互动建立自然增长链路，降低风控触发概率。',
-      markdown:
-        'name: "自然增长滴灌"\nplatform: 小红书\n\n## 社区执行逻辑\n- 评论触点生成\n- 价值回复\n- 追问引导\n',
-      moduleCount: 3,
-      status: 'draft',
+      contentMarkdown: '# 自然增长滴灌\n\n## 社区执行逻辑\n- 评论触点生成\n- 价值回复\n- 追问引导\n',
+      placeholders: [],
+      createdAt: '2026-04-15T15:42:00.000Z',
       updatedAt: '2026-04-18T14:00:00.000Z',
-      platform: '小红书',
-      category: '社区',
       tags: ['滴灌'],
-      successRate: 76,
-      difficulty: '中',
     },
     {
-      id: 'strategy-flash-t1',
+      strategyId: 'strategy-flash-t1',
       name: '闪电战 T1',
       summary: '高风险高回报的快节奏趋势植入策略，适合活动型短视频流量争夺。',
-      markdown:
-        'name: "闪电战 T1"\nplatform: 抖音\n\n## 风险约束\n- 控制发布频率\n- 预热素材准备\n- 异常即暂停\n',
-      moduleCount: 4,
-      status: 'draft',
+      contentMarkdown:
+        '# 闪电战 T1\n\n## 风险约束\n- 控制发布频率\n- 预热素材准备\n- 异常即暂停\n- 单日最高触达量 {{int:max_daily_reach=30}}\n',
+      placeholders: [
+        {
+          type: 'int',
+          key: 'max_daily_reach',
+          defaultValue: 30,
+        },
+      ],
+      createdAt: '2026-04-14T09:30:00.000Z',
       updatedAt: '2026-04-17T17:10:00.000Z',
-      platform: '抖音',
-      category: '病毒传播',
       tags: ['活动'],
-      successRate: 45,
-      difficulty: '专家',
     },
     {
-      id: 'strategy-precision-private-message',
+      strategyId: 'strategy-precision-private-message',
       name: '精准转化追击',
       summary: '利用跟进消息和意向评分做多轮转化承接，聚焦强意图线索。',
-      markdown:
-        'name: "精准转化追击"\nplatform: 微信\n\n## 执行结构\n- 元数据清理\n- 关键词密度控制\n- 标签回写\n',
-      moduleCount: 4,
-      status: 'draft',
+      contentMarkdown:
+        '# 精准转化追击\n\n## 执行结构\n- 元数据清理\n- 关键词密度控制\n- 标签回写\n- CTA 文案使用 {{string:cta_text=\"立即预约\"}}\n',
+      placeholders: [
+        {
+          type: 'string',
+          key: 'cta_text',
+          defaultValue: '立即预约',
+        },
+      ],
+      createdAt: '2026-04-12T15:42:00.000Z',
       updatedAt: '2026-04-16T12:30:00.000Z',
-      platform: '微信',
-      category: '转化',
       tags: ['追击'],
-      successRate: 78,
-      difficulty: '中',
     },
   ]
 }
@@ -925,32 +934,41 @@ export function saveAssetData(input: SaveAssetInput) {
   return clone(record)
 }
 
-export function listStrategiesData() {
-  return clone(database.strategies)
+function mapStrategyDetailToSummary(strategy: StrategyDetailDto): StrategySummaryDto {
+  return {
+    strategyId: strategy.strategyId,
+    name: strategy.name,
+    summary: strategy.summary,
+    tags: strategy.tags,
+    updatedAt: strategy.updatedAt,
+  }
 }
 
-export function getStrategyData(id: string) {
-  return clone(database.strategies.find((strategy) => strategy.id === id) ?? null)
+export function listStrategiesData(): ListStrategiesResultDto {
+  return clone({
+    items: database.strategies.map(mapStrategyDetailToSummary),
+  })
 }
 
-export function saveStrategyData(input: SaveStrategyInput) {
-  const existing = input.id ? database.strategies.find((item) => item.id === input.id) : null
-  const record: StrategyRecord = {
-    id: input.id ?? createId('strategy'),
+export function getStrategyData(id: string): StrategyDetailDto | null {
+  return clone(database.strategies.find((strategy) => strategy.strategyId === id) ?? null)
+}
+
+export function saveStrategyData(input: SaveStrategyInput): StrategyDetailDto {
+  const existing = input.id ? database.strategies.find((item) => item.strategyId === input.id) : null
+  const timestamp = nowIso()
+  const record: StrategyDetailDto = {
+    strategyId: input.id ?? createId('strategy'),
     name: input.name,
-    summary: input.summary,
-    markdown: input.markdown,
-    moduleCount: input.moduleCount,
-    status: input.status,
-    updatedAt: nowIso(),
-    platform: input.platform ?? existing?.platform ?? 'Bilibili',
-    category: input.category ?? existing?.category ?? '线索',
+    summary: input.summary?.trim() || existing?.summary || '暂无摘要',
+    contentMarkdown: input.contentMarkdown,
+    placeholders: parseStrategyPlaceholdersFromMarkdown(input.contentMarkdown),
+    createdAt: existing?.createdAt ?? timestamp,
+    updatedAt: timestamp,
     tags: input.tags ?? existing?.tags ?? ['草稿'],
-    successRate: input.successRate ?? existing?.successRate ?? 60,
-    difficulty: input.difficulty ?? existing?.difficulty ?? '中',
   }
 
-  const index = database.strategies.findIndex((item) => item.id === record.id)
+  const index = database.strategies.findIndex((item) => item.strategyId === record.strategyId)
   if (index >= 0) {
     database.strategies[index] = record
   } else {
@@ -1075,7 +1093,7 @@ export function createWorkspaceData(input: CreateWorkspaceInput) {
   }))
 
   const asset = database.assets.find((item) => item.id === input.assetId)
-  const strategy = database.strategies.find((item) => item.id === input.strategyId)
+  const strategy = database.strategies.find((item) => item.strategyId === input.strategyId)
 
   const workspace: WorkspaceRecord = {
     id: workspaceId,

@@ -49,16 +49,6 @@ function resolveAssetName(assetId: string) {
 }
 
 function resolveStrategyName(strategyId: string) {
-  const displayNameMap: Record<string, string> = {
-    'strategy-high-frequency-comments': '高频互动',
-    'strategy-natural-growth': '自然增长滴灌',
-    'strategy-flash-t1': '闪电战 T1',
-  }
-
-  if (displayNameMap[strategyId]) {
-    return displayNameMap[strategyId]
-  }
-
   return strategies.value.find((strategy) => strategy.id === strategyId)?.name ?? '未选择'
 }
 
