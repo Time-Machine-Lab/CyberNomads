@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
+import type { StrategyReferenceStore } from "../../../ports/strategy-reference-store-port.js";
 import type {
   StrategyMetadataStore,
   StrategyRecord,
@@ -24,7 +25,9 @@ interface StrategySummaryRow {
   updatedAt: string;
 }
 
-export class SqliteStrategyRepository implements StrategyMetadataStore {
+export class SqliteStrategyRepository
+  implements StrategyMetadataStore, StrategyReferenceStore
+{
   private readonly database: DatabaseSync;
 
   constructor(databaseFile: string) {
@@ -102,6 +105,26 @@ export class SqliteStrategyRepository implements StrategyMetadataStore {
     return row ? mapStrategyRow(row) : undefined;
   }
 
+  async getStrategyReferenceById(
+    strategyId: string,
+  ): Promise<{ strategyId: string; name: string } | undefined> {
+    const row = this.database
+      .prepare(
+        `
+          SELECT
+            strategy_id AS strategyId,
+            name
+          FROM strategies
+          WHERE strategy_id = ?
+        `,
+      )
+      .get(strategyId) as
+      | { strategyId: string; name: string }
+      | undefined;
+
+    return row;
+  }
+
   async listStrategies(): Promise<StrategySummary[]> {
     const rows = this.database
       .prepare(
@@ -137,6 +160,8 @@ export class SqliteStrategyRepository implements StrategyMetadataStore {
     this.database.close();
   }
 }
+
+export { SqliteStrategyRepository as SqliteStrategyReferenceRepository };
 
 function mapStrategyRow(row: StrategyRow): StrategyRecord {
   return {

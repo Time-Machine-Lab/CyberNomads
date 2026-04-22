@@ -1,0 +1,535 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Traffic Works API
+  version: 1.0.0
+  description: >
+    引流工作模块首版 API 契约。当前阶段对外暴露稳定的工作级聚合语义，
+    覆盖创建、列表、详情、更新、启动、暂停、结束、归档与删除操作。
+    契约聚焦“产品引用 + 策略引用 + 对象绑定 + 生命周期状态 + 上下文准备状态”，
+    不在本契约中公开任务拆分、调度条件、执行日志或平台脚本细节。
+  summary: 引流工作模块 MVP 对外契约
+
+tags:
+  - name: TrafficWorks
+    description: 引流工作模块接口
+
+paths:
+  /api/traffic-works:
+    post:
+      tags:
+        - TrafficWorks
+      summary: 创建引流工作
+      description: >
+        创建一个新的引流工作对象。创建请求必须显式提供一个产品引用、一个策略引用，
+        以及满足策略对象槽位要求的一组对象绑定。工作身份由系统生成，
+        不以展示名称作为唯一键。
+      operationId: createTrafficWork
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTrafficWorkRequest"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrafficWorkDetail"
+        "400":
+          description: 请求参数不合法
+    get:
+      tags:
+        - TrafficWorks
+      summary: 查询引流工作列表
+      description: >
+        返回用于工作区管理与选择的引流工作摘要列表。列表只返回稳定摘要信息，
+        包括工作标识、展示名称、产品/策略摘要、对象绑定数量、生命周期状态与上下文准备状态，
+        不返回任务域执行细节。
+      operationId: listTrafficWorks
+      parameters:
+        - $ref: "#/components/parameters/ProductIdFilter"
+        - $ref: "#/components/parameters/StrategyIdFilter"
+        - $ref: "#/components/parameters/KeywordFilter"
+        - $ref: "#/components/parameters/LifecycleStatusFilter"
+        - $ref: "#/components/parameters/ContextPreparationStatusFilter"
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTrafficWorksResponse"
+
+  /api/traffic-works/{trafficWorkId}:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    get:
+      tags:
+        - TrafficWorks
+      summary: 查询引流工作详情
+      description: >
+        返回单个引流工作的完整管理视图，包含产品绑定摘要、策略绑定摘要、
+        对象绑定摘要、生命周期状态与当前上下文准备状态。
+        详情视图不暴露任务拆分结果、调度规则或日志明细。
+      operationId: getTrafficWorkDetail
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrafficWorkDetail"
+        "404":
+          description: 引流工作不存在
+    put:
+      tags:
+        - TrafficWorks
+      summary: 更新引流工作
+      description: >
+        更新一个非运行中的引流工作。更新允许修改展示名称、产品引用、策略引用与对象绑定；
+        更新后必须保持原有 `trafficWorkId` 不变，并把上下文准备状态重置为 `pending`，
+        以表达需要重新准备工作上下文。
+      operationId: updateTrafficWork
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTrafficWorkRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrafficWorkDetail"
+        "400":
+          description: 请求参数不合法
+        "404":
+          description: 引流工作不存在
+        "409":
+          description: 当前生命周期状态不允许更新
+    delete:
+      tags:
+        - TrafficWorks
+      summary: 删除引流工作
+      description: >
+        将引流工作标记为 `deleted` 业务状态。该操作表达业务级删除语义，
+        不约束底层是否执行物理删除；被删除工作不再被视为调度可见工作。
+      operationId: deleteTrafficWork
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrafficWorkDetail"
+        "404":
+          description: 引流工作不存在
+        "409":
+          description: 当前生命周期状态不允许删除
+
+  /api/traffic-works/{trafficWorkId}/start:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    post:
+      tags:
+        - TrafficWorks
+      summary: 启动引流工作
+      description: >
+        启动一个已准备好的引流工作。仅当工作生命周期状态为 `ready`
+        且上下文准备状态为 `prepared` 时允许启动；启动后工作生命周期状态变为 `running`。
+      operationId: startTrafficWork
+      responses:
+        "200":
+          description: 启动成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrafficWorkDetail"
+        "404":
+          description: 引流工作不存在
+        "409":
+          description: 当前状态不允许启动
+
+  /api/traffic-works/{trafficWorkId}/pause:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    post:
+      tags:
+        - TrafficWorks
+      summary: 暂停引流工作
+      description: >
+        暂停一个运行中的引流工作。MVP 语义下暂停后工作生命周期状态回到 `ready`，
+        但不隐含重新准备上下文；上下文准备状态继续作为独立状态读取。
+      operationId: pauseTrafficWork
+      responses:
+        "200":
+          description: 暂停成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrafficWorkDetail"
+        "404":
+          description: 引流工作不存在
+        "409":
+          description: 当前状态不允许暂停
+
+  /api/traffic-works/{trafficWorkId}/end:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    post:
+      tags:
+        - TrafficWorks
+      summary: 结束引流工作
+      description: >
+        将引流工作置为 `ended`。`ended` 表达业务上已结束的工作语义，
+        与 `archived`、`deleted` 保持区分；结束后的工作不再被视为调度可见工作。
+      operationId: endTrafficWork
+      responses:
+        "200":
+          description: 结束成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrafficWorkDetail"
+        "404":
+          description: 引流工作不存在
+        "409":
+          description: 当前状态不允许结束
+
+  /api/traffic-works/{trafficWorkId}/archive:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    post:
+      tags:
+        - TrafficWorks
+      summary: 归档引流工作
+      description: >
+        将引流工作置为 `archived`。归档表达业务管理上的收纳语义，
+        与 `ended`、`deleted` 保持区分；归档后的工作不再被视为调度可见工作。
+      operationId: archiveTrafficWork
+      responses:
+        "200":
+          description: 归档成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrafficWorkDetail"
+        "404":
+          description: 引流工作不存在
+        "409":
+          description: 当前状态不允许归档
+
+components:
+  parameters:
+    TrafficWorkId:
+      name: trafficWorkId
+      in: path
+      required: true
+      description: 引流工作稳定标识
+      schema:
+        type: string
+
+    ProductIdFilter:
+      name: productId
+      in: query
+      required: false
+      description: 按绑定产品筛选
+      schema:
+        type: string
+
+    StrategyIdFilter:
+      name: strategyId
+      in: query
+      required: false
+      description: 按绑定策略筛选
+      schema:
+        type: string
+
+    KeywordFilter:
+      name: keyword
+      in: query
+      required: false
+      description: >
+        关键字筛选，供运行时在 `displayName`、产品名称或策略名称等摘要字段上执行模糊匹配。
+      schema:
+        type: string
+
+    LifecycleStatusFilter:
+      name: lifecycleStatus
+      in: query
+      required: false
+      description: 按生命周期状态筛选
+      schema:
+        $ref: "#/components/schemas/TrafficWorkLifecycleStatus"
+
+    ContextPreparationStatusFilter:
+      name: contextPreparationStatus
+      in: query
+      required: false
+      description: 按上下文准备状态筛选
+      schema:
+        $ref: "#/components/schemas/TrafficWorkContextPreparationStatus"
+
+  schemas:
+    CreateTrafficWorkRequest:
+      type: object
+      required:
+        - displayName
+        - productId
+        - strategyId
+        - objectBindings
+      properties:
+        displayName:
+          type: string
+          description: 引流工作可读展示名称，对应 SQL 契约中的 `display_name`
+          minLength: 1
+        productId:
+          type: string
+          description: 绑定产品的稳定标识，对应 SQL 契约中的 `product_id`
+          minLength: 1
+        strategyId:
+          type: string
+          description: 绑定策略的稳定标识，对应 SQL 契约中的 `strategy_id`
+          minLength: 1
+        objectBindings:
+          type: array
+          minItems: 1
+          description: >
+            对象绑定集合，对应 SQL 契约中的 `object_bindings_json`。
+            该集合表达“策略对象槽位绑定到了哪些具体资源”，而不是任务域结构。
+          items:
+            $ref: "#/components/schemas/ObjectBindingItem"
+
+    UpdateTrafficWorkRequest:
+      type: object
+      required:
+        - displayName
+        - productId
+        - strategyId
+        - objectBindings
+      properties:
+        displayName:
+          type: string
+          description: 更新后的引流工作可读展示名称，对应 SQL 契约中的 `display_name`
+          minLength: 1
+        productId:
+          type: string
+          description: 更新后的绑定产品稳定标识，对应 SQL 契约中的 `product_id`
+          minLength: 1
+        strategyId:
+          type: string
+          description: 更新后的绑定策略稳定标识，对应 SQL 契约中的 `strategy_id`
+          minLength: 1
+        objectBindings:
+          type: array
+          minItems: 1
+          description: 更新后的对象绑定集合，对应 SQL 契约中的 `object_bindings_json`
+          items:
+            $ref: "#/components/schemas/ObjectBindingItem"
+
+    ListTrafficWorksResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrafficWorkSummary"
+
+    TrafficWorkSummary:
+      type: object
+      description: 用于工作区列表、筛选与选择的引流工作摘要模型，不返回任务域内部实现细节。
+      required:
+        - trafficWorkId
+        - displayName
+        - product
+        - strategy
+        - objectBindingCount
+        - lifecycleStatus
+        - contextPreparationStatus
+        - updatedAt
+      properties:
+        trafficWorkId:
+          type: string
+          description: 引流工作稳定标识，对应 SQL 契约中的 `traffic_work_id`
+        displayName:
+          type: string
+          description: 引流工作可读展示名称，对应 SQL 契约中的 `display_name`
+        product:
+          $ref: "#/components/schemas/ProductBindingSummary"
+        strategy:
+          $ref: "#/components/schemas/StrategyBindingSummary"
+        objectBindingCount:
+          type: integer
+          minimum: 0
+          description: 当前对象绑定数量，对应 `object_bindings_json` 的聚合结果
+        lifecycleStatus:
+          $ref: "#/components/schemas/TrafficWorkLifecycleStatus"
+        contextPreparationStatus:
+          $ref: "#/components/schemas/TrafficWorkContextPreparationStatus"
+        updatedAt:
+          type: string
+          format: date-time
+          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
+
+    TrafficWorkDetail:
+      type: object
+      description: >
+        用于单个引流工作查看与管理的完整模型。
+        该模型返回工作级绑定、状态与时间戳信息，但不返回任务拆分、执行日志或平台脚本明细。
+      required:
+        - trafficWorkId
+        - displayName
+        - product
+        - strategy
+        - objectBindings
+        - lifecycleStatus
+        - contextPreparationStatus
+        - createdAt
+        - updatedAt
+      properties:
+        trafficWorkId:
+          type: string
+          description: 引流工作稳定标识，对应 SQL 契约中的 `traffic_work_id`
+        displayName:
+          type: string
+          description: 引流工作可读展示名称，对应 SQL 契约中的 `display_name`
+        product:
+          $ref: "#/components/schemas/ProductBindingSummary"
+        strategy:
+          $ref: "#/components/schemas/StrategyBindingSummary"
+        objectBindings:
+          type: array
+          description: 当前对象绑定摘要集合，对应 SQL 契约中的 `object_bindings_json`
+          items:
+            $ref: "#/components/schemas/ObjectBindingItem"
+        lifecycleStatus:
+          $ref: "#/components/schemas/TrafficWorkLifecycleStatus"
+        lifecycleStatusReason:
+          type:
+            - string
+            - "null"
+          description: 最近一次生命周期状态变化原因，对应 SQL 契约中的 `lifecycle_status_reason`
+        contextPreparationStatus:
+          $ref: "#/components/schemas/TrafficWorkContextPreparationStatus"
+        contextPreparationStatusReason:
+          type:
+            - string
+            - "null"
+          description: 最近一次上下文准备状态变化原因，对应 SQL 契约中的 `context_preparation_status_reason`
+        contextPreparedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: 最近一次上下文准备完成时间，对应 SQL 契约中的 `context_prepared_at`
+        lastStartedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: 最近一次启动成功时间，对应 SQL 契约中的 `last_started_at`
+        endedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: 结束时间，对应 SQL 契约中的 `ended_at`
+        archivedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: 归档时间，对应 SQL 契约中的 `archived_at`
+        deletedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: 删除时间，对应 SQL 契约中的 `deleted_at`
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间，对应 SQL 契约中的 `created_at`
+        updatedAt:
+          type: string
+          format: date-time
+          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
+
+    ProductBindingSummary:
+      type: object
+      description: 引流工作绑定的产品摘要，不返回产品完整上下文正文。
+      required:
+        - productId
+        - name
+      properties:
+        productId:
+          type: string
+          description: 产品稳定标识，对应 SQL 契约中的 `product_id`
+        name:
+          type: string
+          description: 产品可读名称，由上层基于产品模块契约装配
+
+    StrategyBindingSummary:
+      type: object
+      description: 引流工作绑定的策略摘要，不返回策略完整 Markdown 正文。
+      required:
+        - strategyId
+        - name
+      properties:
+        strategyId:
+          type: string
+          description: 策略稳定标识，对应 SQL 契约中的 `strategy_id`
+        name:
+          type: string
+          description: 策略可读名称，由上层基于策略模块契约装配
+
+    ObjectBindingItem:
+      type: object
+      description: >
+        单个对象绑定项，表达一个策略对象槽位绑定到了哪个具体资源对象。
+        该模型只承载工作域所需的绑定摘要，不引入资源域内部实现细节。
+      required:
+        - objectType
+        - objectKey
+        - resourceId
+      properties:
+        objectType:
+          type: string
+          description: 策略中声明的对象类型，例如 `account`
+        objectKey:
+          type: string
+          description: 策略中声明的对象槽位稳定键，例如 `primary-account`
+        resourceId:
+          type: string
+          description: 绑定资源的稳定标识
+        resourceLabel:
+          type:
+            - string
+            - "null"
+          description: 绑定资源的可读展示标签
+
+    TrafficWorkLifecycleStatus:
+      type: string
+      description: 引流工作生命周期状态
+      enum:
+        - ready
+        - running
+        - ended
+        - archived
+        - deleted
+
+    TrafficWorkContextPreparationStatus:
+      type: string
+      description: 引流工作上下文准备状态
+      enum:
+        - pending
+        - prepared
+        - failed
+
+  securitySchemes: {}

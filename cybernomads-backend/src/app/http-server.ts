@@ -11,6 +11,8 @@ import {
 import type { ProductService } from "../modules/products/service.js";
 import { createStrategiesController } from "../modules/strategies/controller.js";
 import type { StrategyService } from "../modules/strategies/service.js";
+import { createTrafficWorksController } from "../modules/traffic-works/controller.js";
+import type { TrafficWorkService } from "../modules/traffic-works/service.js";
 import { sendJson } from "../shared/http.js";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -21,6 +23,7 @@ export interface StartHttpServerOptions {
   strategyService: StrategyService;
   accountService: AccountService;
   agentAccessService: AgentAccessService;
+  trafficWorkService: TrafficWorkService;
   host?: string;
   port?: number;
 }
@@ -49,6 +52,9 @@ export async function startHttpServer(
   const handleAgentAccessRequest = createAgentAccessController(
     options.agentAccessService,
   );
+  const handleTrafficWorksRequest = createTrafficWorksController(
+    options.trafficWorkService,
+  );
 
   const server = createServer(async (request, response) => {
     try {
@@ -57,6 +63,7 @@ export async function startHttpServer(
         handleAccountsRequest,
         handleStrategiesRequest,
         handleProductsRequest,
+        handleTrafficWorksRequest,
       ];
       let handled = false;
 
