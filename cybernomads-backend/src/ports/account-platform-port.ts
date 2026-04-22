@@ -33,6 +33,21 @@ export interface AccountPlatformAuthorizationStartResult {
   challenge: JsonObject | null;
 }
 
+export interface AccountPlatformOnboardingStartInput {
+  platform: string;
+  authorizationMethod: string;
+  expectedCredentialType: string | null;
+  payload: JsonObject;
+  requestedExpiresAt: string | null;
+}
+
+export interface AccountPlatformOnboardingStartResult {
+  expectedCredentialType: string | null;
+  sessionPayload: JsonObject;
+  expiresAt: string | null;
+  challenge: JsonObject | null;
+}
+
 export interface AccountPlatformAuthorizationVerifyInput {
   account: AccountPlatformAccountSnapshot;
   authorizationMethod: string;
@@ -66,6 +81,15 @@ export interface AccountPlatformAuthorizationVerifyResult {
   credential: AccountPlatformResolvedCredential | null;
 }
 
+export interface AccountPlatformOnboardingResolveInput {
+  platform: string;
+  authorizationMethod: string;
+  expectedCredentialType: string | null;
+  inputPayload: JsonObject;
+  sessionPayload: JsonObject;
+  resolutionPayload: JsonObject;
+}
+
 export interface AccountPlatformAvailabilityCheckInput {
   account: AccountPlatformAccountSnapshot;
   activeCredential: AccountPlatformCredentialSnapshot;
@@ -78,6 +102,12 @@ export interface AccountPlatformAvailabilityCheckResult {
 
 export interface AccountPlatformPort {
   platformCode: string;
+  startOnboardingSession(
+    input: AccountPlatformOnboardingStartInput,
+  ): Promise<AccountPlatformOnboardingStartResult>;
+  resolveOnboardingSession(
+    input: AccountPlatformOnboardingResolveInput,
+  ): Promise<AccountPlatformAuthorizationVerifyResult>;
   startAuthorizationAttempt(
     input: AccountPlatformAuthorizationStartInput,
   ): Promise<AccountPlatformAuthorizationStartResult>;

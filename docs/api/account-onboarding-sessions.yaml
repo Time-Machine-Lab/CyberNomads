@@ -1,0 +1,320 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Account Onboarding Sessions API
+  version: 1.0.0
+  description: >
+    账号接入会话 API 契约。用于在稳定账号对象创建前完成“令牌接入 -> 平台身份解析 -> 新建/恢复账号”
+    的主流程。该资源不暴露原始令牌内容，只返回脱敏会话状态、challenge 摘要、已解析的平台身份摘要
+    和最终结果。
+  summary: 账号接入会话对外契约
+
+tags:
+  - name: AccountOnboardingSessions
+    description: 账号接入会话接口
+
+paths:
+  /api/account-onboarding-sessions:
+    post:
+      tags:
+        - AccountOnboardingSessions
+      summary: 创建账号接入会话
+      description: >
+        为新增账号流程创建一条接入会话。调用方可以在会话创建时提交手工令牌输入，
+        或请求二维码等交互式 challenge 材料。会话本身不等于稳定账号对象。
+      operationId: startAccountOnboardingSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartAccountOnboardingSessionRequest'
+      responses:
+        '201':
+          description: 接入会话已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountOnboardingSessionDetail'
+        '400':
+          description: 请求参数不合法
+        '503':
+          description: 当前平台能力不可用
+
+  /api/account-onboarding-sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags:
+        - AccountOnboardingSessions
+      summary: 查询账号接入会话详情
+      description: >
+        返回一条账号接入会话的脱敏详情，包括 challenge 摘要、解析状态、已解析身份摘要和最终接入结果。
+      operationId: getAccountOnboardingSession
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountOnboardingSessionDetail'
+        '404':
+          description: 接入会话不存在
+
+  /api/account-onboarding-sessions/{sessionId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags:
+        - AccountOnboardingSessions
+      summary: 解析账号接入会话
+      description: >
+        触发一条接入会话的身份与令牌解析。适用于二维码接入后的确认/轮询，
+        或手工录入令牌后的平台身份解析。解析成功后，会话进入可最终确认状态。
+      operationId: resolveAccountOnboardingSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveAccountOnboardingSessionRequest'
+      responses:
+        '200':
+          description: 解析流程已执行
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountOnboardingSessionDetail'
+        '400':
+          description: 请求参数不合法
+        '404':
+          description: 接入会话不存在
+        '409':
+          description: 会话当前状态不允许解析
+
+  /api/account-onboarding-sessions/{sessionId}/finalize:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags:
+        - AccountOnboardingSessions
+      summary: 完成账号接入会话
+      description: >
+        从一条已解析成功的接入会话完成最终接入。运行时应根据解析出的平台身份判定：
+        创建新账号、恢复已逻辑删除账号，或返回已存在账号引用；不得创建重复账号。
+      operationId: finalizeAccountOnboardingSession
+      responses:
+        '200':
+          description: 已完成最终接入
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinalizeAccountOnboardingSessionResponse'
+        '404':
+          description: 接入会话不存在
+        '409':
+          description: 会话当前状态不允许完成接入
+
+components:
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: 账号接入会话稳定标识
+      schema:
+        type: string
+
+  schemas:
+    StartAccountOnboardingSessionRequest:
+      type: object
+      required:
+        - platform
+        - authorizationMethod
+      properties:
+        platform:
+          type: string
+          minLength: 1
+          description: 目标平台代码
+        authorizationMethod:
+          type: string
+          minLength: 1
+          description: >
+            接入方式，例如 `token_input`、`cookie_input`、`qr_authorization`。
+            当前对外统一称为“令牌接入”，但运行时仍保留内部凭证抽象。
+        expectedCredentialType:
+          type:
+            - string
+            - 'null'
+          description: 若解析成功，预期产出的候选令牌类型
+        payload:
+          type: object
+          additionalProperties: true
+          writeOnly: true
+          description: >
+            启动接入会话时提交的原始输入，例如手工令牌内容或平台接入参数。
+            运行时应把它转化为稳定引用，而不是通过普通接口回显。
+        expiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: 预计过期时间
+
+    ResolveAccountOnboardingSessionRequest:
+      type: object
+      properties:
+        resolutionPayload:
+          type: object
+          additionalProperties: true
+          writeOnly: true
+          description: >
+            解析会话所需的补充输入，例如二维码确认参数、一次性票据或轮询控制参数。
+
+    AccountOnboardingSessionDetail:
+      type: object
+      required:
+        - sessionId
+        - platform
+        - authorizationMethod
+        - expectedCredentialType
+        - sessionStatus
+        - sessionStatusReason
+        - challenge
+        - hasCandidateCredential
+        - expiresAt
+        - consumedAt
+        - createdAt
+        - updatedAt
+      properties:
+        sessionId:
+          type: string
+          description: 接入会话稳定标识
+        platform:
+          type: string
+          description: 目标平台代码
+        authorizationMethod:
+          type: string
+          description: 接入方式标签
+        expectedCredentialType:
+          type:
+            - string
+            - 'null'
+          description: 预期候选令牌类型
+        sessionStatus:
+          $ref: '#/components/schemas/AccountOnboardingSessionStatus'
+        sessionStatusReason:
+          type:
+            - string
+            - 'null'
+          description: 当前状态说明
+        challenge:
+          $ref: '#/components/schemas/ChallengeSummary'
+        resolvedIdentity:
+          $ref: '#/components/schemas/ResolvedPlatformIdentity'
+        resolvedProfile:
+          $ref: '#/components/schemas/ResolvedPlatformProfile'
+        hasCandidateCredential:
+          type: boolean
+          description: 是否已经生成候选令牌引用
+        candidateCredentialType:
+          type:
+            - string
+            - 'null'
+          description: 已生成的候选令牌类型
+        finalDisposition:
+          $ref: '#/components/schemas/OnboardingFinalDisposition'
+        targetAccountId:
+          type:
+            - string
+            - 'null'
+          description: 最终结果关联到的账号标识
+        expiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: 会话预计过期时间
+        consumedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: 会话被最终消费的时间
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FinalizeAccountOnboardingSessionResponse:
+      type: object
+      required:
+        - sessionId
+        - finalDisposition
+        - accountId
+        - account
+      properties:
+        sessionId:
+          type: string
+        finalDisposition:
+          $ref: '#/components/schemas/OnboardingFinalDisposition'
+        accountId:
+          type: string
+          description: 最终关联到的稳定账号标识
+        account:
+          $ref: './accounts.yaml#/components/schemas/AccountDetail'
+
+    AccountOnboardingSessionStatus:
+      type: string
+      enum:
+        - pending_resolution
+        - resolved
+        - resolution_failed
+        - expired
+        - consumed
+        - canceled
+
+    OnboardingFinalDisposition:
+      type:
+        - string
+        - 'null'
+      enum:
+        - created
+        - restored
+        - existing
+        - 'null'
+
+    ResolvedPlatformIdentity:
+      type:
+        - object
+        - 'null'
+      required:
+        - platform
+        - platformAccountUid
+      properties:
+        platform:
+          type: string
+        platformAccountUid:
+          type: string
+
+    ResolvedPlatformProfile:
+      type:
+        - object
+        - 'null'
+      properties:
+        displayName:
+          type:
+            - string
+            - 'null'
+        platformMetadata:
+          type: object
+          additionalProperties: true
+
+    ChallengeSummary:
+      type:
+        - object
+        - 'null'
+      additionalProperties: true
+      description: >
+        provider-neutral 的 challenge 摘要，可用于二维码图片地址、文本提示、轮询票据等交互式接入展示。

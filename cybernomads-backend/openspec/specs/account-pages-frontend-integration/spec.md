@@ -16,6 +16,19 @@ The frontend account pages SHALL load account list summaries and sanitized accou
 - **THEN** the frontend SHALL request the published account detail API
 - **AND** the detail page SHALL render the returned sanitized management view without requiring raw credential payload fields
 
+### Requirement: Account pages frontend integration SHALL provide a real account onboarding entry and flow
+The account pages frontend SHALL provide a real entry and flow for creating accounts instead of leaving new-account onboarding as a mock-only placeholder.
+
+#### Scenario: Account list exposes a real create entry
+- **WHEN** the user opens the account list page
+- **THEN** the frontend SHALL render a usable create-account entry that routes to a real onboarding page
+- **AND** that entry SHALL NOT depend on local mock data or a hand-crafted fake route
+
+#### Scenario: Onboarding page drives the published onboarding session workflow
+- **WHEN** the user opens the new-account onboarding page
+- **THEN** the frontend SHALL use the published onboarding-session API to complete platform selection, challenge display, resolved-token confirmation, and final create-or-restore actions
+- **AND** the page SHALL route to the created, restored, or already-existing account detail after finalization
+
 ### Requirement: Account pages frontend integration SHALL map backend account semantics into stable UI presentation states
 The frontend SHALL derive page labels, status chips, row tones, and summary text from backend lifecycle, authorization, and availability semantics instead of relying on the legacy `connected/needs-auth/error` mock status field.
 
@@ -43,25 +56,35 @@ The frontend SHALL drive editable profile saves, soft deletion, and restoration 
 - **AND** the resulting list or detail state SHALL reflect the backend-confirmed lifecycle status
 
 ### Requirement: Account pages frontend integration SHALL drive authorization and availability workflows using published account action semantics
-The frontend SHALL execute token or cookie onboarding and connection validation through the backend authorization-attempt and availability-check APIs instead of through legacy direct status mutation behavior.
+The frontend SHALL drive new-account token onboarding, existing-account token replacement, and connection validation through the published onboarding-session, authorization-attempt, and availability-check APIs instead of through legacy credential-specific mock behavior.
 
-#### Scenario: Direct credential onboarding uses authorization attempt plus verification
-- **WHEN** a user submits a supported direct credential input such as token or cookie material
-- **THEN** the frontend SHALL start an authorization attempt and then invoke authorization verification through the published backend workflow
-- **AND** the page SHALL treat authorization success or failure according to the backend verification response
+#### Scenario: New account onboarding uses the onboarding session workflow
+- **WHEN** the user chooses QR or manual token input during new-account onboarding
+- **THEN** the frontend SHALL use the published onboarding-session API to fetch challenge data, submit token resolution input or polling requests, and finalize create-or-restore
+- **AND** the frontend SHALL NOT require the user to manually enter `platformAccountUid` during the new-account flow
+
+#### Scenario: Existing account replacement uses a unified token access region
+- **WHEN** the user replaces the current token for an existing account
+- **THEN** the frontend SHALL host QR and manual token input in one unified token access region and call the existing-account authorization-attempt plus verification workflow
+- **AND** the page SHALL let the user decide whether to replace the current token after resolution succeeds rather than overwriting it when the challenge or input is first submitted
 
 #### Scenario: Connection validation uses availability check
 - **WHEN** a user triggers connection validation for an account
 - **THEN** the frontend SHALL invoke the published account availability-check API
 - **AND** the resulting availability state shown in the UI SHALL be refreshed from the backend response
 
-### Requirement: Account pages frontend integration SHALL degrade unsupported UI regions rather than inventing unpublished backend dependencies
-The frontend SHALL keep visual regions that depend on unpublished account contracts non-operational until those contracts are intentionally introduced.
+### Requirement: Account pages frontend integration SHALL degrade only the remaining unsupported regions
+The frontend SHALL degrade only the regions that still depend on unpublished contracts after QR challenge and unified token access are available from the backend rather than keeping the whole token region as a placeholder.
 
-#### Scenario: Unsupported credential or QR regions remain placeholder-only
-- **WHEN** the current page design includes QR authorization visuals, raw credential display, credential history, or terminal log panels
-- **THEN** the frontend SHALL render them as placeholder, disabled, hidden, or explanatory regions
-- **AND** the account pages SHALL NOT require unpublished backend APIs to make the page usable in this phase
+#### Scenario: QR challenge is rendered from real backend data
+- **WHEN** the backend publishes challenge summary or QR rendering contracts
+- **THEN** the frontend SHALL render the QR challenge region from real backend data
+- **AND** that region SHALL NOT remain permanently disabled or explanation-only
+
+#### Scenario: Raw token history and terminal logs remain placeholder-only
+- **WHEN** the page still contains raw token echo, token history, or terminal log regions
+- **THEN** the frontend SHALL keep those regions in a placeholder, disabled, hidden, or explanatory state
+- **AND** the frontend SHALL NOT invent unpublished backend contracts just to fill those regions
 
 ### Requirement: Account pages frontend integration SHALL isolate real account backend access from other mock-only frontend modules
 The frontend SHALL allow the account module to consume real backend APIs without forcing unrelated modules that still depend on mock data to switch at the same time.
@@ -70,4 +93,3 @@ The frontend SHALL allow the account module to consume real backend APIs without
 - **WHEN** the account pages are connected to the real backend
 - **THEN** the frontend SHALL keep account API calls on the real HTTP path
 - **AND** unrelated modules that are still mock-only SHALL remain usable without requiring immediate backend integration
-

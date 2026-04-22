@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { AccountService } from "../../src/modules/accounts/service.js";
 import type {
+  AccountPlatformOnboardingResolveInput,
+  AccountPlatformOnboardingStartInput,
   AccountPlatformAuthorizationStartInput,
   AccountPlatformPort,
 } from "../../src/ports/account-platform-port.js";
@@ -332,6 +334,32 @@ describe("account service", () => {
       token: "old-token",
     });
   });
+
+  it("returns challenge summary when interactive authorization starts", async () => {
+    const service = new AccountService({
+      stateStore: new InMemoryAccountStateStore(),
+      secretStore: new InMemoryAccountSecretStore(),
+      platforms: [new FakeAccountPlatform("bilibili")],
+      now: createSequentialNow(),
+      createAccountId: () => "account-1",
+      createAttemptId: () => "attempt-1",
+    });
+
+    await service.createAccount({
+      platform: "bilibili",
+      platformAccountUid: "uid-1",
+      displayName: "Main Account",
+    });
+
+    const attempt = await service.startAuthorizationAttempt("account-1", {
+      authorizationMethod: "qr_authorization",
+      payload: {},
+    });
+
+    expect(attempt.challenge).toMatchObject({
+      challengeType: "stub_qr",
+    });
+  });
 });
 
 class InMemoryAccountStateStore implements AccountStateStore {
@@ -402,6 +430,44 @@ class InMemoryAccountSecretStore implements AccountSecretStore {
 }
 
 class FakeAccountPlatform implements AccountPlatformPort {
+  onboardingStartHandler: AccountPlatformPort["startOnboardingSession"] = async (
+    input,
+  ) => ({
+    expectedCredentialType: input.expectedCredentialType,
+    sessionPayload: {
+      ...input.payload,
+    },
+    expiresAt: input.requestedExpiresAt,
+    challenge:
+      input.authorizationMethod === "qr_authorization"
+        ? {
+            challengeType: "stub_qr",
+          }
+        : null,
+  });
+
+  onboardingResolveHandler: AccountPlatformPort["resolveOnboardingSession"] = async (
+    input,
+  ) => ({
+    verificationResult: "succeeded",
+    reason: "stub onboarding resolved",
+    resolvedIdentity: {
+      platform: this.platformCode,
+      platformAccountUid: "resolved-uid",
+    },
+    profile: {
+      displayName: "Resolved Account",
+      platformMetadata: {},
+    },
+    credential: {
+      credentialType: input.expectedCredentialType ?? "token",
+      payload: {
+        token: "resolved-token",
+      },
+      expiresAt: null,
+    },
+  });
+
   verifyHandler: AccountPlatformPort["verifyAuthorizationAttempt"] = async (
     input,
   ) => ({
@@ -428,6 +494,18 @@ class FakeAccountPlatform implements AccountPlatformPort {
 
   constructor(readonly platformCode: string) {}
 
+  async startOnboardingSession(
+    input: AccountPlatformOnboardingStartInput,
+  ) {
+    return this.onboardingStartHandler(input);
+  }
+
+  async resolveOnboardingSession(
+    input: AccountPlatformOnboardingResolveInput,
+  ) {
+    return this.onboardingResolveHandler(input);
+  }
+
   async startAuthorizationAttempt(input: AccountPlatformAuthorizationStartInput) {
     void input.account;
 
@@ -437,7 +515,12 @@ class FakeAccountPlatform implements AccountPlatformPort {
         ...input.payload,
       },
       expiresAt: input.requestedExpiresAt,
-      challenge: null,
+      challenge:
+        input.authorizationMethod === "qr_authorization"
+          ? {
+              challengeType: "stub_qr",
+            }
+          : null,
     };
   }
 

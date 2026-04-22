@@ -1,5 +1,7 @@
 import { createServer, type Server } from "node:http";
 
+import { createAccountOnboardingController } from "../modules/account-onboarding/controller.js";
+import type { AccountOnboardingService } from "../modules/account-onboarding/service.js";
 import { createAgentAccessController } from "../modules/agent-access/controller.js";
 import type { AgentAccessService } from "../modules/agent-access/service.js";
 import { createAccountsController } from "../modules/accounts/controller.js";
@@ -22,6 +24,7 @@ export interface StartHttpServerOptions {
   productService: ProductService;
   strategyService: StrategyService;
   accountService: AccountService;
+  accountOnboardingService: AccountOnboardingService;
   agentAccessService: AgentAccessService;
   trafficWorkService: TrafficWorkService;
   host?: string;
@@ -49,6 +52,9 @@ export async function startHttpServer(
   const handleAccountsRequest = createAccountsController(
     options.accountService,
   );
+  const handleAccountOnboardingRequest = createAccountOnboardingController(
+    options.accountOnboardingService,
+  );
   const handleAgentAccessRequest = createAgentAccessController(
     options.agentAccessService,
   );
@@ -60,6 +66,7 @@ export async function startHttpServer(
     try {
       const handlers = [
         handleAgentAccessRequest,
+        handleAccountOnboardingRequest,
         handleAccountsRequest,
         handleStrategiesRequest,
         handleProductsRequest,

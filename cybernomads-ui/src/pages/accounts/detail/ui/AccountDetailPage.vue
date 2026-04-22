@@ -36,6 +36,8 @@ const isSavingProfile = ref(false)
 const isSubmittingCredential = ref(false)
 const isCheckingAvailability = ref(false)
 const isUpdatingLifecycle = ref(false)
+const qrChallenge = ref<JsonObject | null>(null)
+const qrAttemptId = ref<string | null>(null)
 
 const profileForm = reactive({
   displayName: '',
@@ -55,6 +57,14 @@ const accountId = computed(() => String(route.params.accountId ?? ''))
 const isDeleted = computed(() => account.value?.lifecycleStatus === 'deleted')
 const canEditProfile = computed(() => usesRealAccountApi && Boolean(account.value) && !isDeleted.value)
 const canSubmitCredential = computed(() => usesRealAccountApi && Boolean(account.value) && !isDeleted.value)
+const canResolveQrAuthorization = computed(
+  () =>
+    usesRealAccountApi &&
+    Boolean(account.value) &&
+    Boolean(qrAttemptId.value) &&
+    credentialForm.authorizationMethod === 'qr_authorization' &&
+    !isDeleted.value,
+)
 const canRunAvailabilityCheck = computed(
   () =>
     usesRealAccountApi &&
@@ -67,8 +77,9 @@ const canToggleLifecycle = computed(() => usesRealAccountApi && Boolean(account.
 const lifecycleActionLabel = computed(() =>
   isDeleted.value ? '恢复账号' : '逻辑删除账号',
 )
-const credentialFieldLabel = computed(() =>
-  credentialForm.authorizationMethod === 'cookie_input' ? 'Cookie 内容' : 'Token 内容',
+const credentialFieldLabel = computed(() => '令牌内容')
+const credentialPrimaryActionLabel = computed(() =>
+  credentialForm.authorizationMethod === 'qr_authorization' ? '获取二维码' : '验证并替换当前令牌',
 )
 
 function setFeedback(message: string, tone: FeedbackTone) {
@@ -126,6 +137,15 @@ async function loadAccount() {
 
     if (detail) {
       syncProfileForm(detail)
+
+      if (
+        detail.authorizationAttempt?.authorizationMethod === 'qr_authorization' &&
+        detail.authorizationAttempt.attemptStatus === 'pending_verification'
+      ) {
+        qrAttemptId.value = detail.authorizationAttempt.attemptId
+      } else {
+        qrAttemptId.value = null
+      }
     }
   } catch (error) {
     pageError.value = error instanceof Error ? error.message : '账号详情加载失败，请稍后重试。'
@@ -147,6 +167,16 @@ watch(mockScenarioId, () => {
     void loadAccount()
   }
 })
+
+watch(
+  () => credentialForm.authorizationMethod,
+  (nextMethod) => {
+    if (nextMethod !== 'qr_authorization') {
+      qrChallenge.value = null
+      qrAttemptId.value = null
+    }
+  },
+)
 
 async function handleSaveProfile() {
   if (!account.value) {
@@ -206,7 +236,7 @@ async function handleSubmitCredential() {
 
   const credentialValue = credentialForm.credentialValue.trim()
 
-  if (!credentialValue) {
+  if (credentialForm.authorizationMethod !== 'qr_authorization' && !credentialValue) {
     setFeedback(`${credentialFieldLabel.value}不能为空。`, 'error')
     return
   }
@@ -220,28 +250,45 @@ async function handleSubmitCredential() {
     return
   }
 
-  const payloadKey = credentialForm.authorizationMethod === 'cookie_input' ? 'cookie' : 'token'
-
   isSubmittingCredential.value = true
 
   try {
     const attempt = await startAuthorizationAttempt(account.value.id, {
       authorizationMethod: credentialForm.authorizationMethod,
-      expectedCredentialType: payloadKey === 'cookie' ? 'cookie' : 'token',
-      payload: {
-        displayName: profileForm.displayName.trim() || account.value.displayName,
-        platformMetadata,
-        credentialPayload: {
-          [payloadKey]: credentialValue,
-        },
-      },
+      expectedCredentialType: credentialForm.authorizationMethod === 'qr_authorization' ? null : 'token',
+      payload:
+        credentialForm.authorizationMethod === 'qr_authorization'
+          ? {}
+          : {
+              displayName: profileForm.displayName.trim() || account.value.displayName,
+              platformMetadata,
+              credentialPayload: {
+                token: credentialValue,
+              },
+            },
     })
+
+    qrAttemptId.value = attempt.attemptId
+
+    if (credentialForm.authorizationMethod === 'qr_authorization') {
+      qrChallenge.value = attempt.challenge
+      await loadAccount()
+      setFeedback(
+        attempt.challenge
+          ? '二维码已生成，扫码后点击“解析令牌并替换当前令牌”。'
+          : '扫码接入已启动，请在扫码后点击“解析令牌并替换当前令牌”。',
+        'success',
+      )
+      return
+    }
 
     const verification = await verifyAuthorizationAttempt(account.value.id, attempt.attemptId, {
       verificationPayload: {},
     })
 
     await loadAccount()
+    qrChallenge.value = null
+    qrAttemptId.value = null
 
     if (verification.verificationResult === 'succeeded') {
       credentialForm.credentialValue = ''
@@ -255,6 +302,43 @@ async function handleSubmitCredential() {
     setFeedback(verification.verificationReason ?? '凭证验证失败，请检查输入后重试。', 'error')
   } catch (error) {
     setFeedback(error instanceof Error ? error.message : '凭证验证流程执行失败。', 'error')
+  } finally {
+    isSubmittingCredential.value = false
+  }
+}
+
+async function handleResolveQrAuthorization() {
+  if (!account.value || !qrAttemptId.value) {
+    return
+  }
+
+  if (!usesRealAccountApi) {
+    setFeedback('当前未启用账号模块真实后端，扫码接入已禁用。', 'error')
+    return
+  }
+
+  isSubmittingCredential.value = true
+
+  try {
+    const verification = await verifyAuthorizationAttempt(account.value.id, qrAttemptId.value, {
+      verificationPayload: {},
+    })
+
+    await loadAccount()
+    qrChallenge.value = null
+    qrAttemptId.value = null
+
+    if (verification.verificationResult === 'succeeded') {
+      setFeedback(
+        verification.verificationReason ?? '扫码令牌已验证成功，并已替换当前令牌。',
+        'success',
+      )
+      return
+    }
+
+    setFeedback(verification.verificationReason ?? '扫码令牌解析失败，请稍后重试。', 'error')
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : '扫码令牌解析失败。', 'error')
   } finally {
     isSubmittingCredential.value = false
   }
@@ -502,32 +586,48 @@ function resolveAttemptStatusLabel(status: AuthorizationAttemptStatus) {
               <div class="account-card__row">
                 <h3>
                   <span class="material-symbols-outlined">key</span>
-                  <span>直接凭证接入</span>
+                  <span>令牌接入</span>
                 </h3>
-                <span class="account-card__tip">不回显原始 token / cookie</span>
+                <span class="account-card__tip">手工录入和扫码都走同一套令牌接入流程</span>
               </div>
 
               <label class="account-field">
-                <span>授权方式</span>
+                <span>接入方式</span>
                 <div class="account-select">
                   <select v-model="credentialForm.authorizationMethod" :disabled="!canSubmitCredential">
-                    <option value="token_input">Token 录入</option>
-                    <option value="cookie_input">Cookie 录入</option>
+                    <option value="token_input">手工录入令牌</option>
+                    <option value="qr_authorization">扫码接入令牌</option>
                   </select>
                   <span class="material-symbols-outlined">expand_more</span>
                 </div>
               </label>
 
-              <label class="account-field">
+              <label v-if="credentialForm.authorizationMethod !== 'qr_authorization'" class="account-field">
                 <span>{{ credentialFieldLabel }}</span>
                 <textarea
                   v-model="credentialForm.credentialValue"
                   rows="5"
                   :readonly="!canSubmitCredential"
-                  placeholder="粘贴 token 或 cookie 内容"
+                  placeholder="粘贴平台令牌，验证成功后才会替换当前令牌"
                 />
-                <small class="account-field__hint">前端只提交给授权流程，详情页不会展示原始凭证内容。</small>
+                <small class="account-field__hint">前端只提交给授权流程，详情页不会展示原始令牌内容。</small>
               </label>
+
+              <div v-else class="account-qr-inline">
+                <div v-if="qrChallenge && typeof qrChallenge.imageUrl === 'string'" class="account-qr-inline__image">
+                  <img :src="String(qrChallenge.imageUrl)" alt="扫码 challenge" />
+                </div>
+                <div class="account-qr-inline__content">
+                  <strong>扫码接入令牌</strong>
+                  <p>
+                    {{
+                      qrChallenge && typeof qrChallenge.message === 'string'
+                        ? qrChallenge.message
+                        : '先获取二维码，扫码完成后再解析并决定是否替换当前令牌。'
+                    }}
+                  </p>
+                </div>
+              </div>
 
               <div class="account-status__details account-status__details--compact">
                 <div>
@@ -546,29 +646,24 @@ function resolveAttemptStatusLabel(status: AuthorizationAttemptStatus) {
                 :disabled="isSubmittingCredential || !canSubmitCredential"
                 @click="handleSubmitCredential"
               >
-                <span>{{ isSubmittingCredential ? '提交中…' : '提交凭证并验证' }}</span>
+                <span>{{ isSubmittingCredential ? '处理中…' : credentialPrimaryActionLabel }}</span>
+              </button>
+
+              <button
+                v-if="credentialForm.authorizationMethod === 'qr_authorization'"
+                type="button"
+                class="account-secondary-button"
+                :disabled="isSubmittingCredential || !canResolveQrAuthorization"
+                @click="handleResolveQrAuthorization"
+              >
+                <span class="material-symbols-outlined">qr_code_scanner</span>
+                <span>{{ isSubmittingCredential ? '解析中…' : '解析令牌并替换当前令牌' }}</span>
               </button>
             </section>
           </div>
 
           <div class="account-detail-right">
             <div class="account-detail-right__top">
-              <section class="account-card account-card--center">
-                <h3>
-                  <span class="material-symbols-outlined">qr_code_scanner</span>
-                  <span>扫码授权</span>
-                </h3>
-                <div class="account-qr">
-                  <div class="account-qr__scan" />
-                  <span class="material-symbols-outlined">qr_code_2</span>
-                </div>
-                <p>一期后端尚未发布二维码 challenge 或图片契约，当前页面仅保留占位说明。</p>
-                <button type="button" class="account-secondary-button" disabled>
-                  <span class="material-symbols-outlined">refresh</span>
-                  <span>待后续接入二维码流程</span>
-                </button>
-              </section>
-
               <section class="account-card">
                 <h3>
                   <span class="material-symbols-outlined">wifi_tethering</span>
@@ -1027,6 +1122,39 @@ function resolveAttemptStatusLabel(status: AuthorizationAttemptStatus) {
 .account-card__tip {
   color: #767575;
   font-size: 0.72rem;
+}
+
+.account-qr-inline {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px dashed rgb(143 245 255 / 0.28);
+  border-radius: 0.85rem;
+  background: rgb(143 245 255 / 0.04);
+}
+
+.account-qr-inline__image {
+  display: flex;
+  justify-content: center;
+}
+
+.account-qr-inline__image img {
+  width: min(100%, 13rem);
+  border-radius: 0.85rem;
+  background: #fff;
+}
+
+.account-qr-inline__content strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.account-qr-inline__content p {
+  margin: 0;
+  color: #cdebed;
+  font-size: 0.8rem;
+  line-height: 1.6;
 }
 
 .account-card__row button {

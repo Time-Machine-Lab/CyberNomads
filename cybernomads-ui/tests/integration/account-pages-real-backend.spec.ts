@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { mapAccountSummaryDtoToRecord } from '@/entities/account/model/mappers'
 import type { AccountSummaryDto } from '@/entities/account/model/types'
+import AccountOnboardingPage from '@/pages/accounts/create/ui/AccountOnboardingPage.vue'
 import AccountDetailPage from '@/pages/accounts/detail/ui/AccountDetailPage.vue'
 import AccountsListPage from '@/pages/accounts/list/ui/AccountsListPage.vue'
 
@@ -77,6 +78,7 @@ smokeDescribe('account pages real backend smoke', () => {
 
   it('renders list page from real backend account summaries', async () => {
     const { wrapper } = await mountWithRouter('/accounts', AccountsListPage, '/accounts', [
+      { path: '/accounts/new', component: { template: '<div>create route</div>' } },
       { path: '/accounts/:accountId', component: { template: '<div>detail route</div>' } },
     ])
 
@@ -86,6 +88,51 @@ smokeDescribe('account pages real backend smoke', () => {
 
     expect(wrapper.text()).toContain(expectedListStateLabel)
     expect(wrapper.text()).toContain(expectedPlatformLabel)
+    expect(wrapper.text()).toContain('新增账号')
+  })
+
+  it('creates an account through the onboarding page and redirects to detail', async () => {
+    const uniqueToken = `smoke-create-${Date.now()}`
+    const { wrapper, router } = await mountWithRouter('/accounts/new', AccountOnboardingPage, '/accounts/new', [
+      { path: '/accounts/:accountId', component: { template: '<div>detail route</div>' } },
+    ])
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('新增账号')
+    })
+
+    await wrapper.find('textarea').setValue(uniqueToken)
+
+    const startButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('解析令牌'))
+
+    expect(startButton).toBeTruthy()
+    await startButton!.trigger('click')
+    await flushPromises()
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('平台身份与令牌已解析成功')
+    })
+
+    const finalizeButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('完成接入'))
+
+    expect(finalizeButton).toBeTruthy()
+    await finalizeButton!.trigger('click')
+    await flushPromises()
+
+    await vi.waitFor(() => {
+      expect(String(router.currentRoute.value.path)).toMatch(/^\/accounts\/.+/)
+    })
+
+    const createdAccountId = String(router.currentRoute.value.params.accountId)
+    const createdDetail = (await fetch(`${apiBaseUrl}/accounts/${createdAccountId}`).then((response) =>
+      response.json(),
+    )) as { platformAccountUid: string }
+
+    expect(createdDetail.platformAccountUid).toContain('smoke-create')
   })
 
   it('saves detail form, validates availability, deletes and restores through real backend', async () => {

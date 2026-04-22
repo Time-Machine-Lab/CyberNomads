@@ -78,6 +78,7 @@ export interface AuthorizationAttemptSummary {
   expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
+  challenge: JsonObject | null;
 }
 
 export interface AccountSummary {

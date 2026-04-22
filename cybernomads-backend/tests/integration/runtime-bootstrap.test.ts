@@ -49,6 +49,7 @@ describe.sequential("runtime bootstrap", () => {
       "004-accounts.sql",
       "005-strategies.sql",
       "006-traffic-works.sql",
+      "007-account-onboarding-sessions.sql",
     ]);
     expect(result.skippedScripts).toEqual([]);
 
@@ -86,15 +87,21 @@ describe.sequential("runtime bootstrap", () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
       .get("traffic_works") as { name: string } | undefined;
+    const onboardingSessionsTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("account_onboarding_sessions") as { name: string } | undefined;
     database.close();
 
     expect(bootstrapTable?.name).toBe("runtime_sql_scripts");
-    expect(recordedScripts?.count).toBe(6);
+    expect(recordedScripts?.count).toBe(7);
     expect(productsTable?.name).toBe("products");
     expect(agentServicesTable?.name).toBe("agent_service_connections");
     expect(platformAccountsTable?.name).toBe("platform_accounts");
     expect(strategiesTable?.name).toBe("strategies");
     expect(trafficWorksTable?.name).toBe("traffic_works");
+    expect(onboardingSessionsTable?.name).toBe("account_onboarding_sessions");
   });
 
   it("skips already executed runtime SQL scripts on repeated startup", async () => {
@@ -113,6 +120,7 @@ describe.sequential("runtime bootstrap", () => {
       "004-accounts.sql",
       "005-strategies.sql",
       "006-traffic-works.sql",
+      "007-account-onboarding-sessions.sql",
     ]);
 
     const database = new DatabaseSync(runtimePaths.databaseFile);
@@ -121,7 +129,7 @@ describe.sequential("runtime bootstrap", () => {
       .get() as { count: number } | undefined;
     database.close();
 
-    expect(recordedScripts?.count).toBe(6);
+    expect(recordedScripts?.count).toBe(7);
   });
 
   it("fails startup explicitly when the SQLite runtime database cannot be opened", async () => {

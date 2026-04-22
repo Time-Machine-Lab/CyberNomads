@@ -11,6 +11,7 @@ import { FileSystemProductContentStore } from "../adapters/storage/file-system/p
 import { FileSystemTrafficWorkContextStore } from "../adapters/storage/file-system/traffic-work-context-store.js";
 import { FileSystemStrategyContentStore } from "../adapters/storage/file-system/strategy-content-store.js";
 import { OpenClawAgentProvider } from "../adapters/agent/openclaw/openclaw-adapter.js";
+import { SqliteAccountOnboardingRepository } from "../adapters/storage/sqlite/account-onboarding-sqlite-repository.js";
 import { SqliteAccountsRepository } from "../adapters/storage/sqlite/accounts-sqlite-repository.js";
 import { SqliteAgentServiceStateRepository } from "../adapters/storage/sqlite/agent-services-sqlite-repository.js";
 import { SqliteProductRepository } from "../adapters/storage/sqlite/products-sqlite-repository.js";
@@ -19,6 +20,7 @@ import {
   SqliteStrategyRepository,
 } from "../adapters/storage/sqlite/strategies-sqlite-repository.js";
 import { SqliteTrafficWorkRepository } from "../adapters/storage/sqlite/traffic-works-sqlite-repository.js";
+import { AccountOnboardingService } from "../modules/account-onboarding/service.js";
 import { AgentAccessService } from "../modules/agent-access/service.js";
 import { AccountService } from "../modules/accounts/service.js";
 import { ProductService } from "../modules/products/service.js";
@@ -57,6 +59,9 @@ export async function startApplication(
     runtime.paths.databaseFile,
   );
   const accountRepository = new SqliteAccountsRepository(
+    runtime.paths.databaseFile,
+  );
+  const accountOnboardingRepository = new SqliteAccountOnboardingRepository(
     runtime.paths.databaseFile,
   );
   const agentServiceStateRepository = new SqliteAgentServiceStateRepository(
@@ -99,6 +104,15 @@ export async function startApplication(
       ...(options.accountPlatforms ?? []),
     ],
   });
+  const accountOnboardingService = new AccountOnboardingService({
+    stateStore: accountOnboardingRepository,
+    accountStateStore: accountRepository,
+    secretStore: accountSecretStore,
+    platforms: [
+      new BilibiliStubAccountPlatformAdapter(),
+      ...(options.accountPlatforms ?? []),
+    ],
+  });
   const agentAccessService = new AgentAccessService({
     stateStore: agentServiceStateRepository,
     credentialStore: agentServiceCredentialStore,
@@ -119,6 +133,7 @@ export async function startApplication(
       productService,
       strategyService,
       accountService,
+      accountOnboardingService,
       agentAccessService,
       trafficWorkService,
       host: options.host,
@@ -134,6 +149,7 @@ export async function startApplication(
         productService.close();
         strategyService.close();
         accountService.close();
+        accountOnboardingService.close();
         agentAccessService.close();
         trafficWorkService.close();
         strategyReferenceRepository.close();
@@ -143,6 +159,7 @@ export async function startApplication(
     productService.close();
     strategyService.close();
     accountService.close();
+    accountOnboardingService.close();
     agentAccessService.close();
     trafficWorkService.close();
     strategyReferenceRepository.close();

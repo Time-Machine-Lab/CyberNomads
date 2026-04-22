@@ -86,6 +86,32 @@ The backend account runtime SHALL provide logical deletion and restoration behav
 - **THEN** the runtime restores the original account object
 - **AND** the runtime SHALL NOT create a duplicate account object for the same `platform + platformAccountUid`
 
+### Requirement: Account runtime SHALL support token-first onboarding before stable account creation
+The backend account runtime SHALL support token onboarding through a dedicated onboarding session before a stable account object exists.
+
+#### Scenario: Start onboarding session without platform account UID
+- **WHEN** a user starts new-account token onboarding before knowing the `platformAccountUid`
+- **THEN** the runtime SHALL create an onboarding session that records platform, onboarding method, and pending-resolution state
+- **AND** the runtime SHALL NOT create an account object that lacks a stable platform identity
+
+#### Scenario: Verified onboarding session records resolved identity
+- **WHEN** the platform capability successfully resolves an onboarding session and returns platform identity, readable profile data, and candidate token material
+- **THEN** the runtime SHALL persist the resolved result on the onboarding session
+- **AND** the result SHALL remain pending final confirmation rather than immediately creating the account
+
+### Requirement: Account runtime SHALL finalize verified onboarding sessions into stable account semantics
+The backend account runtime SHALL finalize a verified onboarding session by deciding whether to create a new account, restore a soft-deleted account, or return an existing account reference while preventing duplicate identities.
+
+#### Scenario: Finalize verified session creates or restores the stable account
+- **WHEN** a verified onboarding session is finalized and the resolved platform identity maps to no active account or only to a logically deleted account
+- **THEN** the runtime SHALL create a new account or restore the original account and switch the candidate token into the active token slot
+- **AND** the runtime SHALL update authorization semantics so they align with the newly active token
+
+#### Scenario: Finalize verified session returns existing account reference
+- **WHEN** a verified onboarding session is finalized and the resolved platform identity already maps to an active account object
+- **THEN** the runtime SHALL return that existing account reference instead of creating a duplicate account
+- **AND** the runtime SHALL NOT use the new-account flow to implicitly replace that account's current active token
+
 ### Requirement: Account runtime SHALL align with published account contracts
 The backend account runtime SHALL implement its behavior in alignment with the published account API and SQL contracts before exposing account functionality.
 
@@ -95,7 +121,12 @@ The backend account runtime SHALL implement its behavior in alignment with the p
 - **AND** the implementation SHALL update those top-level contracts first if runtime behavior requires contract changes
 
 ### Requirement: Account runtime SHALL delegate platform-specific authorization and availability work through account platform capability abstraction
-The backend account runtime SHALL complete authorization start, authorization verification, and availability evaluation by invoking the provider-neutral account platform capability abstraction rather than embedding platform-specific script behavior in the account module itself.
+The backend account runtime SHALL complete onboarding session start, onboarding token resolution, authorization start, authorization verification, and availability evaluation by invoking the provider-neutral account platform capability abstraction rather than embedding platform-specific script behavior in the account module itself.
+
+#### Scenario: Onboarding resolution uses platform capability result
+- **WHEN** the account runtime processes challenge retrieval or token resolution for a new-account onboarding session
+- **THEN** it SHALL invoke the matching account platform capability implementation
+- **AND** the runtime SHALL update onboarding-session state from the normalized platform result rather than from script-specific payload details
 
 #### Scenario: Authorization verification uses platform capability result
 - **WHEN** the account runtime verifies a pending authorization attempt
@@ -132,4 +163,3 @@ The backend account runtime SHALL allow an already authorized account to start a
 - **WHEN** an account without a current active credential starts its first authorization attempt
 - **THEN** the runtime SHALL be allowed to transition the account into an `authorizing` authorization state
 - **AND** the runtime SHALL still preserve the separation between pending attempt state and current active credential state
-

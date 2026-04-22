@@ -35,6 +35,15 @@ export type AuthorizationAttemptStatus =
   | 'canceled'
 
 export type VerificationResult = 'succeeded' | 'failed'
+export type ChallengeSummary = JsonObject | null
+export type AccountOnboardingSessionStatus =
+  | 'pending_resolution'
+  | 'resolved'
+  | 'resolution_failed'
+  | 'expired'
+  | 'consumed'
+  | 'canceled'
+export type AccountOnboardingFinalDisposition = 'created' | 'restored' | 'existing'
 
 export interface ListAccountsQuery {
   platform?: string
@@ -64,6 +73,18 @@ export interface VerifyAuthorizationAttemptInput {
   verificationPayload?: JsonObject
 }
 
+export interface StartAccountOnboardingSessionInput {
+  platform: string
+  authorizationMethod: string
+  expectedCredentialType?: string | null
+  payload?: JsonObject
+  expiresAt?: string | null
+}
+
+export interface ResolveAccountOnboardingSessionInput {
+  resolutionPayload?: JsonObject
+}
+
 export interface ActiveCredentialSummary {
   hasCredential: boolean
   credentialType: string | null
@@ -80,6 +101,44 @@ export interface AuthorizationAttemptSummary {
   expiresAt: string | null
   createdAt: string
   updatedAt: string
+  challenge: ChallengeSummary
+}
+
+export interface AccountOnboardingResolvedIdentity {
+  platform: string
+  platformAccountUid: string
+}
+
+export interface AccountOnboardingResolvedProfile {
+  displayName: string | null
+  platformMetadata: JsonObject
+}
+
+export interface AccountOnboardingSessionDetailDto {
+  sessionId: string
+  platform: string
+  authorizationMethod: string
+  expectedCredentialType: string | null
+  sessionStatus: AccountOnboardingSessionStatus
+  sessionStatusReason: string | null
+  challenge: ChallengeSummary
+  resolvedIdentity: AccountOnboardingResolvedIdentity | null
+  resolvedProfile: AccountOnboardingResolvedProfile | null
+  hasCandidateCredential: boolean
+  candidateCredentialType: string | null
+  finalDisposition: AccountOnboardingFinalDisposition | null
+  targetAccountId: string | null
+  expiresAt: string | null
+  consumedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FinalizeAccountOnboardingSessionResponseDto {
+  sessionId: string
+  finalDisposition: AccountOnboardingFinalDisposition
+  accountId: string
+  account: AccountDetailDto
 }
 
 export interface AccountSummaryDto {

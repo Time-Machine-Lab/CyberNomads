@@ -7,12 +7,16 @@ import {
 import type {
   AccountDetailDto,
   AccountDetailRecord,
+  AccountOnboardingSessionDetailDto,
   AccountRecord,
   AccountStatus,
   AuthorizationAttemptSummary,
   AvailabilityCheckResultDto,
+  FinalizeAccountOnboardingSessionResponseDto,
   ListAccountsQuery,
   ListAccountsResultDto,
+  ResolveAccountOnboardingSessionInput,
+  StartAccountOnboardingSessionInput,
   StartAuthorizationAttemptInput,
   UpdateAccountInput,
   VerifyAuthorizationAttemptInput,
@@ -33,6 +37,7 @@ export interface ListAccountsOptions extends ListAccountsQuery {
 }
 
 const ACCOUNT_API_ROOT = '/accounts'
+const ACCOUNT_ONBOARDING_API_ROOT = '/account-onboarding-sessions'
 
 export function isRealAccountApiEnabled() {
   return env.useRealAccountApi
@@ -182,6 +187,67 @@ export async function runAvailabilityCheck(
 
   return requestJson<AvailabilityCheckResultDto>(
     `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/availability-checks`,
+    {
+      method: 'POST',
+    },
+  )
+}
+
+export async function startAccountOnboardingSession(
+  input: StartAccountOnboardingSessionInput,
+  options: AccountRequestOptions = {},
+): Promise<AccountOnboardingSessionDetailDto> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  return requestJson<AccountOnboardingSessionDetailDto>(ACCOUNT_ONBOARDING_API_ROOT, {
+    method: 'POST',
+    body: input,
+  })
+}
+
+export async function getAccountOnboardingSession(
+  sessionId: string,
+  options: AccountRequestOptions = {},
+): Promise<AccountOnboardingSessionDetailDto> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  return requestJson<AccountOnboardingSessionDetailDto>(
+    `${ACCOUNT_ONBOARDING_API_ROOT}/${encodeURIComponent(sessionId)}`,
+  )
+}
+
+export async function resolveAccountOnboardingSession(
+  sessionId: string,
+  input: ResolveAccountOnboardingSessionInput,
+  options: AccountRequestOptions = {},
+): Promise<AccountOnboardingSessionDetailDto> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  return requestJson<AccountOnboardingSessionDetailDto>(
+    `${ACCOUNT_ONBOARDING_API_ROOT}/${encodeURIComponent(sessionId)}/resolve`,
+    {
+      method: 'POST',
+      body: input,
+    },
+  )
+}
+
+export async function finalizeAccountOnboardingSession(
+  sessionId: string,
+  options: AccountRequestOptions = {},
+): Promise<FinalizeAccountOnboardingSessionResponseDto> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  return requestJson<FinalizeAccountOnboardingSessionResponseDto>(
+    `${ACCOUNT_ONBOARDING_API_ROOT}/${encodeURIComponent(sessionId)}/finalize`,
     {
       method: 'POST',
     },

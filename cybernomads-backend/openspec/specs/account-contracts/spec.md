@@ -82,3 +82,29 @@ The system SHALL define SQL contracts that store account metadata, status, and r
 - **WHEN** the SQL contract is created
 - **THEN** it SHALL represent active credential payloads and authorization attempt payloads through stable reference semantics
 - **AND** it SHALL NOT require raw secret payloads to be modeled as ordinary structured account fields
+
+### Requirement: Account contracts SHALL publish token onboarding session contracts before stable account creation
+The system SHALL publish dedicated account onboarding session API and SQL contracts before a stable account object exists, covering session start, challenge return, resolved identity reads, and final onboarding completion.
+
+#### Scenario: API contract uses a dedicated onboarding session controller
+- **WHEN** top-level API contracts add new-account token onboarding behavior
+- **THEN** the system SHALL define the onboarding session controller in a dedicated `docs/api/account-onboarding-sessions.yaml`
+- **AND** ordinary account detail contracts SHALL NOT take responsibility for temporary onboarding-session reads or writes
+
+#### Scenario: SQL contract uses a dedicated onboarding session table
+- **WHEN** top-level SQL contracts add new-account token onboarding behavior
+- **THEN** the system SHALL define a dedicated onboarding session table in `docs/sql/account_onboarding_sessions.sql`
+- **AND** the SQL contract SHALL use stable references for pending input and candidate token material instead of ordinary structured secret columns
+
+### Requirement: Account contracts SHALL expose challenge-aware token replacement semantics for existing accounts
+The system SHALL allow existing-account token replacement contracts to return a challenge summary when an authorization attempt starts while keeping the current active credential separate from the pending attempt until verification succeeds.
+
+#### Scenario: Existing account authorization start may return challenge summary
+- **WHEN** `docs/api/accounts.yaml` defines the authorization-attempt start behavior for an existing account
+- **THEN** the contract SHALL allow the start result to include a pending attempt summary and an optional challenge summary
+- **AND** the contract SHALL NOT require the active token to be replaced before challenge verification succeeds
+
+#### Scenario: Token-oriented HTTP semantics stay sanitized
+- **WHEN** top-level account contracts add token onboarding and token replacement behavior
+- **THEN** ordinary frontend-facing session, attempt, and account-detail contracts SHALL remain sanitized
+- **AND** the contracts SHALL NOT require raw token payloads to be exposed through ordinary detail or onboarding-result responses

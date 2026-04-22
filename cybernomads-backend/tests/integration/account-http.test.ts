@@ -377,6 +377,135 @@ describe.sequential("account module http api", () => {
       },
     });
   });
+
+  it("creates an account through onboarding sessions and exposes challenge summaries for interactive flows", async () => {
+    const { application } = await startTemporaryApplication(
+      temporaryDirectories,
+      applications,
+    );
+
+    const startSessionResponse = await fetch(
+      `${application.http.url}/api/account-onboarding-sessions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          platform: "bilibili",
+          authorizationMethod: "token_input",
+          expectedCredentialType: "token",
+          payload: {
+            resolvedPlatformAccountUid: "onboard-bili-main",
+            displayName: "Onboarded Bili Main",
+            platformMetadata: {
+              region: "cn",
+            },
+            credentialPayload: {
+              token: "onboarding-token-1",
+            },
+          },
+        }),
+      },
+    );
+
+    expect(startSessionResponse.status).toBe(201);
+
+    const startedSession = (await startSessionResponse.json()) as {
+      sessionId: string;
+      sessionStatus: string;
+    };
+
+    expect(startedSession.sessionStatus).toBe("pending_resolution");
+
+    const resolveSessionResponse = await fetch(
+      `${application.http.url}/api/account-onboarding-sessions/${startedSession.sessionId}/resolve`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          resolutionPayload: {},
+        }),
+      },
+    );
+
+    expect(resolveSessionResponse.status).toBe(200);
+    await expect(resolveSessionResponse.json()).resolves.toMatchObject({
+      sessionId: startedSession.sessionId,
+      sessionStatus: "resolved",
+      resolvedIdentity: {
+        platformAccountUid: "onboard-bili-main",
+      },
+      hasCandidateCredential: true,
+    });
+
+    const finalizeSessionResponse = await fetch(
+      `${application.http.url}/api/account-onboarding-sessions/${startedSession.sessionId}/finalize`,
+      {
+        method: "POST",
+      },
+    );
+
+    expect(finalizeSessionResponse.status).toBe(200);
+
+    const finalizedSession = (await finalizeSessionResponse.json()) as {
+      finalDisposition: string;
+      accountId: string;
+      account: {
+        platformAccountUid: string;
+        authorizationStatus: string;
+      };
+    };
+
+    expect(finalizedSession.finalDisposition).toBe("created");
+    expect(finalizedSession.account.platformAccountUid).toBe("onboard-bili-main");
+    expect(finalizedSession.account.authorizationStatus).toBe("authorized");
+
+    const qrSessionResponse = await fetch(
+      `${application.http.url}/api/account-onboarding-sessions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          platform: "bilibili",
+          authorizationMethod: "qr_authorization",
+          payload: {},
+        }),
+      },
+    );
+
+    expect(qrSessionResponse.status).toBe(201);
+    await expect(qrSessionResponse.json()).resolves.toMatchObject({
+      challenge: {
+        challengeType: "stub_qr",
+      },
+    });
+
+    const qrAttemptResponse = await fetch(
+      `${application.http.url}/api/accounts/${finalizedSession.accountId}/authorization-attempts`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          authorizationMethod: "qr_authorization",
+          payload: {},
+        }),
+      },
+    );
+
+    expect(qrAttemptResponse.status).toBe(202);
+    await expect(qrAttemptResponse.json()).resolves.toMatchObject({
+      challenge: {
+        challengeType: "stub_qr",
+      },
+    });
+  });
 });
 
 async function startTemporaryApplication(

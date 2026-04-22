@@ -5,6 +5,8 @@ info:
   description: >
     账号模块首版 API 契约。当前阶段对外只暴露稳定账号对象的管理接口，
     包括创建、列表、详情、更新、授权尝试、授权验证、可用性检查、逻辑删除和恢复。
+    新增账号的主流程应优先通过账号接入会话 API 完成“令牌接入 -> 平台身份解析 -> 新建/恢复”；
+    `POST /api/accounts` 仍保留为补充型直接创建入口。
     普通详情接口只返回脱敏管理视图，不返回原始凭证 payload；当前生效凭证解析属于受控内部运行时能力，
     不在本契约中公开 HTTP 接口。
   summary: 账号模块 MVP 对外契约
@@ -167,6 +169,7 @@ paths:
       description: >
         为账号发起一轮新的授权尝试。待验证授权尝试与当前生效凭证严格分离；
         在验证成功前，旧的当前生效凭证必须保持不变。
+        当授权方式需要二维码等交互式 challenge 时，启动结果可以返回 challenge 摘要。
       operationId: startAuthorizationAttempt
       requestBody:
         required: true
@@ -681,6 +684,8 @@ components:
           type: string
           format: date-time
           description: 授权尝试最近更新时间，对应 SQL 契约中的 `authorization_attempt_updated_at`
+        challenge:
+          $ref: '#/components/schemas/ChallengeSummary'
 
     VerifyAuthorizationAttemptResponse:
       type: object
@@ -706,6 +711,15 @@ components:
           description: 本次验证是否已触发当前生效凭证切换
         account:
           $ref: '#/components/schemas/AccountDetail'
+
+    ChallengeSummary:
+      type:
+        - object
+        - 'null'
+      additionalProperties: true
+      description: >
+        provider-neutral 的 challenge 摘要，用于二维码、一次性授权票据或其他交互式令牌接入材料展示。
+        普通接口只返回可展示摘要，不返回脚本实现细节或敏感原始载荷。
 
     AvailabilityCheckResult:
       type: object

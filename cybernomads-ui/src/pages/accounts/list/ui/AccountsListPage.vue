@@ -127,6 +127,10 @@ function openAccount(accountId: string) {
   void router.push(`/accounts/${accountId}`)
 }
 
+function openCreateAccount() {
+  void router.push('/accounts/new')
+}
+
 function resolveLifecycleActionLabel(account: AccountRecord) {
   return account.lifecycleStatus === 'deleted' ? '恢复' : '删除'
 }
@@ -169,10 +173,17 @@ async function handleLifecycleAction(account: AccountRecord) {
           <p>{{ usesRealAccountApi ? '真实 AccountSummary 列表已接入' : '当前仍使用 mock 数据预览账号池' }}</p>
         </div>
 
-        <button type="button" class="accounts-header__button" :disabled="isLoading" @click="loadAccounts">
-          <span class="material-symbols-outlined">refresh</span>
-          <span>{{ isLoading ? '刷新中…' : '刷新列表' }}</span>
-        </button>
+        <div class="accounts-header__actions">
+          <button type="button" class="accounts-header__button accounts-header__button--secondary" @click="openCreateAccount">
+            <span class="material-symbols-outlined">person_add</span>
+            <span>新增账号</span>
+          </button>
+
+          <button type="button" class="accounts-header__button" :disabled="isLoading" @click="loadAccounts">
+            <span class="material-symbols-outlined">refresh</span>
+            <span>{{ isLoading ? '刷新中…' : '刷新列表' }}</span>
+          </button>
+        </div>
       </header>
 
       <section class="accounts-summary">
@@ -226,8 +237,11 @@ async function handleLifecycleAction(account: AccountRecord) {
       </section>
 
       <section v-else-if="!accounts.length" class="accounts-feedback accounts-feedback--empty">
-        <strong>当前没有账号记录</strong>
-        <p>列表为空时不会展示行数据。接入真实后端后可通过创建接口补充账号。</p>
+        <div>
+          <strong>当前没有账号记录</strong>
+          <p>可以从这里直接启动新增账号流程，先解析令牌，再创建或恢复账号。</p>
+        </div>
+        <button type="button" @click="openCreateAccount">新增账号</button>
       </section>
 
       <section v-else class="accounts-board">
@@ -413,6 +427,12 @@ async function handleLifecycleAction(account: AccountRecord) {
   margin-bottom: 1.4rem;
 }
 
+.accounts-header__actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .accounts-header h1 {
   margin: 0;
   font-family: var(--cn-font-display);
@@ -445,6 +465,12 @@ async function handleLifecycleAction(account: AccountRecord) {
 .accounts-header__button:disabled {
   cursor: wait;
   opacity: 0.75;
+}
+
+.accounts-header__button--secondary {
+  color: #fff;
+  background: #1f1f1f;
+  box-shadow: none;
 }
 
 .accounts-summary {

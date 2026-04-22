@@ -116,6 +116,18 @@ export const router = createRouter({
           },
         },
         {
+          path: 'accounts/new',
+          name: 'accounts-create',
+          component: () => import('@/pages/accounts/create/ui/AccountOnboardingPage.vue'),
+          meta: {
+            moduleTitle: '账号池',
+            shellNavKey: 'accounts',
+            shellSectionTitle: '新增账号',
+            backTo: '/accounts',
+            backLabel: '返回账号池',
+          },
+        },
+        {
           path: 'accounts/:accountId',
           name: 'accounts-detail',
           component: () => import('@/pages/accounts/detail/ui/AccountDetailPage.vue'),

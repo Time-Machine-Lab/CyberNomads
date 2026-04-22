@@ -53,7 +53,7 @@ const primaryAction = computed(() => {
     case 'strategies':
       return { to: '/strategies/new', icon: 'add', label: '新建策略' }
     case 'accounts':
-      return { to: '/accounts', icon: 'add', label: '添加账号' }
+      return { to: '/accounts/new', icon: 'add', label: '新增账号' }
     case 'workspaces':
     default:
       return { to: '/workspaces/new', icon: 'add', label: '创建团队' }

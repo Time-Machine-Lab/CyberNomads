@@ -284,7 +284,12 @@ export class AccountService {
       throw error;
     }
 
-    return toAuthorizationAttemptSummary(nextRecord)!;
+    return {
+      ...toAuthorizationAttemptSummary(nextRecord)!,
+      challenge: startResult.challenge
+        ? ensureJsonObject(startResult.challenge)
+        : null,
+    };
   }
 
   async verifyAuthorizationAttempt(
@@ -732,7 +737,7 @@ function toAccountSummary(record: PlatformAccountRecord): AccountSummary {
   };
 }
 
-function toAccountDetail(record: PlatformAccountRecord): AccountDetail {
+export function toAccountDetail(record: PlatformAccountRecord): AccountDetail {
   return {
     accountId: record.accountId,
     platform: record.platform,
@@ -785,6 +790,7 @@ function toAuthorizationAttemptSummary(
     expiresAt: record.authorizationAttemptExpiresAt,
     createdAt: record.authorizationAttemptCreatedAt,
     updatedAt: record.authorizationAttemptUpdatedAt,
+    challenge: null,
   };
 }
 
