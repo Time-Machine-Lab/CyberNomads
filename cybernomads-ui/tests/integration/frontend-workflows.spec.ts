@@ -223,17 +223,24 @@ describe('frontend product-domain workflows', () => {
     expect(router.currentRoute.value.fullPath).toBe(`/workspaces/${trafficWorkDetail.trafficWorkId}/runtime`)
   })
 
-  it('saves OpenClaw config through Agent Services API', async () => {
+  it('updates OpenClaw config through Agent Services API without leaving the focused flow', async () => {
     const { wrapper, router } = await mountWithRouter('/console/openclaw', OpenClawConfigPage, '/console/openclaw', [
       { path: '/console', component: { template: '<div>console overview</div>' } },
     ])
 
-    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('保存配置'))
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await wrapper.find('input[placeholder="输入新的认证密钥"]').setValue('secret-update')
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('更新当前服务'))
 
     expect(saveButton).toBeTruthy()
     await saveButton!.trigger('click')
     await flushPromises()
 
-    expect(router.currentRoute.value.fullPath).toBe('/console')
+    expect(router.currentRoute.value.fullPath).toBe('/console/openclaw')
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: expect.stringContaining('/api/agent-services/current') }),
+      expect.objectContaining({ method: 'PUT' }),
+    )
   })
 })
