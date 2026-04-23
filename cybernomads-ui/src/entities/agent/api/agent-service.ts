@@ -1,5 +1,6 @@
 import type {
   AgentCapabilityStatus,
+  AgentServiceRecoverableError,
   AgentNodeRecord,
   AgentNodeStatus,
   AgentServiceCapabilityStatus,
@@ -9,7 +10,7 @@ import type {
   ConfigureAgentServiceRequest,
   ConnectionVerificationResultDto,
   CurrentAgentServiceDto,
-  SaveOpenClawConfigInput,
+  OpenClawSetupFormInput,
   UpdateAgentServiceRequest,
 } from '@/entities/agent/model/types'
 import { HttpClientError, requestJson } from '@/shared/api/http-client'
@@ -57,14 +58,29 @@ function mapCurrentServiceToAgentNode(dto: CurrentAgentServiceDto): AgentNodeRec
   }
 }
 
-function mapSaveInputToRequest(input: SaveOpenClawConfigInput): ConfigureAgentServiceRequest {
+function mapOpenClawSetupToRequest(input: OpenClawSetupFormInput): ConfigureAgentServiceRequest {
   return {
     providerCode: 'openclaw',
-    endpointUrl: input.gatewayUrl || input.endpoint,
+    endpointUrl: input.endpointUrl,
     authentication: {
-      kind: 'token',
-      secret: input.authToken || 'local-development-token',
+      kind: input.authenticationKind,
+      secret: input.secret,
     },
+  }
+}
+
+export function toRecoverableAgentServiceError(error: unknown): AgentServiceRecoverableError {
+  if (error instanceof HttpClientError) {
+    return {
+      status: error.status,
+      message: error.message,
+      payload: error.payload,
+    }
+  }
+
+  return {
+    status: 0,
+    message: error instanceof Error ? error.message : 'Unknown Agent service request error.',
   }
 }
 
@@ -81,7 +97,22 @@ export async function getCurrentAgentService(): Promise<CurrentAgentServiceDto |
 }
 
 export async function getCurrentAgentServiceStatus(): Promise<AgentServiceStatusSnapshotDto> {
-  return requestJson<AgentServiceStatusSnapshotDto>(`${AGENT_SERVICE_API_ROOT}/status`)
+  try {
+    return await requestJson<AgentServiceStatusSnapshotDto>(`${AGENT_SERVICE_API_ROOT}/status`)
+  } catch (error) {
+    if (error instanceof HttpClientError && error.status === 404) {
+      return {
+        hasCurrentService: false,
+        currentService: null,
+        connectionStatus: 'not_configured',
+        capabilityStatus: 'not_ready',
+        isUsable: false,
+        warning: 'Current Agent service is not configured.',
+      }
+    }
+
+    throw error
+  }
 }
 
 export async function configureCurrentAgentService(
@@ -136,12 +167,11 @@ export async function listAgentNodes(): Promise<AgentNodeRecord[]> {
   return [mapCurrentServiceToAgentNode(status.currentService)]
 }
 
-export async function saveOpenClawConfig(input: SaveOpenClawConfigInput): Promise<AgentNodeRecord> {
-  const request = mapSaveInputToRequest(input)
+export async function saveOpenClawConfig(input: OpenClawSetupFormInput): Promise<CurrentAgentServiceDto> {
+  const request = mapOpenClawSetupToRequest(input)
   const existing = await getCurrentAgentService()
-  const dto = existing
-    ? await updateCurrentAgentService(request)
-    : await configureCurrentAgentService(request)
 
-  return mapCurrentServiceToAgentNode(dto)
+  return existing
+    ? updateCurrentAgentService(request)
+    : configureCurrentAgentService(request)
 }

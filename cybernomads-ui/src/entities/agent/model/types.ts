@@ -37,15 +37,16 @@ export interface AgentNodeRecord {
   config?: AgentNodeConfigRecord
 }
 
-export interface SaveOpenClawConfigInput {
-  id?: string
-  name: string
-  endpoint: string
-  notes: string
-  installPath?: string
-  gatewayUrl?: string
-  authToken?: string
-  parallelLimit?: number
+export interface OpenClawSetupFormInput {
+  endpointUrl: string
+  authenticationKind: string
+  secret: string
+}
+
+export interface AgentServiceRecoverableError {
+  status: number
+  message: string
+  payload?: unknown
 }
 
 export interface AgentServiceAuthenticationInput {

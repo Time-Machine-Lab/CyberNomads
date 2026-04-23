@@ -3,8 +3,8 @@ import { ref } from 'vue'
 import type { AccountStatus, LegacyMockAccountRecord } from '@/entities/account/model/types'
 import type {
   AgentNodeConfigRecord,
-  SaveOpenClawConfigInput,
   AgentNodeRecord,
+  OpenClawSetupFormInput,
 } from '@/entities/agent/model/types'
 import type { ConsoleOverviewRecord, ConsoleSetupState } from '@/entities/console/model/types'
 import type { AssetAttachmentRecord, AssetRecord, SaveAssetInput } from '@/entities/asset/model/types'
@@ -839,11 +839,11 @@ function normalizeScenario(value: string): MockScenarioId {
 export const mockScenarioId = ref<MockScenarioId>(normalizeScenario('baseline'))
 
 let database = createScenarioDatabase(mockScenarioId.value)
-let consoleSetupState: ConsoleSetupState = 'unconfigured'
+let consoleSetupState: ConsoleSetupState = 'not_configured'
 let sessionOpenClawNode: AgentNodeRecord | null = null
 
 function getLiveAgentNodes() {
-  if (consoleSetupState === 'configured') {
+  if (consoleSetupState !== 'not_configured') {
     const nodes = createActiveAgents(sessionOpenClawNode?.config?.diagnosticsStatus ?? 'connected')
 
     if (sessionOpenClawNode) {
@@ -867,7 +867,7 @@ export function setMockScenario(next: MockScenarioId) {
 
 export function resetMockRuntime() {
   database = createScenarioDatabase(mockScenarioId.value)
-  consoleSetupState = 'unconfigured'
+  consoleSetupState = 'not_configured'
   sessionOpenClawNode = null
 }
 
@@ -878,22 +878,53 @@ export function snapshotMockDatabase() {
 export function getConsoleOverviewData(): ConsoleOverviewRecord {
   const nodes = getLiveAgentNodes()
 
-  if (consoleSetupState === 'configured') {
+  if (consoleSetupState !== 'not_configured') {
     return clone({
-      state: 'configured',
+      state: consoleSetupState,
       statusLabel: '在线',
       statusTone: 'secondary',
+      actionLabel: '查看配置',
       description: '所有核心节点运行正常。准备执行调度。',
       networkLatencyLabel: '网络延迟: 12ms',
+      connectionStatus: 'connected',
+      capabilityStatus: consoleSetupState === 'prepare_failed' ? 'prepare_failed' : 'ready',
+      hasCurrentService: true,
+      isUsable: true,
+      currentService: {
+        agentServiceId: nodes[0]?.id ?? 'agent-openclaw-01',
+        providerCode: 'openclaw',
+        endpointUrl: nodes[0]?.endpoint ?? 'http://localhost:5111',
+        authenticationKind: 'token',
+        hasCredential: true,
+        connectionStatus: 'connected',
+        connectionStatusReason: null,
+        capabilityStatus: consoleSetupState === 'prepare_failed' ? 'prepare_failed' : 'ready',
+        capabilityStatusReason: null,
+        isActive: true,
+        isUsable: true,
+        lastVerifiedAt: nowIso(),
+        lastConnectedAt: nowIso(),
+        capabilityPreparedAt: consoleSetupState === 'prepare_failed' ? null : nowIso(),
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      },
+      warning: null,
       nodes,
     })
   }
 
   return clone({
-    state: 'unconfigured',
+    state: 'not_configured',
     statusLabel: '未配置',
     statusTone: 'error',
+    actionLabel: '配置 OpenClaw',
     description: '神经架构目前处于待机状态。请配置并初始化一个代理节点以开始编排任务和处理数据流。',
+    connectionStatus: 'not_configured',
+    capabilityStatus: 'not_ready',
+    hasCurrentService: false,
+    isUsable: false,
+    currentService: null,
+    warning: null,
     nodes,
   })
 }
@@ -1009,16 +1040,13 @@ export function listAgentNodesData() {
   return clone(getLiveAgentNodes())
 }
 
-export function saveOpenClawConfigData(input: SaveOpenClawConfigInput) {
+export function saveOpenClawConfigData(input: OpenClawSetupFormInput) {
   const existing = sessionOpenClawNode ?? getLiveAgentNodes().find((item) => item.type === 'openclaw')
   const config: AgentNodeConfigRecord = {
-    installPath: input.installPath ?? existing?.config?.installPath ?? '/opt/cybernomads/openclaw',
-    gatewayUrl:
-      input.gatewayUrl ??
-      existing?.config?.gatewayUrl ??
-      'wss://gateway.eu-central.cybernomads.net:8443',
-    authToken: input.authToken ?? existing?.config?.authToken ?? 'sk-oc-981273981273912873',
-    parallelLimit: input.parallelLimit ?? existing?.config?.parallelLimit ?? 8,
+    installPath: existing?.config?.installPath ?? '/opt/cybernomads/openclaw',
+    gatewayUrl: input.endpointUrl,
+    authToken: input.secret,
+    parallelLimit: existing?.config?.parallelLimit ?? 8,
     diagnosticsStatus: 'connected',
     diagnosticsLogs: [
       '[SYS] 正在初始化握手序列…',
@@ -1030,13 +1058,13 @@ export function saveOpenClawConfigData(input: SaveOpenClawConfigInput) {
   }
 
   const record: AgentNodeRecord = {
-    id: input.id ?? 'agent-openclaw-01',
-    name: input.name,
+    id: existing?.id ?? 'agent-openclaw-01',
+    name: 'OpenClaw Service',
     type: 'openclaw',
-    endpoint: input.endpoint,
+    endpoint: input.endpointUrl,
     status: 'active',
     capabilityStatus: 'ready',
-    notes: input.notes,
+    notes: 'OpenClaw current Agent service is configured.',
     roleLabel: 'MASTER',
     versionLabel: 'v2.4.0 Online',
     badgeLabel: 'MASTER',
@@ -1045,7 +1073,7 @@ export function saveOpenClawConfigData(input: SaveOpenClawConfigInput) {
     config,
   }
 
-  consoleSetupState = 'configured'
+  consoleSetupState = 'ready'
   sessionOpenClawNode = clone(record)
 
   const index = database.agentNodes.findIndex((item) => item.type === 'openclaw')
