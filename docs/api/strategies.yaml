@@ -106,6 +106,19 @@ paths:
           description: 请求参数不合法
         "404":
           description: 策略不存在
+    delete:
+      tags:
+        - Strategies
+      summary: 删除策略
+      description: >
+        删除已有策略的结构化元数据与关联的 Markdown 正文文件。
+        当前删除语义为直接删除，不提供软删、归档或恢复接口。
+      operationId: deleteStrategy
+      responses:
+        "204":
+          description: 删除成功
+        "404":
+          description: 策略不存在
 
 components:
   parameters:
@@ -113,7 +126,9 @@ components:
       name: strategyId
       in: path
       required: true
-      description: 策略稳定标识
+      description: >
+        策略稳定标识。当前新创建策略默认生成 8 位十六进制短标识；
+        历史长 UUID 形式标识继续兼容。
       schema:
         type: string
 
@@ -143,6 +158,8 @@ components:
           description: >
             策略完整 Markdown 正文。运行时应将其持久化为由 `content_ref`
             关联的正文内容。整篇快照插入来源标记与参数占位符也保留在这份正文中。
+            当前推荐导入块短契约为 `<!-- s:strategyId --> ... <!-- /s -->`；
+            历史长契约继续兼容读取。
           minLength: 1
 
     UpdateStrategyRequest:
@@ -169,7 +186,8 @@ components:
           type: string
           description: >
             策略完整 Markdown 正文。更新后需继续作为同一 `strategyId`
-            的完整策略详情内容返回。
+            的完整策略详情内容返回。导入块推荐使用短契约
+            `<!-- s:strategyId --> ... <!-- /s -->`。
           minLength: 1
 
     StrategySummary:
@@ -184,7 +202,9 @@ components:
       properties:
         strategyId:
           type: string
-          description: 策略稳定标识，对应 SQL 契约中的 `strategy_id`
+          description: >
+            策略稳定标识，对应 SQL 契约中的 `strategy_id`。
+            当前新创建策略默认生成 8 位十六进制短标识；历史长 UUID 继续兼容。
         name:
           type: string
           description: 策略可读名称，对应 SQL 契约中的 `name`
@@ -247,7 +267,9 @@ components:
       properties:
         strategyId:
           type: string
-          description: 策略稳定标识，对应 SQL 契约中的 `strategy_id`
+          description: >
+            策略稳定标识，对应 SQL 契约中的 `strategy_id`。
+            当前新创建策略默认生成 8 位十六进制短标识；历史长 UUID 继续兼容。
         name:
           type: string
           description: 策略可读名称，对应 SQL 契约中的 `name`

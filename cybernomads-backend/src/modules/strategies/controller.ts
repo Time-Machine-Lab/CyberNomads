@@ -60,7 +60,14 @@ export function createStrategiesController(strategyService: StrategyService) {
         return true;
       }
 
-      sendMethodNotAllowed(response, ["GET", "PUT"]);
+      if (method === "DELETE") {
+        await strategyService.deleteStrategy(strategyDetailMatch.strategyId);
+        response.writeHead(204);
+        response.end();
+        return true;
+      }
+
+      sendMethodNotAllowed(response, ["GET", "PUT", "DELETE"]);
       return true;
     } catch (error) {
       await handleStrategiesControllerError(error, response);

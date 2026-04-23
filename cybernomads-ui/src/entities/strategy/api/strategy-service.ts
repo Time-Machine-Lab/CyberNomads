@@ -81,6 +81,17 @@ export async function updateStrategy(
   return mapStrategyDetailDtoToRecord(dto)
 }
 
+export async function deleteStrategy(
+  id: string,
+  _options: StrategyRequestOptions = {},
+): Promise<void> {
+  void _options
+
+  await requestJson(`${STRATEGY_API_ROOT}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
 export async function saveStrategy(
   input: SaveStrategyInput,
   options: StrategyRequestOptions = {},

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { isRealStrategyApiEnabled, listStrategies } from '@/entities/strategy/api/strategy-service'
+import { deleteStrategy, isRealStrategyApiEnabled, listStrategies } from '@/entities/strategy/api/strategy-service'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
 
 interface StrategyDisplayCard extends StrategyRecord {
@@ -17,27 +17,25 @@ const router = useRouter()
 const strategies = ref<StrategyRecord[]>([])
 const keyword = ref('')
 const isLoading = ref(false)
+const isDeleting = ref(false)
 const errorMessage = ref('')
+const viewMode = ref<'card' | 'list'>('card')
+const deletingStrategy = ref<StrategyDisplayCard | null>(null)
 
 const dataSourceLabel = computed(() => (isRealStrategyApiEnabled() ? '真实后端' : 'Mock'))
 
-const filteredStrategies = computed(() => {
-  const normalizedKeyword = keyword.value.trim().toLowerCase()
-
-  if (!normalizedKeyword) {
-    return strategies.value
-  }
-
-  return strategies.value.filter((strategy) => {
-    return [strategy.name, strategy.summary, strategy.tags.join(' '), strategy.id]
-      .join(' ')
-      .toLowerCase()
-      .includes(normalizedKeyword)
-  })
-})
-
 const strategyCards = computed(() => {
-  return filteredStrategies.value
+  const normalizedKeyword = keyword.value.trim().toLowerCase()
+  const visibleStrategies = !normalizedKeyword
+    ? strategies.value
+    : strategies.value.filter((strategy) => {
+        return [strategy.name, strategy.summary, strategy.tags.join(' '), strategy.id]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedKeyword)
+      })
+
+  return visibleStrategies
     .slice()
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .map((strategy, index) => {
@@ -64,7 +62,7 @@ const stateMessage = computed(() => {
   }
 
   if (keyword.value.trim()) {
-    return '没有匹配当前检索条件的策略。'
+    return '没有匹配当前筛选条件的策略。'
   }
 
   return '当前还没有策略，可以直接创建第一条。'
@@ -107,27 +105,44 @@ function openStrategyEditor(strategyId: string) {
   void router.push(`/strategies/${strategyId}/edit`)
 }
 
-function openCreatePage() {
-  void router.push('/strategies/new')
+function formatStrategyId(strategyId: string) {
+  return strategyId.slice(0, 8)
+}
+
+function openDeleteDialog(strategy: StrategyDisplayCard, event?: Event) {
+  event?.stopPropagation()
+  deletingStrategy.value = strategy
+}
+
+function closeDeleteDialog() {
+  if (isDeleting.value) {
+    return
+  }
+
+  deletingStrategy.value = null
+}
+
+async function confirmDeleteStrategy() {
+  if (!deletingStrategy.value) {
+    return
+  }
+
+  isDeleting.value = true
+
+  try {
+    await deleteStrategy(deletingStrategy.value.id)
+    deletingStrategy.value = null
+    await loadStrategies()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '策略删除失败，请稍后重试。'
+  } finally {
+    isDeleting.value = false
+  }
 }
 </script>
 
 <template>
   <section class="strategies-page">
-    <div class="strategies-topbar">
-      <label class="strategies-topbar__search">
-        <span class="material-symbols-outlined">search</span>
-        <input v-model="keyword" type="text" placeholder="搜索策略名称、摘要、标签或 ID" data-testid="strategy-search" />
-      </label>
-
-      <div class="strategies-topbar__actions">
-        <span class="strategies-topbar__brand">CN</span>
-        <button type="button" aria-label="刷新策略列表" data-testid="strategy-refresh" @click="loadStrategies">
-          <span class="material-symbols-outlined">refresh</span>
-        </button>
-      </div>
-    </div>
-
     <div class="strategies-canvas">
       <header class="strategies-header">
         <div>
@@ -138,8 +153,12 @@ function openCreatePage() {
         <div class="strategies-header__actions">
           <div class="strategies-header__meta">
             <span>活动矢量:</span>
-            <strong>{{ filteredStrategies.length }}</strong>
+            <strong>{{ strategyCards.length }}</strong>
           </div>
+
+          <button type="button" class="strategies-header__refresh" :disabled="isLoading" @click="loadStrategies">
+            <span class="material-symbols-outlined">{{ isLoading ? 'sync' : 'refresh' }}</span>
+          </button>
 
           <RouterLink class="strategies-header__button" to="/strategies/new">
             <span class="material-symbols-outlined">add</span>
@@ -154,29 +173,32 @@ function openCreatePage() {
           <span>{{ dataSourceLabel }}</span>
         </div>
 
-        <button type="button" class="strategies-toolbar__filter" @click="keyword = ''">
-          <span>检索</span>
-          <strong>{{ keyword.trim() || '全部' }}</strong>
-          <span class="material-symbols-outlined">close_small</span>
-        </button>
-
-        <button type="button" class="strategies-toolbar__filter" @click="loadStrategies">
-          <span>数据</span>
-          <strong>{{ strategies.length }} 条</strong>
-          <span class="material-symbols-outlined">sync</span>
-        </button>
+        <label class="strategies-toolbar__search">
+          <span class="material-symbols-outlined">search</span>
+          <input v-model="keyword" type="text" placeholder="搜索策略名称、摘要、标签或 ID" data-testid="strategy-search" />
+        </label>
 
         <div class="strategies-toolbar__view">
-          <button type="button" class="strategies-toolbar__view-button strategies-toolbar__view-button--active" @click="loadStrategies">
-            <span class="material-symbols-outlined">refresh</span>
+          <button
+            type="button"
+            class="strategies-toolbar__view-button"
+            :class="{ 'strategies-toolbar__view-button--active': viewMode === 'card' }"
+            @click="viewMode = 'card'"
+          >
+            <span class="material-symbols-outlined">grid_view</span>
           </button>
-          <button type="button" class="strategies-toolbar__view-button" @click="openCreatePage">
-            <span class="material-symbols-outlined">add</span>
+          <button
+            type="button"
+            class="strategies-toolbar__view-button"
+            :class="{ 'strategies-toolbar__view-button--active': viewMode === 'list' }"
+            @click="viewMode = 'list'"
+          >
+            <span class="material-symbols-outlined">view_list</span>
           </button>
         </div>
       </div>
 
-      <section v-if="featured" class="strategies-grid" data-testid="strategy-list">
+      <section v-if="featured && viewMode === 'card'" class="strategies-grid" data-testid="strategy-list">
         <article
           class="strategy-card strategy-card--featured"
           role="link"
@@ -197,6 +219,14 @@ function openCreatePage() {
 
             <div class="strategy-card__top-actions">
               <span class="strategy-card__badge strategy-card__badge--featured">{{ featured.displayTag }}</span>
+              <button
+                type="button"
+                class="strategy-card__delete"
+                aria-label="删除策略"
+                @click.stop="openDeleteDialog(featured, $event)"
+              >
+                <span class="material-symbols-outlined">delete</span>
+              </button>
             </div>
           </div>
 
@@ -213,7 +243,9 @@ function openCreatePage() {
             </div>
             <div>
               <small>策略 ID</small>
-              <strong class="strategy-card__value strategy-card__value--secondary">{{ featured.id }}</strong>
+              <strong class="strategy-card__value strategy-card__value--secondary" :title="featured.id">
+                {{ formatStrategyId(featured.id) }}
+              </strong>
             </div>
           </div>
         </article>
@@ -235,6 +267,14 @@ function openCreatePage() {
 
             <div class="strategy-card__top-actions">
               <span class="strategy-card__badge">{{ strategy.displayTag }}</span>
+              <button
+                type="button"
+                class="strategy-card__delete"
+                aria-label="删除策略"
+                @click.stop="openDeleteDialog(strategy, $event)"
+              >
+                <span class="material-symbols-outlined">delete</span>
+              </button>
             </div>
           </div>
 
@@ -262,6 +302,51 @@ function openCreatePage() {
         </article>
       </section>
 
+      <section v-else-if="featured && viewMode === 'list'" class="strategies-list" data-testid="strategy-list">
+        <article
+          v-for="strategy in strategyCards"
+          :key="strategy.id"
+          class="strategies-list__item"
+          role="link"
+          tabindex="0"
+          @click="openStrategyEditor(strategy.id)"
+          @keydown.enter="openStrategyEditor(strategy.id)"
+          @keydown.space.prevent="openStrategyEditor(strategy.id)"
+        >
+          <div class="strategies-list__main">
+            <div class="strategy-card__icon" :class="`strategy-card__icon--${strategy.accent}`">
+              <span class="material-symbols-outlined">{{ strategy.icon }}</span>
+            </div>
+            <div class="strategies-list__content">
+              <div class="strategies-list__title-row">
+                <h2>{{ strategy.name }}</h2>
+                <span class="strategy-card__badge">{{ strategy.displayTag }}</span>
+                <button
+                  type="button"
+                  class="strategy-card__delete"
+                  aria-label="删除策略"
+                  @click.stop="openDeleteDialog(strategy, $event)"
+                >
+                  <span class="material-symbols-outlined">delete</span>
+                </button>
+              </div>
+              <p>{{ strategy.summary }}</p>
+            </div>
+          </div>
+
+          <div class="strategies-list__meta">
+            <div>
+              <small>最近更新</small>
+              <strong>{{ strategy.updatedAtLabel }}</strong>
+            </div>
+            <div>
+              <small>策略 ID</small>
+              <strong :title="strategy.id">{{ formatStrategyId(strategy.id) }}</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
       <section v-else class="strategies-grid">
         <article class="strategy-card strategy-card--featured strategy-card--state">
           <div class="strategy-card__top">
@@ -282,7 +367,7 @@ function openCreatePage() {
             </div>
             <div>
               <small>当前检索</small>
-              <strong class="strategy-card__value">{{ keyword.trim() || '全部' }}</strong>
+              <strong class="strategy-card__value">全部</strong>
             </div>
             <div>
               <small>策略总数</small>
@@ -291,6 +376,33 @@ function openCreatePage() {
           </div>
         </article>
       </section>
+
+      <div v-if="deletingStrategy" class="strategy-dialog__backdrop" @click.self="closeDeleteDialog">
+        <div class="strategy-dialog">
+          <div class="strategy-dialog__header">
+            <div>
+              <h3>确认删除策略</h3>
+              <p>{{ deletingStrategy.name }}</p>
+            </div>
+            <button type="button" class="strategy-dialog__close" :disabled="isDeleting" @click="closeDeleteDialog">
+              <span class="material-symbols-outlined">close</span>
+            </button>
+          </div>
+
+          <p class="strategy-dialog__message">
+            删除后将同时移除该策略的元数据和 Markdown 正文，此操作不可撤销。
+          </p>
+
+          <div class="strategy-dialog__footer">
+            <button type="button" class="strategy-dialog__button strategy-dialog__button--ghost" :disabled="isDeleting" @click="closeDeleteDialog">
+              取消
+            </button>
+            <button type="button" class="strategy-dialog__button strategy-dialog__button--danger" :disabled="isDeleting" @click="confirmDeleteStrategy">
+              {{ isDeleting ? '删除中…' : '确认删除' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -302,14 +414,10 @@ function openCreatePage() {
   background: transparent;
 }
 
-.strategies-topbar,
-.strategies-topbar__actions,
 .strategies-header,
 .strategies-header__actions,
 .strategies-toolbar,
 .strategies-toolbar__label,
-.strategies-toolbar__filter,
-.strategies-toolbar__view,
 .strategy-card__top,
 .strategy-card__top-actions,
 .strategy-card__title-wrap,
@@ -318,68 +426,6 @@ function openCreatePage() {
 .strategy-card__icon-button {
   display: flex;
   align-items: center;
-}
-
-.strategies-topbar {
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 4.4rem;
-  padding: 0 1.9rem;
-  border-bottom: 1px solid rgb(72 72 71 / 0.15);
-}
-
-.strategies-topbar__search {
-  display: flex;
-  gap: 0.55rem;
-  align-items: center;
-  width: min(19rem, 100%);
-  height: 2.7rem;
-  padding: 0 0.9rem;
-  border: 1px solid rgb(72 72 71 / 0.18);
-  border-radius: 0.7rem;
-  color: #767575;
-  background: #131313;
-}
-
-.strategies-topbar__search input {
-  width: 100%;
-  border: 0;
-  outline: 0;
-  color: #fff;
-  background: transparent;
-}
-
-.strategies-topbar__search input::placeholder {
-  color: #767575;
-}
-
-.strategies-topbar__brand {
-  color: #00eefc;
-  font-family: var(--cn-font-display);
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-}
-
-.strategies-topbar__actions {
-  gap: 1rem;
-  color: #adaaaa;
-}
-
-.strategies-topbar__actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  color: inherit;
-  background: transparent;
-}
-
-.strategies-topbar__actions img {
-  width: 1.85rem;
-  height: 1.85rem;
-  border-radius: 999px;
-  object-fit: cover;
 }
 
 .strategies-canvas {
@@ -430,6 +476,28 @@ function openCreatePage() {
   font-family: var(--cn-font-display);
 }
 
+.strategies-header__refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 0.35rem;
+  color: #adaaaa;
+  background: #1a1919;
+  transition:
+    color var(--cn-transition),
+    border-color var(--cn-transition),
+    background-color var(--cn-transition);
+}
+
+.strategies-header__refresh:hover {
+  color: #8ff5ff;
+  border-color: rgb(143 245 255 / 0.25);
+  background: #262626;
+}
+
 .strategies-header__button {
   display: inline-flex;
   gap: 0.5rem;
@@ -456,49 +524,49 @@ function openCreatePage() {
 
 .strategies-toolbar {
   gap: 1rem;
-  padding: 1rem;
   margin-bottom: 2rem;
-  border: 0;
+  padding: 0.9rem 1rem;
   border-radius: 1rem;
   background: #131313;
 }
 
 .strategies-toolbar__label {
   gap: 0.5rem;
-  margin-right: 0.25rem;
   color: #adaaaa;
   font-size: 0.85rem;
   font-weight: 500;
 }
 
-.strategies-toolbar__filter {
-  gap: 0.45rem;
-  min-height: 2.4rem;
-  padding: 0 0.95rem;
+.strategies-toolbar__search {
+  display: flex;
+  flex: 1;
+  gap: 0.55rem;
+  align-items: center;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
   border: 1px solid rgb(72 72 71 / 0.18);
-  border-radius: 0.5rem;
-  color: #fff;
+  border-radius: 0.7rem;
+  color: #767575;
   background: #1a1919;
-  font-family: var(--cn-font-body);
-  font-size: 0.84rem;
-  transition:
-    background-color var(--cn-transition),
-    border-color var(--cn-transition);
 }
 
-.strategies-toolbar__filter:hover {
-  border-color: rgb(72 72 71 / 0.25);
-  background: #262626;
+.strategies-toolbar__search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #fff;
+  background: transparent;
 }
 
-.strategies-toolbar__filter strong {
-  color: #8ff5ff;
-  font-weight: 600;
+.strategies-toolbar__search input::placeholder {
+  color: #767575;
 }
 
 .strategies-toolbar__view {
+  display: flex;
   gap: 0.25rem;
-  margin-left: auto;
   padding: 0.2rem;
   border-radius: 0.5rem;
   background: #1a1919;
@@ -512,7 +580,6 @@ function openCreatePage() {
   padding: 0;
   border: 0;
   border-radius: 0.25rem;
-  outline: 0;
   color: #adaaaa;
   background: transparent;
   transition:
@@ -592,6 +659,7 @@ function openCreatePage() {
 
 .strategy-card__title-wrap {
   gap: 0.8rem;
+  align-items: center;
 }
 
 .strategy-card__icon {
@@ -625,6 +693,7 @@ function openCreatePage() {
 }
 
 .strategy-card h2 {
+  margin-top: 1rem;
   font-size: 1.3rem;
   line-height: 1.2;
 }
@@ -654,9 +723,32 @@ function openCreatePage() {
   font-weight: 700;
 }
 
+.strategy-card__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid rgb(255 113 108 / 0.15);
+  border-radius: 0.35rem;
+  color: #ff938f;
+  background: rgb(255 113 108 / 0.04);
+  transition:
+    border-color var(--cn-transition),
+    background-color var(--cn-transition),
+    color var(--cn-transition);
+}
+
+.strategy-card__delete:hover {
+  border-color: rgb(255 113 108 / 0.3);
+  color: #ff716c;
+  background: rgb(255 113 108 / 0.08);
+}
+
 .strategy-card__summary {
   flex: 1;
-  margin: 1rem 0 1.5rem;
+  margin: 1.15rem 0 1.5rem;
   color: #adaaaa;
   font-size: 0.87rem;
   line-height: 1.65;
@@ -711,6 +803,178 @@ function openCreatePage() {
   color: #ff716c;
 }
 
+.strategies-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.strategies-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgb(72 72 71 / 0.1);
+  border-radius: 1rem;
+  background: #1a1919;
+  box-shadow: var(--cn-shadow-ambient);
+  cursor: pointer;
+  transition:
+    border-color var(--cn-transition),
+    box-shadow var(--cn-transition);
+}
+
+.strategies-list__item:hover {
+  border-color: rgb(143 245 255 / 0.22);
+}
+
+.strategies-list__item:focus-visible {
+  outline: 1px solid rgb(143 245 255 / 0.45);
+  outline-offset: 2px;
+}
+
+.strategies-list__main {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.strategies-list__content {
+  min-width: 0;
+}
+
+.strategies-list__title-row {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.strategies-list__title-row h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.strategies-list__content p {
+  margin: 0.35rem 0 0;
+  color: #adaaaa;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.strategies-list__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(8rem, auto));
+  gap: 0.65rem;
+}
+
+.strategies-list__meta > div {
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.45rem;
+  background: #131313;
+  text-align: center;
+}
+
+.strategies-list__meta small {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: #adaaaa;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.strategies-list__meta strong {
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.strategy-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgb(0 0 0 / 0.58);
+}
+
+.strategy-dialog {
+  width: min(100%, 28rem);
+  padding: 1.2rem;
+  border: 1px solid rgb(72 72 71 / 0.22);
+  border-radius: 1rem;
+  background: #161616;
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.4);
+}
+
+.strategy-dialog__header,
+.strategy-dialog__footer {
+  display: flex;
+  align-items: center;
+}
+
+.strategy-dialog__header {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.strategy-dialog__header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.strategy-dialog__header p {
+  margin: 0.25rem 0 0;
+  color: #adaaaa;
+  font-size: 0.85rem;
+}
+
+.strategy-dialog__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  color: #adaaaa;
+  background: #262626;
+}
+
+.strategy-dialog__message {
+  margin: 1rem 0 0;
+  color: #d2d2d2;
+  line-height: 1.6;
+}
+
+.strategy-dialog__footer {
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.1rem;
+}
+
+.strategy-dialog__button {
+  min-width: 5.5rem;
+  min-height: 2.4rem;
+  padding: 0 1rem;
+  border-radius: 0.45rem;
+  font-weight: 600;
+}
+
+.strategy-dialog__button--ghost {
+  border: 1px solid rgb(72 72 71 / 0.22);
+  color: #d2d2d2;
+  background: #202020;
+}
+
+.strategy-dialog__button--danger {
+  border: 1px solid rgb(255 113 108 / 0.18);
+  color: #fff;
+  background: #c2413d;
+}
+
 @media (max-width: 1200px) {
   .strategies-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -722,22 +986,17 @@ function openCreatePage() {
 }
 
 @media (max-width: 900px) {
-  .strategies-topbar,
   .strategies-header {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .strategies-topbar__search {
-    width: 100%;
   }
 
   .strategies-toolbar {
     flex-wrap: wrap;
   }
 
-  .strategies-toolbar__view {
-    margin-left: 0;
+  .strategies-toolbar__search {
+    width: 100%;
   }
 
   .strategies-grid {
@@ -746,6 +1005,15 @@ function openCreatePage() {
 
   .strategy-card--featured {
     grid-column: span 1;
+  }
+
+  .strategies-list__item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .strategies-list__meta {
+    grid-template-columns: 1fr 1fr;
   }
 }
 </style>
