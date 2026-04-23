@@ -130,7 +130,7 @@ function createBaseStrategies(): StrategyDetailDto[] {
       name: '高频评论截流',
       summary: '在目标竞品账号下高频发布带有诱饵的专业评论。',
       contentMarkdown:
-        '# 高频评论截流\n\n## 系统提示词配置\n- 搜索竞品热视频\n- 分析评论区用户意图\n- 按节奏发布诱饵评论\n- 输出标题使用 {{string:title=\"默认标题\"}}\n',
+        '# 高频评论截流\n\n## 系统提示词配置\n- 搜索竞品热视频\n- 分析评论区用户意图\n- 按节奏发布诱饵评论\n- 输出标题使用 {{string:title="默认标题"}}\n',
       placeholders: [
         {
           type: 'string',
@@ -191,7 +191,7 @@ function createBaseStrategies(): StrategyDetailDto[] {
       name: '精准转化追击',
       summary: '利用跟进消息和意向评分做多轮转化承接，聚焦强意图线索。',
       contentMarkdown:
-        '# 精准转化追击\n\n## 执行结构\n- 元数据清理\n- 关键词密度控制\n- 标签回写\n- CTA 文案使用 {{string:cta_text=\"立即预约\"}}\n',
+        '# 精准转化追击\n\n## 执行结构\n- 元数据清理\n- 关键词密度控制\n- 标签回写\n- CTA 文案使用 {{string:cta_text="立即预约"}}\n',
       placeholders: [
         {
           type: 'string',

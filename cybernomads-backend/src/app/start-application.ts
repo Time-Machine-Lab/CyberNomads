@@ -19,11 +19,13 @@ import {
   SqliteStrategyReferenceRepository,
   SqliteStrategyRepository,
 } from "../adapters/storage/sqlite/strategies-sqlite-repository.js";
+import { SqliteTaskRepository } from "../adapters/storage/sqlite/tasks-sqlite-repository.js";
 import { SqliteTrafficWorkRepository } from "../adapters/storage/sqlite/traffic-works-sqlite-repository.js";
 import { AccountOnboardingService } from "../modules/account-onboarding/service.js";
 import { AgentAccessService } from "../modules/agent-access/service.js";
 import { AccountService } from "../modules/accounts/service.js";
 import { ProductService } from "../modules/products/service.js";
+import { TaskService } from "../modules/tasks/service.js";
 import { TrafficWorkService } from "../modules/traffic-works/service.js";
 import { StrategyService } from "../modules/strategies/service.js";
 import type { AccountPlatformPort } from "../ports/account-platform-port.js";
@@ -73,6 +75,7 @@ export async function startApplication(
   const trafficWorkRepository = new SqliteTrafficWorkRepository(
     runtime.paths.databaseFile,
   );
+  const taskRepository = new SqliteTaskRepository(runtime.paths.databaseFile);
   const productContentStore = new FileSystemProductContentStore(
     runtime.paths.productDirectory,
   );
@@ -127,6 +130,9 @@ export async function startApplication(
     productStore: productRepository,
     strategyStore: strategyReferenceRepository,
   });
+  const taskService = new TaskService({
+    taskStore: taskRepository,
+  });
 
   try {
     const http = await startHttpServer({
@@ -136,6 +142,7 @@ export async function startApplication(
       accountOnboardingService,
       agentAccessService,
       trafficWorkService,
+      taskService,
       host: options.host,
       port: options.port,
     });
@@ -152,6 +159,7 @@ export async function startApplication(
         accountOnboardingService.close();
         agentAccessService.close();
         trafficWorkService.close();
+        taskService.close();
         strategyReferenceRepository.close();
       },
     };
@@ -162,6 +170,7 @@ export async function startApplication(
     accountOnboardingService.close();
     agentAccessService.close();
     trafficWorkService.close();
+    taskService.close();
     strategyReferenceRepository.close();
     throw error;
   }

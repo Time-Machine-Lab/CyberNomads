@@ -62,7 +62,15 @@ export async function listAccounts(options: ListAccountsOptions = {}): Promise<A
     return listAccountsData().map(mapLegacyMockAccountToRecord)
   }
 
-  const { source: _source, ...query } = options
+  const query: Record<string, string | number | boolean | null | undefined> = {
+    platform: options.platform,
+    keyword: options.keyword,
+    lifecycleStatus: options.lifecycleStatus,
+    authorizationStatus: options.authorizationStatus,
+    availabilityStatus: options.availabilityStatus,
+    includeDeleted: options.includeDeleted,
+    onlyConsumable: options.onlyConsumable,
+  }
   const result = await requestJson<ListAccountsResultDto>(ACCOUNT_API_ROOT, {
     query,
   })

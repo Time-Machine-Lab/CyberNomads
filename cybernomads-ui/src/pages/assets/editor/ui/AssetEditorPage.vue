@@ -11,7 +11,12 @@ const router = useRouter()
 
 const assetId = computed(() => String(route.params.assetId ?? ''))
 const isEditMode = computed(() => Boolean(assetId.value))
+const isLoading = ref(false)
 const isSaving = ref(false)
+const notFound = ref(false)
+const loadError = ref('')
+const saveError = ref('')
+const validationMessage = ref('')
 
 const form = reactive({
   name: '',
@@ -31,6 +36,11 @@ const characterCount = computed(() => form.markdown.length)
 watch(
   [assetId, mockScenarioId],
   async () => {
+    loadError.value = ''
+    saveError.value = ''
+    validationMessage.value = ''
+    notFound.value = false
+
     if (!isEditMode.value) {
       form.name = '面向B站科技粉的产品推介'
       form.summary = ''
@@ -55,17 +65,29 @@ watch(
       return
     }
 
-    const asset = await getAssetById(assetId.value)
-    if (!asset) return
+    isLoading.value = true
 
-    form.name = asset.name
-    form.platform = asset.platform
-    form.summary = asset.summary
-    form.markdown = asset.markdown
-    form.status = asset.status
-    form.category = asset.category
-    form.targetLabels = asset.targetLabels
-    attachments.value = asset.attachments
+    try {
+      const asset = await getAssetById(assetId.value)
+
+      if (!asset) {
+        notFound.value = true
+        return
+      }
+
+      form.name = asset.name
+      form.platform = asset.platform
+      form.summary = asset.summary
+      form.markdown = asset.markdown
+      form.status = asset.status
+      form.category = asset.category
+      form.targetLabels = asset.targetLabels
+      attachments.value = asset.attachments
+    } catch {
+      loadError.value = '产品资产详情加载失败，请确认产品服务可用后重试。'
+    } finally {
+      isLoading.value = false
+    }
   },
   { immediate: true },
 )
@@ -78,6 +100,19 @@ function resolveAttachmentIcon(kind: AssetAttachmentRecord['kind']) {
 }
 
 async function handleSave(status: 'draft' | 'ready') {
+  validationMessage.value = ''
+  saveError.value = ''
+
+  if (!form.name.trim()) {
+    validationMessage.value = '请先填写资产标题。'
+    return
+  }
+
+  if (!form.markdown.trim()) {
+    validationMessage.value = '请先填写 Markdown 产品内容。'
+    return
+  }
+
   isSaving.value = true
 
   try {
@@ -94,6 +129,8 @@ async function handleSave(status: 'draft' | 'ready') {
     })
 
     await router.push('/assets')
+  } catch {
+    saveError.value = '产品资产保存失败，请检查后端连接后重试。当前编辑内容已保留。'
   } finally {
     isSaving.value = false
   }
@@ -103,7 +140,29 @@ async function handleSave(status: 'draft' | 'ready') {
 <template>
   <section class="asset-editor-page">
     <main class="asset-editor-main">
-      <div class="asset-editor-canvas">
+      <section v-if="isLoading" class="asset-editor-state" data-testid="asset-editor-loading-state">
+        <span class="material-symbols-outlined">sync</span>
+        <h1>正在加载产品资产</h1>
+        <p>正在读取完整 Markdown 上下文。</p>
+      </section>
+
+      <section v-else-if="notFound" class="asset-editor-state" data-testid="asset-editor-not-found-state">
+        <span class="material-symbols-outlined">search_off</span>
+        <h1>未找到产品资产</h1>
+        <p>该产品可能不存在，或当前后端环境尚未同步这条记录。</p>
+        <RouterLink to="/assets">返回资产列表</RouterLink>
+      </section>
+
+      <div v-else class="asset-editor-canvas">
+        <section
+          v-if="loadError || validationMessage || saveError"
+          class="asset-editor-alert"
+          data-testid="asset-editor-alert"
+        >
+          <span class="material-symbols-outlined">error</span>
+          <span>{{ loadError || validationMessage || saveError }}</span>
+        </section>
+
         <section class="asset-editor-meta">
           <div class="asset-editor-meta__title">
             <div class="asset-editor-meta__row">
@@ -217,7 +276,7 @@ async function handleSave(status: 'draft' | 'ready') {
           <button
             type="button"
             class="asset-editor-footer__button asset-editor-footer__button--primary"
-            :disabled="isSaving || !form.name.trim()"
+            :disabled="isSaving"
             @click="handleSave('ready')"
           >
             <span class="material-symbols-outlined">save</span>
@@ -245,6 +304,71 @@ async function handleSave(status: 'draft' | 'ready') {
   gap: 1.5rem;
   width: min(100%, 90rem);
   margin: 0 auto;
+}
+
+.asset-editor-state,
+.asset-editor-alert {
+  border: 1px solid rgb(72 72 71 / 0.2);
+  border-radius: 1rem;
+  background: #1a1919;
+  box-shadow: var(--cn-shadow-ambient);
+}
+
+.asset-editor-state {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: center;
+  width: min(100%, 48rem);
+  min-height: 18rem;
+  margin: 4rem auto 0;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.asset-editor-state .material-symbols-outlined {
+  color: #8ff5ff;
+  font-size: 2.3rem;
+}
+
+.asset-editor-state h1 {
+  margin: 0;
+  font-family: var(--cn-font-display);
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  letter-spacing: -0.04em;
+}
+
+.asset-editor-state p {
+  max-width: 30rem;
+  margin: 0;
+  color: #adaaaa;
+  line-height: 1.7;
+}
+
+.asset-editor-state a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  margin-top: 0.35rem;
+  padding: 0 1rem;
+  border-radius: 0.5rem;
+  color: #041316;
+  background: linear-gradient(135deg, #8ff5ff 0%, #00eefc 100%);
+  font-family: var(--cn-font-body);
+  font-weight: 700;
+}
+
+.asset-editor-alert {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  color: #ffb5b2;
+  background: rgb(255 113 108 / 0.08);
+}
+
+.asset-editor-alert .material-symbols-outlined {
+  color: #ff716c;
+  font-size: 1.2rem;
 }
 
 .asset-editor-meta {

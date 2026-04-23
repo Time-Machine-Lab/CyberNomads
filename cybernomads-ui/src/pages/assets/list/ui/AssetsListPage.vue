@@ -18,11 +18,26 @@ interface AssetDisplayCard extends AssetRecord {
 
 const assets = ref<AssetRecord[]>([])
 const activeFilter = ref('全部')
+const isLoading = ref(false)
+const loadError = ref('')
 const router = useRouter()
 
 const filters = ['全部', 'SEO优化', '病毒传播', '社群增长', '长图文', '短视频'] as const
 
-const assetDisplayMap = {
+const assetDisplayMap: Partial<
+  Record<
+    string,
+    {
+      accent: AssetDisplayCard['accent']
+      icon: string
+      displayName: string
+      displaySummary: string
+      displayDate: string
+      primaryCategory: string
+      displayTags: string[]
+    }
+  >
+> = {
   'asset-core-whitepaper': {
     accent: 'primary',
     icon: 'article',
@@ -55,33 +70,65 @@ const assetDisplayMap = {
   },
 } as const
 
+function formatAssetDate(value: string) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .format(date)
+    .replace(/\//g, '-')
+}
+
+function resolveFallbackAccent(index: number): AssetDisplayCard['accent'] {
+  if (index % 3 === 1) return 'secondary'
+  if (index % 3 === 2) return 'error'
+  return 'primary'
+}
+
+async function loadAssets() {
+  isLoading.value = true
+  loadError.value = ''
+
+  try {
+    assets.value = await listAssets()
+  } catch {
+    loadError.value = '产品资产加载失败，请确认后端产品服务已启动，或切回 Mock 模式后重试。'
+  } finally {
+    isLoading.value = false
+  }
+}
+
 watch(
   mockScenarioId,
-  async () => {
-    assets.value = await listAssets()
-  },
+  () => void loadAssets(),
   { immediate: true },
 )
 
 const displayAssets = computed(() => {
-  const cards: AssetDisplayCard[] = []
-
-  for (const id of Object.keys(assetDisplayMap) as Array<keyof typeof assetDisplayMap>) {
-    const asset = assets.value.find((item) => item.id === id)
-    const display = assetDisplayMap[id]
-
-    if (!asset) {
-      continue
+  return assets.value.map((asset, index): AssetDisplayCard => {
+    const display = assetDisplayMap[asset.id] ?? {
+      accent: resolveFallbackAccent(index),
+      icon: 'inventory_2',
+      displayName: asset.name,
+      displaySummary: asset.summary,
+      displayDate: formatAssetDate(asset.updatedAt),
+      primaryCategory: asset.category,
+      displayTags: asset.tags,
     }
 
-    cards.push({
+    return {
       ...asset,
       ...display,
       displayTags: [...display.displayTags],
-    })
-  }
-
-  return cards
+    }
+  })
 })
 
 const filteredAssets = computed(() => {
@@ -127,7 +174,27 @@ const openAssetEditor = (assetId: string) => {
         </button>
       </div>
 
-      <section class="assets-grid">
+      <section v-if="isLoading" class="assets-state" data-testid="assets-loading-state">
+        <span class="material-symbols-outlined">sync</span>
+        <h2>正在加载产品资产</h2>
+        <p>正在从产品模块同步最新摘要，请稍候。</p>
+      </section>
+
+      <section v-else-if="loadError" class="assets-state assets-state--error" data-testid="assets-error-state">
+        <span class="material-symbols-outlined">error</span>
+        <h2>加载失败</h2>
+        <p>{{ loadError }}</p>
+        <button type="button" @click="loadAssets">重试加载</button>
+      </section>
+
+      <section v-else-if="assets.length === 0" class="assets-state" data-testid="assets-empty-state">
+        <span class="material-symbols-outlined">inventory_2</span>
+        <h2>还没有产品资产</h2>
+        <p>创建第一个产品资产后，它会出现在这里并可用于后续工作区绑定。</p>
+        <RouterLink to="/assets/new">新建资产</RouterLink>
+      </section>
+
+      <section v-else-if="filteredAssets.length > 0" class="assets-grid" data-testid="assets-grid">
         <article
           v-for="asset in filteredAssets"
           :key="asset.id"
@@ -179,6 +246,12 @@ const openAssetEditor = (assetId: string) => {
             </div>
           </div>
         </article>
+      </section>
+
+      <section v-else class="assets-state" data-testid="assets-filter-empty-state">
+        <span class="material-symbols-outlined">filter_alt_off</span>
+        <h2>当前筛选下没有资产</h2>
+        <p>切换筛选条件，或创建新的产品资产。</p>
       </section>
     </div>
   </section>
@@ -290,6 +363,56 @@ const openAssetEditor = (assetId: string) => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.25rem;
+}
+
+.assets-state {
+  display: grid;
+  gap: 0.7rem;
+  justify-items: center;
+  min-height: 16rem;
+  padding: 3rem 1.5rem;
+  border: 1px solid rgb(72 72 71 / 0.2);
+  border-radius: 1rem;
+  background: #1a1919;
+  text-align: center;
+  box-shadow: var(--cn-shadow-ambient);
+}
+
+.assets-state .material-symbols-outlined {
+  color: #8ff5ff;
+  font-size: 2rem;
+}
+
+.assets-state h2 {
+  margin: 0;
+  font-family: var(--cn-font-display);
+  font-size: 1.35rem;
+}
+
+.assets-state p {
+  max-width: 32rem;
+  margin: 0;
+  color: #adaaaa;
+  line-height: 1.7;
+}
+
+.assets-state a,
+.assets-state button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  margin-top: 0.35rem;
+  padding: 0 1rem;
+  border: 1px solid rgb(143 245 255 / 0.25);
+  border-radius: 0.5rem;
+  color: #041316;
+  background: linear-gradient(135deg, #8ff5ff 0%, #00eefc 100%);
+  font-family: var(--cn-font-body);
+  font-weight: 700;
+}
+
+.assets-state--error .material-symbols-outlined {
+  color: #ff716c;
 }
 
 .asset-card {

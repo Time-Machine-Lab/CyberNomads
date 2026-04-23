@@ -1,0 +1,602 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Tasks API
+  version: 1.0.0
+  description: >
+    任务模块首版 API 契约。当前阶段对外暴露稳定的任务摘要、任务详情、
+    状态更新、任务产出记录创建与查询能力；同时提供按引流工作创建或替换
+    任务集的受控入口，供引流工作创建/更新后的 Agent 任务拆分流程调用。
+    契约聚焦任务身份、引流工作归属、执行条件、输入需求、上下文引用、
+    轻量状态与抽象产出记录，不定义调度线程、Agent provider 私有协议、
+    平台脚本或具体产出数据本体结构。
+  summary: 任务模块 MVP 对外与内部受控契约
+
+tags:
+  - name: Tasks
+    description: 任务模块接口
+  - name: TaskSets
+    description: 按引流工作创建或替换任务集的受控接口
+
+paths:
+  /api/tasks:
+    get:
+      tags:
+        - Tasks
+      summary: 查询任务列表
+      description: >
+        返回任务摘要列表，供任务流、执行台和规划器读取。列表可按所属引流工作、
+        任务状态和关键字筛选；`ready` 只表示任务可被纳入规划判断，不表示无需
+        评估执行条件即可执行。
+      operationId: listTasks
+      parameters:
+        - $ref: "#/components/parameters/TrafficWorkIdFilter"
+        - $ref: "#/components/parameters/TaskStatusFilter"
+        - $ref: "#/components/parameters/KeywordFilter"
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTasksResponse"
+
+  /api/tasks/{taskId}:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+    get:
+      tags:
+        - Tasks
+      summary: 查询任务详情
+      description: >
+        返回单个任务的完整管理视图，包括任务身份、所属引流工作、任务说明、
+        执行条件、输入需求、上下文引用、任务状态与时间戳。详情不返回具体平台
+        执行动作、Agent provider 协议或产出数据本体。
+      operationId: getTaskDetail
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDetail"
+        "404":
+          description: 任务不存在
+
+  /api/tasks/{taskId}/status:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+    patch:
+      tags:
+        - Tasks
+      summary: 更新任务状态
+      description: >
+        更新单个任务的轻量状态。状态固定为 `ready`、`running`、`completed`
+        与 `failed`。本接口只表达状态回写契约，不定义重试、取消、手动恢复、
+        并发控制或重复提交策略。
+      operationId: updateTaskStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskStatusRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDetail"
+        "400":
+          description: 请求参数不合法
+        "404":
+          description: 任务不存在
+        "409":
+          description: 当前状态不允许该更新
+
+  /api/tasks/{taskId}/outputs:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+    get:
+      tags:
+        - Tasks
+      summary: 查询任务产出记录
+      description: >
+        查询某个任务已登记的产出记录。产出记录只承载追踪与索引语义，
+        包括产出描述、产物位置和创建时间，不承载视频、评论、私信、图片、
+        文章等具体产出数据本体结构。
+      operationId: listTaskOutputRecords
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTaskOutputRecordsResponse"
+        "404":
+          description: 任务不存在
+    post:
+      tags:
+        - Tasks
+      summary: 创建任务产出记录
+      description: >
+        为某个任务登记一条抽象产出记录。调用方必须提供可读描述与产物位置；
+        产物位置可以指向任务数据存储区域、文件、对象存储键或其他由实现层
+        解释的位置引用，但本契约不展开产出数据内部 schema。
+      operationId: createTaskOutputRecord
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskOutputRecordRequest"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskOutputRecord"
+        "400":
+          description: 请求参数不合法
+        "404":
+          description: 任务不存在
+
+  /api/traffic-works/{trafficWorkId}/task-set:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    post:
+      tags:
+        - TaskSets
+      summary: 按引流工作创建任务集
+      description: >
+        为一个引流工作创建当前任务集。该入口是 Agent 任务拆分结果落入任务模块的
+        受控边界，适用于引流工作首次创建后的任务准备流程。调用方提交的任务草稿
+        使用请求内稳定的 `taskKey` 表达任务间依赖，运行时持久化后返回系统生成的
+        `taskId`。本接口不允许 Agent 或 subagent 直接编辑 SQLite 文件。
+      operationId: createTaskSetForTrafficWork
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskSetWriteRequest"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSetWriteResult"
+        "400":
+          description: 请求参数不合法
+        "404":
+          description: 引流工作不存在
+        "409":
+          description: 当前引流工作已存在不可直接创建的任务集
+    put:
+      tags:
+        - TaskSets
+      summary: 按引流工作替换任务集
+      description: >
+        替换某个引流工作当前可运行任务集。该入口适用于引流工作更新重建后的任务
+        重新拆分流程，表达“当前任务集”替换语义；旧任务历史如何归档、恢复或展示
+        不属于本契约范围，后续如需要应通过独立任务历史能力扩展。
+      operationId: replaceTaskSetForTrafficWork
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskSetWriteRequest"
+      responses:
+        "200":
+          description: 替换成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSetWriteResult"
+        "400":
+          description: 请求参数不合法
+        "404":
+          description: 引流工作不存在
+        "409":
+          description: 当前引流工作状态不允许替换任务集
+
+components:
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      description: 任务稳定标识
+      schema:
+        type: string
+
+    TrafficWorkId:
+      name: trafficWorkId
+      in: path
+      required: true
+      description: 引流工作稳定标识
+      schema:
+        type: string
+
+    TrafficWorkIdFilter:
+      name: trafficWorkId
+      in: query
+      required: false
+      description: 按所属引流工作筛选任务
+      schema:
+        type: string
+
+    TaskStatusFilter:
+      name: status
+      in: query
+      required: false
+      description: 按任务状态筛选
+      schema:
+        $ref: "#/components/schemas/TaskStatus"
+
+    KeywordFilter:
+      name: keyword
+      in: query
+      required: false
+      description: 按任务名称、说明摘要或上下文引用执行模糊筛选
+      schema:
+        type: string
+
+  schemas:
+    ListTasksResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskSummary"
+
+    TaskSummary:
+      type: object
+      description: 用于任务列表、规划器扫描和执行台展示的任务摘要模型。
+      required:
+        - taskId
+        - trafficWorkId
+        - name
+        - status
+        - condition
+        - inputNeeds
+        - updatedAt
+      properties:
+        taskId:
+          type: string
+          description: 任务稳定标识，对应 SQL 契约中的 `task_id`
+        trafficWorkId:
+          type: string
+          description: 所属引流工作稳定标识，对应 SQL 契约中的 `traffic_work_id`
+        name:
+          type: string
+          description: 任务可读名称，对应 SQL 契约中的 `name`
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        condition:
+          $ref: "#/components/schemas/TaskCondition"
+        inputNeeds:
+          type: array
+          description: 输入需求摘要集合，对应 SQL 契约中的 `input_needs_json`
+          items:
+            $ref: "#/components/schemas/TaskInputNeed"
+        updatedAt:
+          type: string
+          format: date-time
+          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
+
+    TaskDetail:
+      type: object
+      description: 用于单个任务查看与执行准备的完整模型。
+      required:
+        - taskId
+        - trafficWorkId
+        - name
+        - instruction
+        - condition
+        - inputNeeds
+        - contextRef
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        taskId:
+          type: string
+          description: 任务稳定标识，对应 SQL 契约中的 `task_id`
+        trafficWorkId:
+          type: string
+          description: 所属引流工作稳定标识，对应 SQL 契约中的 `traffic_work_id`
+        name:
+          type: string
+          description: 任务可读名称，对应 SQL 契约中的 `name`
+        instruction:
+          type: string
+          description: 面向 Agent / subagent 的任务执行说明，对应 SQL 契约中的 `instruction`
+        documentRef:
+          type:
+            - string
+            - "null"
+          description: 任务说明文档引用，对应 SQL 契约中的 `document_ref`
+        contextRef:
+          type: string
+          description: 任务上下文引用，对应 SQL 契约中的 `context_ref`
+        condition:
+          $ref: "#/components/schemas/TaskCondition"
+        inputNeeds:
+          type: array
+          description: 输入需求集合，对应 SQL 契约中的 `input_needs_json`
+          items:
+            $ref: "#/components/schemas/TaskInputNeed"
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        statusReason:
+          type:
+            - string
+            - "null"
+          description: 最近一次状态变化原因，对应 SQL 契约中的 `status_reason`
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间，对应 SQL 契约中的 `created_at`
+        updatedAt:
+          type: string
+          format: date-time
+          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
+
+    TaskSetWriteRequest:
+      type: object
+      required:
+        - source
+        - tasks
+      properties:
+        source:
+          $ref: "#/components/schemas/TaskSetSource"
+        tasks:
+          type: array
+          minItems: 1
+          description: Agent 拆分得到的任务草稿集合
+          items:
+            $ref: "#/components/schemas/TaskDraft"
+
+    TaskSetSource:
+      type: object
+      description: 任务集创建或替换的来源信息，用于审计和失败反馈，不定义 provider 私有协议。
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          enum:
+            - agent-decomposition
+          description: 任务集来源类型。当前仅定义 Agent 任务拆分。
+        requestId:
+          type:
+            - string
+            - "null"
+          description: 上游拆分请求标识，可为空
+        description:
+          type:
+            - string
+            - "null"
+          description: 来源说明，可用于记录本次拆分的人工可读摘要
+
+    TaskDraft:
+      type: object
+      description: >
+        任务集写入草稿。`taskKey` 只在本次任务集请求内稳定，用于表达依赖关系；
+        持久化后的全局稳定任务身份由系统生成的 `taskId` 承担。
+      required:
+        - taskKey
+        - name
+        - instruction
+        - condition
+        - inputNeeds
+        - contextRef
+      properties:
+        taskKey:
+          type: string
+          description: 本次任务集请求内的任务稳定键，用于依赖引用和结果映射
+          minLength: 1
+        name:
+          type: string
+          description: 任务可读名称
+          minLength: 1
+        instruction:
+          type: string
+          description: 面向 Agent / subagent 的任务执行说明
+          minLength: 1
+        documentRef:
+          type:
+            - string
+            - "null"
+          description: 任务说明文档引用
+        contextRef:
+          type: string
+          description: 任务上下文引用
+          minLength: 1
+        condition:
+          $ref: "#/components/schemas/TaskDraftCondition"
+        inputNeeds:
+          type: array
+          description: 输入需求集合
+          items:
+            $ref: "#/components/schemas/TaskInputNeed"
+
+    TaskCondition:
+      type: object
+      description: >
+        任务执行条件声明。该声明只表达规划器需要考虑的时间与依赖前提，
+        不定义轮询间隔、并发控制、重试策略或具体调度算法。
+      required:
+        - cron
+        - relyOnTaskIds
+      properties:
+        cron:
+          type:
+            - string
+            - "null"
+          description: cron 语义的时间条件；为空表示不声明定时条件
+        relyOnTaskIds:
+          type: array
+          description: 依赖任务稳定标识集合；为空表示不声明任务依赖
+          items:
+            type: string
+
+    TaskDraftCondition:
+      type: object
+      description: >
+        任务草稿中的执行条件声明。依赖通过同一请求内的 `taskKey` 表达，
+        运行时持久化后应映射为任务稳定标识。
+      required:
+        - cron
+        - relyOnTaskKeys
+      properties:
+        cron:
+          type:
+            - string
+            - "null"
+          description: cron 语义的时间条件；为空表示不声明定时条件
+        relyOnTaskKeys:
+          type: array
+          description: 依赖任务草稿键集合；为空表示不声明任务依赖
+          items:
+            type: string
+
+    TaskInputNeed:
+      type: object
+      description: >
+        任务输入需求声明，说明执行前需要什么数据以及 Agent 应如何定位。
+        该模型不承载输入数据本体。
+      required:
+        - name
+        - description
+        - source
+      properties:
+        name:
+          type: string
+          description: 输入需求名称
+          minLength: 1
+        description:
+          type: string
+          description: 输入需求说明
+          minLength: 1
+        source:
+          type: string
+          description: 数据来源说明，例如上游任务产出记录、任务数据区域或工作上下文引用。
+          minLength: 1
+
+    UpdateTaskStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        statusReason:
+          type:
+            - string
+            - "null"
+          description: 状态变化原因；失败时可记录面向观察者的简要说明
+
+    CreateTaskOutputRecordRequest:
+      type: object
+      required:
+        - description
+        - dataLocation
+      properties:
+        description:
+          type: string
+          description: 产出描述
+          minLength: 1
+        dataLocation:
+          type: string
+          description: 产物位置引用，不展开产出数据本体结构
+          minLength: 1
+
+    ListTaskOutputRecordsResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskOutputRecord"
+
+    TaskOutputRecord:
+      type: object
+      description: 任务产出记录，只承载追踪与索引语义。
+      required:
+        - outputRecordId
+        - taskId
+        - description
+        - dataLocation
+        - createdAt
+      properties:
+        outputRecordId:
+          type: string
+          description: 产出记录稳定标识，对应 SQL 契约中的 `output_record_id`
+        taskId:
+          type: string
+          description: 所属任务稳定标识，对应 SQL 契约中的 `task_id`
+        description:
+          type: string
+          description: 产出描述，对应 SQL 契约中的 `description`
+        dataLocation:
+          type: string
+          description: 产物位置引用，对应 SQL 契约中的 `data_location`
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间，对应 SQL 契约中的 `created_at`
+
+    TaskSetWriteResult:
+      type: object
+      description: 任务集创建或替换结果。
+      required:
+        - trafficWorkId
+        - taskCount
+        - tasks
+      properties:
+        trafficWorkId:
+          type: string
+          description: 所属引流工作稳定标识
+        taskCount:
+          type: integer
+          minimum: 0
+          description: 本次持久化后的当前任务数量
+        tasks:
+          type: array
+          description: 请求内任务键到系统任务标识的映射
+          items:
+            $ref: "#/components/schemas/TaskSetTaskResult"
+
+    TaskSetTaskResult:
+      type: object
+      required:
+        - taskKey
+        - taskId
+      properties:
+        taskKey:
+          type: string
+          description: 请求内任务稳定键
+        taskId:
+          type: string
+          description: 系统生成的全局稳定任务标识
+
+    TaskStatus:
+      type: string
+      description: 任务轻量生命周期状态
+      enum:
+        - ready
+        - running
+        - completed
+        - failed
+
+  securitySchemes: {}

@@ -32,3 +32,25 @@ export interface SaveAssetInput {
   tags?: string[]
   targetLabels?: string[]
 }
+
+export interface ProductSummaryDto {
+  productId: string
+  name: string
+  updatedAt: string
+}
+
+export interface ProductDetailDto extends ProductSummaryDto {
+  contentMarkdown: string
+  createdAt: string
+}
+
+export interface ListProductsResultDto {
+  items: ProductSummaryDto[]
+}
+
+export interface CreateProductInput {
+  name: string
+  contentMarkdown: string
+}
+
+export type UpdateProductInput = CreateProductInput

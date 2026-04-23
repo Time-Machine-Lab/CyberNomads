@@ -50,6 +50,7 @@ describe.sequential("runtime bootstrap", () => {
       "005-strategies.sql",
       "006-traffic-works.sql",
       "007-account-onboarding-sessions.sql",
+      "008-tasks.sql",
     ]);
     expect(result.skippedScripts).toEqual([]);
 
@@ -92,16 +93,28 @@ describe.sequential("runtime bootstrap", () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
       .get("account_onboarding_sessions") as { name: string } | undefined;
+    const tasksTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("tasks") as { name: string } | undefined;
+    const taskOutputRecordsTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("task_output_records") as { name: string } | undefined;
     database.close();
 
     expect(bootstrapTable?.name).toBe("runtime_sql_scripts");
-    expect(recordedScripts?.count).toBe(7);
+    expect(recordedScripts?.count).toBe(8);
     expect(productsTable?.name).toBe("products");
     expect(agentServicesTable?.name).toBe("agent_service_connections");
     expect(platformAccountsTable?.name).toBe("platform_accounts");
     expect(strategiesTable?.name).toBe("strategies");
     expect(trafficWorksTable?.name).toBe("traffic_works");
     expect(onboardingSessionsTable?.name).toBe("account_onboarding_sessions");
+    expect(tasksTable?.name).toBe("tasks");
+    expect(taskOutputRecordsTable?.name).toBe("task_output_records");
   });
 
   it("skips already executed runtime SQL scripts on repeated startup", async () => {
@@ -121,6 +134,7 @@ describe.sequential("runtime bootstrap", () => {
       "005-strategies.sql",
       "006-traffic-works.sql",
       "007-account-onboarding-sessions.sql",
+      "008-tasks.sql",
     ]);
 
     const database = new DatabaseSync(runtimePaths.databaseFile);
@@ -129,7 +143,7 @@ describe.sequential("runtime bootstrap", () => {
       .get() as { count: number } | undefined;
     database.close();
 
-    expect(recordedScripts?.count).toBe(7);
+    expect(recordedScripts?.count).toBe(8);
   });
 
   it("fails startup explicitly when the SQLite runtime database cannot be opened", async () => {
