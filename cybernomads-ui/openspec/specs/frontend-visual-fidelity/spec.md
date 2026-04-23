@@ -1,4 +1,7 @@
-## MODIFIED Requirements
+## Purpose
+Define the high-fidelity shell, localization, visual reconstruction, and desktop quality requirements for the CyberNomads frontend.
+
+## Requirements
 
 ### Requirement: Frontend SHALL provide a unified high-fidelity desktop shell
 The system SHALL provide a unified high-fidelity desktop shell system whose outer module pages share a standardized CyberNomads sidebar and content canvas, while focused editor or configuration pages and runtime execution pages use approved shell variants rather than reusing a generic dashboard layout. The outer module shell MUST exclude a persistent global top bar so that chrome emphasis remains on the core content panels.
