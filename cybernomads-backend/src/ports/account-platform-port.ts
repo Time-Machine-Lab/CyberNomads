@@ -1,98 +1,72 @@
 import type {
   AvailabilityStatus,
+  ConnectionMethod,
   JsonObject,
-  VerificationResult,
+  ResolvedPlatformProfile,
+  ValidationResult,
 } from "../modules/accounts/types.js";
+import type { ConnectionAttemptLogEntry } from "../modules/account-connection-attempts/types.js";
 
 export interface AccountPlatformAccountSnapshot {
   accountId: string;
   platform: string;
-  platformAccountUid: string;
-  displayName: string;
+  internalDisplayName: string;
   platformMetadata: JsonObject;
+  resolvedPlatformProfile: ResolvedPlatformProfile;
 }
 
-export interface AccountPlatformCredentialSnapshot {
-  credentialType: string;
-  payload: JsonObject;
-  expiresAt: string | null;
-}
-
-export interface AccountPlatformAuthorizationStartInput {
+export interface AccountPlatformStartConnectionAttemptInput {
   account: AccountPlatformAccountSnapshot;
-  authorizationMethod: string;
-  expectedCredentialType: string | null;
-  payload: JsonObject;
+  connectionMethod: ConnectionMethod;
+  tokenValue: string | null;
+  context: JsonObject;
   requestedExpiresAt: string | null;
 }
 
-export interface AccountPlatformAuthorizationStartResult {
-  expectedCredentialType: string | null;
-  attemptPayload: JsonObject;
-  expiresAt: string | null;
+export interface AccountPlatformStartConnectionAttemptResult {
   challenge: JsonObject | null;
-}
-
-export interface AccountPlatformOnboardingStartInput {
-  platform: string;
-  authorizationMethod: string;
-  expectedCredentialType: string | null;
-  payload: JsonObject;
-  requestedExpiresAt: string | null;
-}
-
-export interface AccountPlatformOnboardingStartResult {
-  expectedCredentialType: string | null;
-  sessionPayload: JsonObject;
+  platformSession: JsonObject | null;
+  candidateToken: JsonObject | null;
   expiresAt: string | null;
-  challenge: JsonObject | null;
+  logs: ConnectionAttemptLogEntry[];
 }
 
-export interface AccountPlatformAuthorizationVerifyInput {
+export interface AccountPlatformResolveConnectionAttemptInput {
   account: AccountPlatformAccountSnapshot;
-  authorizationMethod: string;
-  expectedCredentialType: string | null;
-  attemptPayload: JsonObject;
-  verificationPayload: JsonObject;
-  activeCredential: AccountPlatformCredentialSnapshot | null;
-}
-
-export interface AccountPlatformResolvedIdentity {
-  platform: string;
-  platformAccountUid: string;
-}
-
-export interface AccountPlatformResolvedProfile {
-  displayName?: string | null;
-  platformMetadata?: JsonObject | null;
-}
-
-export interface AccountPlatformResolvedCredential {
-  credentialType: string;
-  payload: JsonObject;
-  expiresAt: string | null;
-}
-
-export interface AccountPlatformAuthorizationVerifyResult {
-  verificationResult: VerificationResult;
-  reason: string | null;
-  resolvedIdentity: AccountPlatformResolvedIdentity | null;
-  profile: AccountPlatformResolvedProfile | null;
-  credential: AccountPlatformResolvedCredential | null;
-}
-
-export interface AccountPlatformOnboardingResolveInput {
-  platform: string;
-  authorizationMethod: string;
-  expectedCredentialType: string | null;
-  inputPayload: JsonObject;
-  sessionPayload: JsonObject;
+  connectionMethod: ConnectionMethod;
+  context: JsonObject;
+  platformSession: JsonObject;
   resolutionPayload: JsonObject;
+}
+
+export interface AccountPlatformResolveConnectionAttemptResult {
+  platformSession: JsonObject | null;
+  candidateToken: JsonObject | null;
+  reason: string | null;
+  expiresAt: string | null;
+  logs: ConnectionAttemptLogEntry[];
+}
+
+export interface AccountPlatformValidateConnectionAttemptInput {
+  account: AccountPlatformAccountSnapshot;
+  connectionMethod: ConnectionMethod;
+  candidateToken: JsonObject;
+  context: JsonObject;
+  validationPayload: JsonObject;
+}
+
+export interface AccountPlatformValidateConnectionAttemptResult {
+  validationResult: ValidationResult;
+  reason: string | null;
+  resolvedPlatformProfile: ResolvedPlatformProfile | null;
+  token: JsonObject | null;
+  tokenExpiresAt: string | null;
+  logs: ConnectionAttemptLogEntry[];
 }
 
 export interface AccountPlatformAvailabilityCheckInput {
   account: AccountPlatformAccountSnapshot;
-  activeCredential: AccountPlatformCredentialSnapshot;
+  activeToken: JsonObject;
 }
 
 export interface AccountPlatformAvailabilityCheckResult {
@@ -102,18 +76,15 @@ export interface AccountPlatformAvailabilityCheckResult {
 
 export interface AccountPlatformPort {
   platformCode: string;
-  startOnboardingSession(
-    input: AccountPlatformOnboardingStartInput,
-  ): Promise<AccountPlatformOnboardingStartResult>;
-  resolveOnboardingSession(
-    input: AccountPlatformOnboardingResolveInput,
-  ): Promise<AccountPlatformAuthorizationVerifyResult>;
-  startAuthorizationAttempt(
-    input: AccountPlatformAuthorizationStartInput,
-  ): Promise<AccountPlatformAuthorizationStartResult>;
-  verifyAuthorizationAttempt(
-    input: AccountPlatformAuthorizationVerifyInput,
-  ): Promise<AccountPlatformAuthorizationVerifyResult>;
+  startConnectionAttempt(
+    input: AccountPlatformStartConnectionAttemptInput,
+  ): Promise<AccountPlatformStartConnectionAttemptResult>;
+  resolveConnectionAttempt(
+    input: AccountPlatformResolveConnectionAttemptInput,
+  ): Promise<AccountPlatformResolveConnectionAttemptResult>;
+  validateConnectionAttempt(
+    input: AccountPlatformValidateConnectionAttemptInput,
+  ): Promise<AccountPlatformValidateConnectionAttemptResult>;
   checkAvailability(
     input: AccountPlatformAvailabilityCheckInput,
   ): Promise<AccountPlatformAvailabilityCheckResult>;

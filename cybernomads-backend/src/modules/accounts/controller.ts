@@ -8,9 +8,7 @@ import type { AccountService } from "./service.js";
 import type {
   CreateAccountInput,
   ListAccountsFilters,
-  StartAuthorizationAttemptInput,
   UpdateAccountInput,
-  VerifyAuthorizationAttemptInput,
 } from "./types.js";
 import {
   readJsonBody,
@@ -31,7 +29,7 @@ export function createAccountsController(accountService: AccountService) {
         if (method === "POST") {
           const payload = (await readJsonBody(request)) as CreateAccountInput;
           const result = await accountService.createAccount(payload);
-          sendJson(response, result.restoredFromDeleted ? 200 : 201, result.account);
+          sendJson(response, 201, result);
           return true;
         }
 
@@ -52,45 +50,6 @@ export function createAccountsController(accountService: AccountService) {
         if (method === "POST") {
           const account = await accountService.restoreAccount(restoreMatch.accountId);
           sendJson(response, 200, account);
-          return true;
-        }
-
-        sendMethodNotAllowed(response, ["POST"]);
-        return true;
-      }
-
-      const verifyMatch = matchVerifyAuthorizationAttemptPath(url.pathname);
-
-      if (verifyMatch) {
-        if (method === "POST") {
-          const payload = (await readJsonBody(
-            request,
-          )) as VerifyAuthorizationAttemptInput;
-          const result = await accountService.verifyAuthorizationAttempt(
-            verifyMatch.accountId,
-            verifyMatch.attemptId,
-            payload,
-          );
-          sendJson(response, 200, result);
-          return true;
-        }
-
-        sendMethodNotAllowed(response, ["POST"]);
-        return true;
-      }
-
-      const startAttemptMatch = matchAuthorizationAttemptsPath(url.pathname);
-
-      if (startAttemptMatch) {
-        if (method === "POST") {
-          const payload = (await readJsonBody(
-            request,
-          )) as StartAuthorizationAttemptInput;
-          const result = await accountService.startAuthorizationAttempt(
-            startAttemptMatch.accountId,
-            payload,
-          );
-          sendJson(response, 202, result);
           return true;
         }
 
@@ -208,14 +167,12 @@ function readListAccountFilters(url: URL): ListAccountsFilters {
     lifecycleStatus:
       (url.searchParams.get("lifecycleStatus") as ListAccountsFilters["lifecycleStatus"]) ??
       undefined,
-    authorizationStatus:
-      (url.searchParams.get(
-        "authorizationStatus",
-      ) as ListAccountsFilters["authorizationStatus"]) ?? undefined,
+    loginStatus:
+      (url.searchParams.get("loginStatus") as ListAccountsFilters["loginStatus"]) ??
+      undefined,
     availabilityStatus:
-      (url.searchParams.get(
-        "availabilityStatus",
-      ) as ListAccountsFilters["availabilityStatus"]) ?? undefined,
+      (url.searchParams.get("availabilityStatus") as ListAccountsFilters["availabilityStatus"]) ??
+      undefined,
     includeDeleted: parseBooleanQueryValue(
       url.searchParams.get("includeDeleted"),
       "includeDeleted",
@@ -250,72 +207,17 @@ function parseBooleanQueryValue(
 
 function matchAccountDetailPath(pathname: string): { accountId: string } | null {
   const match = /^\/api\/accounts\/([^/]+)$/.exec(pathname);
-
-  if (!match) {
-    return null;
-  }
-
-  return {
-    accountId: decodeURIComponent(match[1]),
-  };
+  return match ? { accountId: decodeURIComponent(match[1]) } : null;
 }
 
 function matchRestorePath(pathname: string): { accountId: string } | null {
   const match = /^\/api\/accounts\/([^/]+)\/restore$/.exec(pathname);
-
-  if (!match) {
-    return null;
-  }
-
-  return {
-    accountId: decodeURIComponent(match[1]),
-  };
-}
-
-function matchAuthorizationAttemptsPath(
-  pathname: string,
-): { accountId: string } | null {
-  const match = /^\/api\/accounts\/([^/]+)\/authorization-attempts$/.exec(
-    pathname,
-  );
-
-  if (!match) {
-    return null;
-  }
-
-  return {
-    accountId: decodeURIComponent(match[1]),
-  };
-}
-
-function matchVerifyAuthorizationAttemptPath(
-  pathname: string,
-): { accountId: string; attemptId: string } | null {
-  const match =
-    /^\/api\/accounts\/([^/]+)\/authorization-attempts\/([^/]+)\/verify$/.exec(
-      pathname,
-    );
-
-  if (!match) {
-    return null;
-  }
-
-  return {
-    accountId: decodeURIComponent(match[1]),
-    attemptId: decodeURIComponent(match[2]),
-  };
+  return match ? { accountId: decodeURIComponent(match[1]) } : null;
 }
 
 function matchAvailabilityChecksPath(
   pathname: string,
 ): { accountId: string } | null {
   const match = /^\/api\/accounts\/([^/]+)\/availability-checks$/.exec(pathname);
-
-  if (!match) {
-    return null;
-  }
-
-  return {
-    accountId: decodeURIComponent(match[1]),
-  };
+  return match ? { accountId: decodeURIComponent(match[1]) } : null;
 }

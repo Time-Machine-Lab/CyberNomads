@@ -1,0 +1,383 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Account Connection Attempts API
+  version: 2.0.0
+  description: >
+    账号连接尝试 API 契约。连接尝试总是从属于一个既有账号包装对象，
+    用于执行手工令牌录入、二维码接入、令牌解析、平台资料校验和日志读取。
+  summary: 账号连接尝试对外契约
+
+tags:
+  - name: AccountConnectionAttempts
+    description: 账号绑定的连接尝试接口
+
+paths:
+  /api/accounts/{accountId}/connection-attempts:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags:
+        - AccountConnectionAttempts
+      summary: 创建连接尝试
+      description: >
+        为一个既有账号发起连接尝试。对于手工令牌录入，会直接携带令牌输入；
+        对于二维码接入，会返回 challenge 摘要供前端展示。
+      operationId: startAccountConnectionAttempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartConnectionAttemptRequest'
+      responses:
+        '201':
+          description: 连接尝试已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountConnectionAttemptDetail'
+        '400':
+          description: 请求参数不合法
+        '404':
+          description: 账号不存在
+        '409':
+          description: 当前账号状态不允许发起连接尝试
+
+  /api/accounts/{accountId}/connection-attempts/{attemptId}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+      - $ref: '#/components/parameters/AttemptId'
+    get:
+      tags:
+        - AccountConnectionAttempts
+      summary: 查询连接尝试详情
+      description: >
+        返回一条连接尝试的脱敏详情，包括 challenge 摘要、当前状态、
+        是否已有候选令牌以及最近解析出的平台资料快照。
+      operationId: getAccountConnectionAttempt
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountConnectionAttemptDetail'
+        '404':
+          description: 账号或连接尝试不存在
+
+  /api/accounts/{accountId}/connection-attempts/{attemptId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+      - $ref: '#/components/parameters/AttemptId'
+    post:
+      tags:
+        - AccountConnectionAttempts
+      summary: 解析连接尝试
+      description: >
+        触发一条连接尝试的解析动作。主要用于二维码接入完成后的轮询或确认，
+        将扫码结果转成候选令牌并更新尝试状态。
+      operationId: resolveAccountConnectionAttempt
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveConnectionAttemptRequest'
+      responses:
+        '200':
+          description: 解析流程已执行
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountConnectionAttemptDetail'
+        '400':
+          description: 请求参数不合法
+        '404':
+          description: 账号或连接尝试不存在
+        '409':
+          description: 当前连接尝试状态不允许解析
+
+  /api/accounts/{accountId}/connection-attempts/{attemptId}/validate:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+      - $ref: '#/components/parameters/AttemptId'
+    post:
+      tags:
+        - AccountConnectionAttempts
+      summary: 校验连接尝试
+      description: >
+        使用候选令牌调用平台资料获取接口完成校验。校验成功后才允许将候选令牌
+        切换为当前生效令牌，并回填最近一次解析的平台资料。
+      operationId: validateAccountConnectionAttempt
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateConnectionAttemptRequest'
+      responses:
+        '200':
+          description: 校验流程已完成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateConnectionAttemptResponse'
+        '400':
+          description: 请求参数不合法
+        '404':
+          description: 账号或连接尝试不存在
+        '409':
+          description: 当前连接尝试状态不允许校验
+
+  /api/accounts/{accountId}/connection-attempts/{attemptId}/logs:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+      - $ref: '#/components/parameters/AttemptId'
+    get:
+      tags:
+        - AccountConnectionAttempts
+      summary: 查询连接尝试日志
+      description: >
+        读取一条连接尝试的日志输出。日志属于流程产物，不属于账号主体字段。
+      operationId: getAccountConnectionAttemptLogs
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionAttemptLogsResponse'
+        '404':
+          description: 账号或连接尝试不存在
+
+components:
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 账号包装对象标识
+
+    AttemptId:
+      name: attemptId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 连接尝试标识
+
+  schemas:
+    StartConnectionAttemptRequest:
+      type: object
+      required:
+        - connectionMethod
+      properties:
+        connectionMethod:
+          $ref: '#/components/schemas/ConnectionMethod'
+        tokenValue:
+          type:
+            - string
+            - 'null'
+          description: >
+            手工录入的令牌内容。仅当 `connectionMethod = manual_token` 时需要提供。
+        context:
+          type: object
+          additionalProperties: true
+          description: 平台扩展上下文参数
+        expiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: 本次连接尝试预计过期时间
+
+    ResolveConnectionAttemptRequest:
+      type: object
+      properties:
+        resolutionPayload:
+          type: object
+          additionalProperties: true
+          description: 二维码解析或轮询所需的补充参数
+
+    ValidateConnectionAttemptRequest:
+      type: object
+      properties:
+        validationPayload:
+          type: object
+          additionalProperties: true
+          description: 校验连接尝试时的补充参数
+
+    AccountConnectionAttemptDetail:
+      type: object
+      required:
+        - accountId
+        - attemptId
+        - platform
+        - connectionMethod
+        - attemptStatus
+        - attemptStatusReason
+        - challenge
+        - hasCandidateToken
+        - tokenApplied
+        - hasLogs
+        - expiresAt
+        - appliedAt
+        - createdAt
+        - updatedAt
+      properties:
+        accountId:
+          type: string
+        attemptId:
+          type: string
+        platform:
+          type: string
+        connectionMethod:
+          $ref: '#/components/schemas/ConnectionMethod'
+        attemptStatus:
+          $ref: '#/components/schemas/ConnectionAttemptStatus'
+        attemptStatusReason:
+          type:
+            - string
+            - 'null'
+        challenge:
+          $ref: '#/components/schemas/ChallengeSummary'
+        hasCandidateToken:
+          type: boolean
+        tokenApplied:
+          type: boolean
+        resolvedPlatformProfile:
+          $ref: './accounts.yaml#/components/schemas/ResolvedPlatformProfile'
+        hasLogs:
+          type: boolean
+        expiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        appliedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ValidateConnectionAttemptResponse:
+      type: object
+      required:
+        - attemptId
+        - validationResult
+        - validationReason
+        - tokenApplied
+        - account
+      properties:
+        attemptId:
+          type: string
+        validationResult:
+          $ref: '#/components/schemas/ValidationResult'
+        validationReason:
+          type:
+            - string
+            - 'null'
+        tokenApplied:
+          type: boolean
+        account:
+          $ref: './accounts.yaml#/components/schemas/AccountDetail'
+
+    ConnectionAttemptLogsResponse:
+      type: object
+      required:
+        - accountId
+        - attemptId
+        - entries
+        - rawText
+        - updatedAt
+      properties:
+        accountId:
+          type: string
+        attemptId:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConnectionLogEntry'
+        rawText:
+          type:
+            - string
+            - 'null'
+        updatedAt:
+          type: string
+          format: date-time
+
+    ConnectionLogEntry:
+      type: object
+      required:
+        - level
+        - message
+      properties:
+        timestamp:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        level:
+          type: string
+          enum:
+            - debug
+            - info
+            - warning
+            - error
+        message:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    ChallengeSummary:
+      type:
+        - object
+        - 'null'
+      properties:
+        challengeType:
+          type: string
+        imageUrl:
+          type:
+            - string
+            - 'null'
+        message:
+          type:
+            - string
+            - 'null'
+        pollAfterMs:
+          type:
+            - integer
+            - 'null'
+
+    ConnectionMethod:
+      type: string
+      enum:
+        - manual_token
+        - qr_login
+
+    ConnectionAttemptStatus:
+      type: string
+      enum:
+        - pending_resolution
+        - ready_for_validation
+        - validating
+        - validation_succeeded
+        - validation_failed
+        - expired
+        - canceled
+
+    ValidationResult:
+      type: string
+      enum:
+        - succeeded
+        - failed

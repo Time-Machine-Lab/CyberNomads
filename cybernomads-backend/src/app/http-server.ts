@@ -1,9 +1,9 @@
 import { createServer, type Server } from "node:http";
 
-import { createAccountOnboardingController } from "../modules/account-onboarding/controller.js";
-import type { AccountOnboardingService } from "../modules/account-onboarding/service.js";
 import { createAgentAccessController } from "../modules/agent-access/controller.js";
 import type { AgentAccessService } from "../modules/agent-access/service.js";
+import { createAccountConnectionAttemptsController } from "../modules/account-connection-attempts/controller.js";
+import type { AccountConnectionAttemptService } from "../modules/account-connection-attempts/service.js";
 import { createAccountsController } from "../modules/accounts/controller.js";
 import type { AccountService } from "../modules/accounts/service.js";
 import {
@@ -26,7 +26,7 @@ export interface StartHttpServerOptions {
   productService: ProductService;
   strategyService: StrategyService;
   accountService: AccountService;
-  accountOnboardingService: AccountOnboardingService;
+  accountConnectionAttemptService: AccountConnectionAttemptService;
   agentAccessService: AgentAccessService;
   trafficWorkService: TrafficWorkService;
   taskService: TaskService;
@@ -55,9 +55,10 @@ export async function startHttpServer(
   const handleAccountsRequest = createAccountsController(
     options.accountService,
   );
-  const handleAccountOnboardingRequest = createAccountOnboardingController(
-    options.accountOnboardingService,
-  );
+  const handleAccountConnectionAttemptRequest =
+    createAccountConnectionAttemptsController(
+      options.accountConnectionAttemptService,
+    );
   const handleAgentAccessRequest = createAgentAccessController(
     options.agentAccessService,
   );
@@ -70,7 +71,7 @@ export async function startHttpServer(
     try {
       const handlers = [
         handleAgentAccessRequest,
-        handleAccountOnboardingRequest,
+        handleAccountConnectionAttemptRequest,
         handleAccountsRequest,
         handleStrategiesRequest,
         handleProductsRequest,

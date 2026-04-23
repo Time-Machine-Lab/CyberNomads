@@ -27,22 +27,12 @@ export class AccountNotFoundError extends AccountModuleError {
   }
 }
 
-export class AccountAlreadyExistsError extends AccountModuleError {
-  constructor(platform: string, platformAccountUid: string) {
-    super(
-      "ACCOUNT_ALREADY_EXISTS",
-      409,
-      `Account "${platform}:${platformAccountUid}" already exists.`,
-    );
-  }
-}
-
-export class AuthorizationAttemptNotFoundError extends AccountModuleError {
+export class AccountConnectionAttemptNotFoundError extends AccountModuleError {
   constructor(accountId: string, attemptId: string) {
     super(
-      "AUTHORIZATION_ATTEMPT_NOT_FOUND",
+      "ACCOUNT_CONNECTION_ATTEMPT_NOT_FOUND",
       404,
-      `Authorization attempt "${attemptId}" was not found for account "${accountId}".`,
+      `Connection attempt "${attemptId}" was not found for account "${accountId}".`,
     );
   }
 }
