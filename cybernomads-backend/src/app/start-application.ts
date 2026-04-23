@@ -35,18 +35,26 @@ import {
   stopHttpServer,
   type HttpServerState,
 } from "./http-server.js";
+import { ThreadTaskPlanner } from "./thread-task-planner.js";
+
+export interface StartThreadTaskPlannerOptions {
+  enabled?: boolean;
+  intervalMs?: number;
+}
 
 export interface StartApplicationOptions extends BootstrapRuntimeOptions {
   host?: string;
   port?: number;
   agentProviders?: Iterable<AgentProviderPort>;
   accountPlatforms?: Iterable<AccountPlatformPort>;
+  threadTaskPlanner?: StartThreadTaskPlannerOptions;
 }
 
 export interface ApplicationReadyState {
   status: "ready";
   runtime: BootstrapRuntimeResult;
   http: HttpServerState;
+  threadTaskPlanner: ThreadTaskPlanner | null;
   close(): Promise<void>;
 }
 
@@ -137,7 +145,20 @@ export async function startApplication(
     taskSetPersistence: taskService,
   });
 
+  let threadTaskPlanner: ThreadTaskPlanner | null = null;
+
   try {
+    const threadTaskPlannerOptions = options.threadTaskPlanner ?? {};
+
+    if (threadTaskPlannerOptions.enabled !== false) {
+      threadTaskPlanner = new ThreadTaskPlanner({
+        taskService,
+        trafficWorkService,
+        agentAccessService,
+        intervalMs: threadTaskPlannerOptions.intervalMs,
+      });
+    }
+
     const http = await startHttpServer({
       productService,
       strategyService,
@@ -150,11 +171,15 @@ export async function startApplication(
       port: options.port,
     });
 
+    threadTaskPlanner?.start();
+
     return {
       status: "ready",
       runtime,
       http,
+      threadTaskPlanner,
       async close() {
+        await threadTaskPlanner?.stop();
         await stopHttpServer(http.server);
         productService.close();
         strategyService.close();
@@ -167,6 +192,7 @@ export async function startApplication(
       },
     };
   } catch (error) {
+    await threadTaskPlanner?.stop();
     productService.close();
     strategyService.close();
     accountService.close();
