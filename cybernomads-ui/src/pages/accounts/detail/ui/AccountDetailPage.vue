@@ -20,7 +20,6 @@ import type {
   JsonObject,
   LifecycleStatus,
 } from '@/entities/account/model/types'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 type FeedbackTone = 'info' | 'success' | 'error'
 
@@ -161,12 +160,6 @@ watch(
   },
   { immediate: true },
 )
-
-watch(mockScenarioId, () => {
-  if (!usesRealAccountApi) {
-    void loadAccount()
-  }
-})
 
 watch(
   () => credentialForm.authorizationMethod,

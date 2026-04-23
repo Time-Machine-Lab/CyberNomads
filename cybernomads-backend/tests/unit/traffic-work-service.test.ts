@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import { TrafficWorkService } from "../../src/modules/traffic-works/service.js";
 import type { ProductMetadataStore } from "../../src/modules/products/types.js";
+import type {
+  StrategyMetadataStore,
+  StrategyRecord,
+} from "../../src/modules/strategies/types.js";
 import type { StrategyReferenceStore } from "../../src/ports/strategy-reference-store-port.js";
 import type { TrafficWorkContextPreparationPort } from "../../src/ports/traffic-work-context-preparation-port.js";
 import type { TrafficWorkContextStore } from "../../src/ports/traffic-work-context-store-port.js";
 import type { TrafficWorkStateStore } from "../../src/ports/traffic-work-state-store-port.js";
+import type {
+  TaskSetWriteInput,
+  TaskSetWriteResult,
+} from "../../src/modules/tasks/types.js";
 import type {
   ProductBindingSummary,
   StrategyBindingSummary,
@@ -39,7 +47,10 @@ describe("traffic work service", () => {
       contextStore,
       contextPreparation,
       productStore: productStore.asMetadataStore(),
+      productContentStore: productStore.asContentStore(),
       strategyStore,
+      strategyContentStore: strategyStore.asContentStore(),
+      taskSetPersistence: new FakeTaskSetPersistence(),
       now: createSequentialNow(),
       createTrafficWorkId: () => "work-1",
     });
@@ -64,6 +75,10 @@ describe("traffic work service", () => {
     expect(created.product.name).toBe("CyberNomads Product");
     expect(created.strategy.name).toBe("Growth Strategy");
     expect(contextPreparation.inputs).toHaveLength(1);
+    expect(contextPreparation.inputs[0]).toMatchObject({
+      productContentMarkdown: expect.stringContaining("# CyberNomads Product"),
+      strategyContentMarkdown: expect.stringContaining("# Growth Strategy"),
+    });
     expect(contextStore.snapshots.get("work-1")?.taskMarkdown).toContain(
       "Main Growth Work",
     );
@@ -111,24 +126,29 @@ describe("traffic work service", () => {
 
   it("records failed context preparation during create and blocks start", async () => {
     const stateStore = new InMemoryTrafficWorkStateStore();
+    const productStore = new InMemoryProductStore([
+      {
+        productId: "product-1",
+        name: "CyberNomads Product",
+      },
+    ]);
+    const strategyStore = new InMemoryStrategyStore([
+      {
+        strategyId: "strategy-1",
+        name: "Growth Strategy",
+      },
+    ]);
     const service = new TrafficWorkService({
       stateStore,
       contextStore: new InMemoryTrafficWorkContextStore(),
       contextPreparation: new FakeTrafficWorkContextPreparation(async () => {
         throw new Error("Current agent service is not configured.");
       }),
-      productStore: new InMemoryProductStore([
-        {
-          productId: "product-1",
-          name: "CyberNomads Product",
-        },
-      ]).asMetadataStore(),
-      strategyStore: new InMemoryStrategyStore([
-        {
-          strategyId: "strategy-1",
-          name: "Growth Strategy",
-        },
-      ]),
+      productStore: productStore.asMetadataStore(),
+      productContentStore: productStore.asContentStore(),
+      strategyStore,
+      strategyContentStore: strategyStore.asContentStore(),
+      taskSetPersistence: new FakeTaskSetPersistence(),
       now: createSequentialNow(),
       createTrafficWorkId: () => "work-1",
     });
@@ -158,6 +178,56 @@ describe("traffic work service", () => {
     expect(await stateStore.getTrafficWorkById("work-1")).toMatchObject({
       contextPreparationStatus: "failed",
     });
+  });
+
+  it("records failed preparation when task set persistence fails", async () => {
+    const stateStore = new InMemoryTrafficWorkStateStore();
+    const productStore = new InMemoryProductStore([
+      {
+        productId: "product-1",
+        name: "CyberNomads Product",
+      },
+    ]);
+    const strategyStore = new InMemoryStrategyStore([
+      {
+        strategyId: "strategy-1",
+        name: "Growth Strategy",
+      },
+    ]);
+    const service = new TrafficWorkService({
+      stateStore,
+      contextStore: new InMemoryTrafficWorkContextStore(),
+      contextPreparation: new FakeTrafficWorkContextPreparation(),
+      productStore: productStore.asMetadataStore(),
+      productContentStore: productStore.asContentStore(),
+      strategyStore,
+      strategyContentStore: strategyStore.asContentStore(),
+      taskSetPersistence: new FakeTaskSetPersistence(async () => {
+        throw new Error("Task set is invalid.");
+      }),
+      now: createSequentialNow(),
+      createTrafficWorkId: () => "work-1",
+    });
+
+    const created = await service.createTrafficWork({
+      displayName: "Failing Work",
+      productId: "product-1",
+      strategyId: "strategy-1",
+      objectBindings: [
+        {
+          objectType: "account",
+          objectKey: "primary-account",
+          resourceId: "account-1",
+          resourceLabel: null,
+        },
+      ],
+    });
+
+    expect(created.lifecycleStatus).toBe("ready");
+    expect(created.contextPreparationStatus).toBe("failed");
+    expect(created.contextPreparationStatusReason).toContain(
+      "Task set is invalid.",
+    );
   });
 });
 
@@ -207,14 +277,15 @@ class FakeTrafficWorkContextPreparation implements TrafficWorkContextPreparation
   readonly inputs = new Array<unknown>();
 
   constructor(
-    private readonly handler: TrafficWorkContextPreparationPort["prepareContext"] = async () => {},
+    private readonly handler: TrafficWorkContextPreparationPort["prepareContext"] = async () =>
+      createTaskSetWriteInput("agent-task"),
   ) {}
 
   async prepareContext(
     input: Parameters<TrafficWorkContextPreparationPort["prepareContext"]>[0],
-  ): Promise<void> {
+  ): ReturnType<TrafficWorkContextPreparationPort["prepareContext"]> {
     this.inputs.push(structuredClone(input));
-    await this.handler(input);
+    return this.handler(input);
   }
 }
 
@@ -250,9 +321,27 @@ class InMemoryProductStore {
       close: () => {},
     };
   }
+
+  asContentStore() {
+    return {
+      writeContent: async () => {},
+      readContent: async (contentRef: string) => {
+        const productId = contentRef.replace(/\.md$/, "");
+        const product = this.products.get(productId);
+        if (!product) {
+          throw new Error(`Product content "${contentRef}" was not found.`);
+        }
+
+        return `# ${product.name}\n\nProduct body.`;
+      },
+      deleteContent: async () => {},
+    };
+  }
 }
 
-class InMemoryStrategyStore implements StrategyReferenceStore {
+class InMemoryStrategyStore
+  implements StrategyReferenceStore, StrategyMetadataStore
+{
   private readonly strategies = new Map<string, StrategyBindingSummary>();
 
   constructor(strategies: StrategyBindingSummary[]) {
@@ -267,6 +356,134 @@ class InMemoryStrategyStore implements StrategyReferenceStore {
     const strategy = this.strategies.get(strategyId);
     return strategy ? structuredClone(strategy) : undefined;
   }
+
+  async createStrategy(_record: StrategyRecord): Promise<void> {
+    void _record;
+  }
+
+  async updateStrategy(
+    _strategyId: string,
+    _updates: Pick<StrategyRecord, "name" | "summary" | "tags" | "updatedAt">,
+  ): Promise<void> {
+    void _strategyId;
+    void _updates;
+  }
+
+  async getStrategyById(
+    strategyId: string,
+  ): Promise<StrategyRecord | undefined> {
+    const strategy = this.strategies.get(strategyId);
+    if (!strategy) {
+      return undefined;
+    }
+
+    return {
+      strategyId: strategy.strategyId,
+      name: strategy.name,
+      summary: `${strategy.name} summary`,
+      tags: [],
+      contentRef: `${strategy.strategyId}.md`,
+      createdAt: "2026-04-21T08:00:00.000Z",
+      updatedAt: "2026-04-21T08:00:00.000Z",
+    };
+  }
+
+  async listStrategies(): Promise<[]> {
+    return [];
+  }
+
+  async deleteStrategy(_strategyId: string): Promise<void> {
+    void _strategyId;
+  }
+
+  close(): void {}
+
+  asContentStore() {
+    return {
+      writeContent: async () => {},
+      readContent: async (contentRef: string) => {
+        const strategyId = contentRef.replace(/\.md$/, "");
+        const strategy = this.strategies.get(strategyId);
+        if (!strategy) {
+          throw new Error(`Strategy content "${contentRef}" was not found.`);
+        }
+
+        return `# ${strategy.name}\n\nStrategy body.`;
+      },
+      deleteContent: async () => {},
+    };
+  }
+}
+
+class FakeTaskSetPersistence {
+  readonly createInputs: TaskSetWriteInput[] = [];
+  readonly replaceInputs: TaskSetWriteInput[] = [];
+
+  constructor(
+    private readonly handler: (
+      input: TaskSetWriteInput,
+    ) => Promise<void> = async () => {},
+  ) {}
+
+  async createTaskSetForTrafficWork(
+    trafficWorkId: string,
+    input: TaskSetWriteInput,
+  ): Promise<TaskSetWriteResult> {
+    this.createInputs.push(structuredClone(input));
+    await this.handler(input);
+    return toTaskSetWriteResult(trafficWorkId, input);
+  }
+
+  async replaceTaskSetForTrafficWork(
+    trafficWorkId: string,
+    input: TaskSetWriteInput,
+  ): Promise<TaskSetWriteResult> {
+    this.replaceInputs.push(structuredClone(input));
+    await this.handler(input);
+    return toTaskSetWriteResult(trafficWorkId, input);
+  }
+}
+
+function createTaskSetWriteInput(taskKey: string): TaskSetWriteInput {
+  return {
+    source: {
+      kind: "agent-decomposition",
+    },
+    tasks: [
+      {
+        taskKey,
+        name: "Collect candidates",
+        instruction: "Collect candidate data.",
+        documentRef: `${taskKey}.md`,
+        contextRef: `work/work-1/${taskKey}`,
+        condition: {
+          cron: null,
+          relyOnTaskKeys: [],
+        },
+        inputNeeds: [
+          {
+            name: "work-context",
+            description: "Use the prepared traffic work context.",
+            source: "work-context",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function toTaskSetWriteResult(
+  trafficWorkId: string,
+  input: TaskSetWriteInput,
+): TaskSetWriteResult {
+  return {
+    trafficWorkId,
+    taskCount: input.tasks.length,
+    tasks: input.tasks.map((task, index) => ({
+      taskKey: task.taskKey,
+      taskId: `task-${index + 1}`,
+    })),
+  };
 }
 
 function cloneTrafficWorkRecord(record: TrafficWorkRecord): TrafficWorkRecord {

@@ -1,3 +1,5 @@
+import type { TaskSetWriteInput } from "../tasks/types.js";
+
 export const CURRENT_AGENT_SERVICE_SCOPE = "current";
 
 export type AgentServiceScope = typeof CURRENT_AGENT_SERVICE_SCOPE;
@@ -116,6 +118,19 @@ export interface TaskPlanningResult {
   sessionId: string;
   outputText: string;
   history: AgentConversationMessage[];
+}
+
+export interface TaskDecompositionRequest {
+  prompt: string;
+  context: string;
+  title?: string;
+}
+
+export interface TaskDecompositionResult {
+  sessionId: string;
+  outputText: string;
+  history: AgentConversationMessage[];
+  taskSet: TaskSetWriteInput;
 }
 
 export interface TaskExecutionRequest {

@@ -174,7 +174,7 @@ async function handleFinalize() {
           {{
             usesRealAccountApi
               ? feedbackMessage
-              : '当前未启用账号模块真实后端，请开启 VITE_USE_REAL_ACCOUNT_API 后再使用新增账号流程。'
+              : '当前后端账号服务不可用，请启动后端后重试。'
           }}
         </p>
       </section>

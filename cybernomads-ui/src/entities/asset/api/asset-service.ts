@@ -1,17 +1,16 @@
-import type { AssetRecord, SaveAssetInput } from '@/entities/asset/model/types'
 import {
   mapProductDetailDtoToAssetRecord,
   mapProductSummaryDtoToAssetRecord,
 } from '@/entities/asset/model/mappers'
 import type {
+  AssetRecord,
   CreateProductInput,
   ListProductsResultDto,
   ProductDetailDto,
+  SaveAssetInput,
   UpdateProductInput,
 } from '@/entities/asset/model/types'
 import { HttpClientError, requestJson } from '@/shared/api/http-client'
-import { env } from '@/shared/config/env'
-import { getAssetData, listAssetsData, saveAssetData } from '@/shared/mocks/runtime'
 
 type AssetDataSource = 'mock' | 'real'
 
@@ -22,11 +21,7 @@ export interface AssetRequestOptions {
 const PRODUCT_API_ROOT = '/products'
 
 export function isRealProductApiEnabled() {
-  return env.useRealProductApi
-}
-
-function resolveSource(source?: AssetDataSource): AssetDataSource {
-  return source ?? (env.useRealProductApi ? 'real' : 'mock')
+  return true
 }
 
 function mapSaveInputToProductRequest(input: SaveAssetInput): CreateProductInput | UpdateProductInput {
@@ -36,12 +31,8 @@ function mapSaveInputToProductRequest(input: SaveAssetInput): CreateProductInput
   }
 }
 
-export async function listAssets(options: AssetRequestOptions = {}): Promise<AssetRecord[]> {
-  const source = resolveSource(options.source)
-
-  if (source === 'mock') {
-    return listAssetsData()
-  }
+export async function listAssets(_options: AssetRequestOptions = {}): Promise<AssetRecord[]> {
+  void _options
 
   const result = await requestJson<ListProductsResultDto>(PRODUCT_API_ROOT)
   return result.items.map(mapProductSummaryDtoToAssetRecord)
@@ -49,13 +40,9 @@ export async function listAssets(options: AssetRequestOptions = {}): Promise<Ass
 
 export async function getAssetById(
   id: string,
-  options: AssetRequestOptions = {},
+  _options: AssetRequestOptions = {},
 ): Promise<AssetRecord | null> {
-  const source = resolveSource(options.source)
-
-  if (source === 'mock') {
-    return getAssetData(id)
-  }
+  void _options
 
   try {
     const dto = await requestJson<ProductDetailDto>(`${PRODUCT_API_ROOT}/${encodeURIComponent(id)}`)
@@ -71,13 +58,9 @@ export async function getAssetById(
 
 export async function createAsset(
   input: SaveAssetInput,
-  options: AssetRequestOptions = {},
+  _options: AssetRequestOptions = {},
 ): Promise<AssetRecord> {
-  const source = resolveSource(options.source)
-
-  if (source === 'mock') {
-    return saveAssetData(input)
-  }
+  void _options
 
   const dto = await requestJson<ProductDetailDto>(PRODUCT_API_ROOT, {
     method: 'POST',
@@ -90,16 +73,9 @@ export async function createAsset(
 export async function updateAsset(
   id: string,
   input: SaveAssetInput,
-  options: AssetRequestOptions = {},
+  _options: AssetRequestOptions = {},
 ): Promise<AssetRecord> {
-  const source = resolveSource(options.source)
-
-  if (source === 'mock') {
-    return saveAssetData({
-      ...input,
-      id,
-    })
-  }
+  void _options
 
   const dto = await requestJson<ProductDetailDto>(`${PRODUCT_API_ROOT}/${encodeURIComponent(id)}`, {
     method: 'PUT',

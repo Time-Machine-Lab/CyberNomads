@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { listAgentNodes, saveOpenClawConfig } from '@/entities/agent/api/agent-service'
-import { mockScenarioId } from '@/shared/mocks/runtime'
+import {
+  listAgentNodes,
+  prepareCurrentAgentServiceCapabilities,
+  saveOpenClawConfig,
+  verifyCurrentAgentServiceConnection,
+} from '@/entities/agent/api/agent-service'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,8 +42,7 @@ const diagnosticsLabel = computed(() => {
 const backTo = computed(() => String(route.meta.backTo ?? '/console'))
 const backLabel = computed(() => String(route.meta.backLabel ?? '返回控制台'))
 
-watch(
-  mockScenarioId,
+onMounted(
   async () => {
     const nodes = await listAgentNodes()
     const existing = nodes.find((node) => node.type === 'openclaw')
@@ -68,19 +71,35 @@ watch(
     diagnosticsStatus.value = 'awaiting'
     diagnosticsLogs.value = [...defaultDiagnosticsLogs]
   },
-  { immediate: true },
 )
 
-function runDiagnostics() {
-  diagnosticsStatus.value = 'connected'
-  diagnosticsLogs.value = [
-    '[SYS] 正在初始化握手序列…',
-    '[SYS] Establishing secure socket via gateway… O.K.',
-    '[AUTH] Validating existing token signature…',
-    '[AUTH] Token validated successfully. Session ready.',
-    '[DATA] Profile sync complete. Metadata loaded.',
-    '[SYS] Heartbeat ping… OK (24ms)',
-  ]
+async function runDiagnostics() {
+  diagnosticsLogs.value = ['[API] Verifying current Agent service connection...']
+
+  try {
+    const verification = await verifyCurrentAgentServiceConnection()
+    diagnosticsStatus.value = verification.isUsable ? 'connected' : 'offline'
+    diagnosticsLogs.value = [
+      `[API] connection=${verification.connectionStatus}`,
+      `[API] verifiedAt=${verification.verifiedAt}`,
+      `[API] reason=${verification.reason ?? 'none'}`,
+    ]
+
+    if (verification.isUsable) {
+      const provisioning = await prepareCurrentAgentServiceCapabilities()
+      diagnosticsLogs.value = [
+        ...diagnosticsLogs.value,
+        `[API] capability=${provisioning.capabilityStatus}`,
+        `[API] preparedAt=${provisioning.preparedAt ?? 'not-ready'}`,
+      ]
+    }
+  } catch (error) {
+    diagnosticsStatus.value = 'offline'
+    diagnosticsLogs.value = [
+      '[API] Agent service verification failed.',
+      error instanceof Error ? `[API] ${error.message}` : '[API] Unknown verification error.',
+    ]
+  }
 }
 
 async function handleSave() {
@@ -97,6 +116,7 @@ async function handleSave() {
       authToken: form.authToken,
       parallelLimit: form.parallelLimit,
     })
+    await runDiagnostics()
 
     await router.push('/console')
   } finally {

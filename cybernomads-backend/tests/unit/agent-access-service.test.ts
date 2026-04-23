@@ -51,7 +51,7 @@ describe("agent access service", () => {
       title: "planning",
     });
 
-    expect(planningResult.outputText).toBe("handled:Plan tasks for the launch.");
+    expect(planningResult.outputText).toContain("Plan tasks for the launch.");
     expect(planningResult.history).toEqual([
       {
         role: "system",
@@ -59,11 +59,11 @@ describe("agent access service", () => {
       },
       {
         role: "user",
-        content: "Plan tasks for the launch.",
+        content: expect.stringContaining("Plan tasks for the launch."),
       },
       {
         role: "assistant",
-        content: "handled:Plan tasks for the launch.",
+        content: expect.stringContaining("Plan tasks for the launch."),
       },
     ]);
 
@@ -75,7 +75,7 @@ describe("agent access service", () => {
     });
 
     expect(executionResult.status).toBe("completed");
-    expect(executionResult.outputText).toBe("handled:Execute the first task.");
+    expect(executionResult.outputText).toContain("Execute the first task.");
     expect(executionResult.executionId).toBe("task-1:message-2");
     expect(provider.createSessionCalls).toEqual([
       {
@@ -92,13 +92,19 @@ describe("agent access service", () => {
     expect(provider.sendMessageCalls).toEqual([
       {
         sessionId: "session-1",
-        message: "Plan tasks for the launch.",
+        message: expect.stringContaining("$cybernomads-task-decomposition"),
       },
       {
         sessionId: "session-2",
-        message: "Execute the first task.",
+        message: expect.stringContaining("$cybernomads-task-execution"),
       },
     ]);
+    expect(provider.sendMessageCalls[0]?.message).toContain(
+      "Plan tasks for the launch.",
+    );
+    expect(provider.sendMessageCalls[1]?.message).toContain(
+      "Execute the first task.",
+    );
   });
 
   it("rejects upper-layer access until the current agent service is connected", async () => {
@@ -135,17 +141,20 @@ class InMemoryAgentServiceStateStore implements AgentServiceStateStore {
     return this.currentService;
   }
 
-  async saveCurrentService(record: AgentServiceConnectionRecord): Promise<void> {
+  async saveCurrentService(
+    record: AgentServiceConnectionRecord,
+  ): Promise<void> {
     this.currentService = { ...record };
   }
 
   close(): void {}
 }
 
-class InMemoryAgentServiceCredentialStore
-  implements AgentServiceCredentialStore
-{
-  private readonly credentials = new Map<string, AgentServiceCredentialRecord>();
+class InMemoryAgentServiceCredentialStore implements AgentServiceCredentialStore {
+  private readonly credentials = new Map<
+    string,
+    AgentServiceCredentialRecord
+  >();
 
   async writeCredential(
     credentialRef: string,
@@ -174,7 +183,10 @@ class InMemoryAgentServiceCredentialStore
 class FakeAgentProvider implements AgentProviderPort {
   readonly createSessionCalls: AgentProviderSessionCreateInput[] = [];
   readonly sendMessageCalls: AgentProviderSendMessageInput[] = [];
-  private readonly sessionMessages = new Map<string, AgentConversationMessage[]>();
+  private readonly sessionMessages = new Map<
+    string,
+    AgentConversationMessage[]
+  >();
   private sessionCounter = 0;
   private messageCounter = 0;
 

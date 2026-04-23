@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import type { ProductMetadataStore } from "../products/types.js";
+import type {
+  ProductContentStore,
+  ProductMetadataStore,
+} from "../products/types.js";
+import type {
+  StrategyContentStore,
+  StrategyMetadataStore,
+} from "../strategies/types.js";
+import type { TaskSetWriteInput, TaskSetWriteResult } from "../tasks/types.js";
 import type { StrategyReferenceStore } from "../../ports/strategy-reference-store-port.js";
 import type { TrafficWorkContextPreparationPort } from "../../ports/traffic-work-context-preparation-port.js";
 import type { TrafficWorkContextStore } from "../../ports/traffic-work-context-store-port.js";
@@ -31,9 +39,33 @@ export interface TrafficWorkServiceOptions {
   contextStore: TrafficWorkContextStore;
   contextPreparation: TrafficWorkContextPreparationPort;
   productStore: ProductMetadataStore;
-  strategyStore: StrategyReferenceStore;
+  productContentStore: ProductContentStore;
+  strategyStore: StrategyReferenceStore & StrategyMetadataStore;
+  strategyContentStore: StrategyContentStore;
+  taskSetPersistence: TrafficWorkTaskSetPersistence;
   now?: () => Date;
   createTrafficWorkId?: () => string;
+}
+
+export interface TrafficWorkTaskSetPersistence {
+  createTaskSetForTrafficWork(
+    trafficWorkId: string,
+    input: TaskSetWriteInput,
+  ): Promise<TaskSetWriteResult>;
+  replaceTaskSetForTrafficWork(
+    trafficWorkId: string,
+    input: TaskSetWriteInput,
+  ): Promise<TaskSetWriteResult>;
+}
+
+interface TrafficWorkProductSnapshot {
+  summary: ProductBindingSummary;
+  contentMarkdown: string;
+}
+
+interface TrafficWorkStrategySnapshot {
+  summary: StrategyBindingSummary;
+  contentMarkdown: string;
 }
 
 export class TrafficWorkService {
@@ -51,10 +83,10 @@ export class TrafficWorkService {
   ): Promise<TrafficWorkDetail> {
     const normalizedInput = normalizeTrafficWorkInput(input);
     const timestamp = this.now().toISOString();
-    const product = await this.requireProductReference(
+    const product = await this.requireProductSnapshot(
       normalizedInput.productId,
     );
-    const strategy = await this.requireStrategyReference(
+    const strategy = await this.requireStrategySnapshot(
       normalizedInput.strategyId,
     );
     const record: TrafficWorkRecord = {
@@ -79,7 +111,11 @@ export class TrafficWorkService {
     await this.options.stateStore.createTrafficWork(record);
 
     const preparedRecord = await this.prepareContext(record, product, strategy);
-    return toTrafficWorkDetail(preparedRecord, product, strategy);
+    return toTrafficWorkDetail(
+      preparedRecord,
+      product.summary,
+      strategy.summary,
+    );
   }
 
   async listTrafficWorks(
@@ -124,16 +160,12 @@ export class TrafficWorkService {
     const normalizedInput = normalizeTrafficWorkInput(input);
     const existingRecord = await this.getTrafficWorkRecord(trafficWorkId);
 
-    ensureLifecycleStatusAllowed(
-      existingRecord.lifecycleStatus,
-      ["ready"],
-      "Only ready traffic works can be updated.",
-    );
+    ensureLifecycleStatusNotRunning(existingRecord.lifecycleStatus);
 
-    const product = await this.requireProductReference(
+    const product = await this.requireProductSnapshot(
       normalizedInput.productId,
     );
-    const strategy = await this.requireStrategyReference(
+    const strategy = await this.requireStrategySnapshot(
       normalizedInput.strategyId,
     );
     const updatedRecord: TrafficWorkRecord = {
@@ -154,8 +186,13 @@ export class TrafficWorkService {
       updatedRecord,
       product,
       strategy,
+      "replace",
     );
-    return toTrafficWorkDetail(preparedRecord, product, strategy);
+    return toTrafficWorkDetail(
+      preparedRecord,
+      product.summary,
+      strategy.summary,
+    );
   }
 
   async startTrafficWork(trafficWorkId: string): Promise<TrafficWorkDetail> {
@@ -279,13 +316,16 @@ export class TrafficWorkService {
 
   private async prepareContext(
     record: TrafficWorkRecord,
-    product: ProductBindingSummary,
-    strategy: StrategyBindingSummary,
+    product: TrafficWorkProductSnapshot,
+    strategy: TrafficWorkStrategySnapshot,
+    taskSetMode: "create" | "replace" = "create",
   ): Promise<TrafficWorkRecord> {
     const contextMarkdown = renderTrafficWorkTaskMarkdown(
       record,
-      product,
-      strategy,
+      product.summary,
+      strategy.summary,
+      product.contentMarkdown,
+      strategy.contentMarkdown,
     );
 
     try {
@@ -293,14 +333,29 @@ export class TrafficWorkService {
         record.trafficWorkId,
         contextMarkdown,
       );
-      await this.options.contextPreparation.prepareContext({
+      const taskSet = await this.options.contextPreparation.prepareContext({
         trafficWorkId: record.trafficWorkId,
         displayName: record.displayName,
-        product,
-        strategy,
+        product: product.summary,
+        productContentMarkdown: product.contentMarkdown,
+        strategy: strategy.summary,
+        strategyContentMarkdown: strategy.contentMarkdown,
         objectBindings: record.objectBindings,
         context,
       });
+
+      if (taskSetMode === "create") {
+        await this.options.taskSetPersistence.createTaskSetForTrafficWork(
+          record.trafficWorkId,
+          taskSet,
+        );
+      } else {
+        await this.options.taskSetPersistence.replaceTaskSetForTrafficWork(
+          record.trafficWorkId,
+          taskSet,
+        );
+      }
+
       const preparedAt = this.now().toISOString();
       const nextRecord: TrafficWorkRecord = {
         ...record,
@@ -351,9 +406,9 @@ export class TrafficWorkService {
     return record;
   }
 
-  private async requireProductReference(
+  private async requireProductSnapshot(
     productId: string,
-  ): Promise<ProductBindingSummary> {
+  ): Promise<TrafficWorkProductSnapshot> {
     const product = await this.options.productStore.getProductById(productId);
 
     if (!product) {
@@ -361,8 +416,13 @@ export class TrafficWorkService {
     }
 
     return {
-      productId: product.productId,
-      name: product.name,
+      summary: {
+        productId: product.productId,
+        name: product.name,
+      },
+      contentMarkdown: await this.options.productContentStore.readContent(
+        product.contentRef,
+      ),
     };
   }
 
@@ -377,17 +437,25 @@ export class TrafficWorkService {
     };
   }
 
-  private async requireStrategyReference(
+  private async requireStrategySnapshot(
     strategyId: string,
-  ): Promise<StrategyBindingSummary> {
+  ): Promise<TrafficWorkStrategySnapshot> {
     const strategy =
-      await this.options.strategyStore.getStrategyReferenceById(strategyId);
+      await this.options.strategyStore.getStrategyById(strategyId);
 
     if (!strategy) {
       throw new TrafficWorkStrategyNotFoundError(strategyId);
     }
 
-    return strategy;
+    return {
+      summary: {
+        strategyId: strategy.strategyId,
+        name: strategy.name,
+      },
+      contentMarkdown: await this.options.strategyContentStore.readContent(
+        strategy.contentRef,
+      ),
+    };
   }
 
   private async resolveStrategyReference(
@@ -536,6 +604,16 @@ function ensureLifecycleStatusAllowed(
   }
 }
 
+function ensureLifecycleStatusNotRunning(
+  status: TrafficWorkLifecycleStatus,
+): void {
+  if (status === "running") {
+    throw new TrafficWorkOperationConflictError(
+      "Running traffic works cannot be updated.",
+    );
+  }
+}
+
 function matchesStateFilters(
   record: TrafficWorkRecord,
   filters: ListTrafficWorksFilters,
@@ -639,6 +717,8 @@ function renderTrafficWorkTaskMarkdown(
   record: TrafficWorkRecord,
   product: ProductBindingSummary,
   strategy: StrategyBindingSummary,
+  productContentMarkdown: string,
+  strategyContentMarkdown: string,
 ): string {
   const objectBindings = record.objectBindings
     .map(
@@ -662,8 +742,14 @@ function renderTrafficWorkTaskMarkdown(
     `## Object Bindings`,
     objectBindings,
     ``,
+    `## Product Content Snapshot`,
+    productContentMarkdown,
+    ``,
+    `## Strategy Content Snapshot`,
+    strategyContentMarkdown,
+    ``,
     `## Preparation Goal`,
-    `Prepare the stable work-level context for this traffic work without expanding into task scheduling or execution internals.`,
+    `Prepare the stable work-level context and task decomposition input for this traffic work without expanding into task execution internals.`,
     ``,
   ].join("\n");
 }

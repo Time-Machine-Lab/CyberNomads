@@ -13,7 +13,6 @@ import type {
   StrategyPlaceholderRecord,
   StrategyRecord,
 } from '@/entities/strategy/model/types'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,7 +142,7 @@ async function loadStrategy() {
   }
 }
 
-watch([strategyId, mockScenarioId], () => {
+watch(strategyId, () => {
   void loadCatalog()
   void loadStrategy()
 }, { immediate: true })

@@ -7,7 +7,9 @@ import type {
 export class AgentAccessTrafficWorkContextPreparationAdapter implements TrafficWorkContextPreparationPort {
   constructor(private readonly agentAccessService: AgentAccessService) {}
 
-  async prepareContext(input: PrepareTrafficWorkContextInput): Promise<void> {
+  async prepareContext(
+    input: PrepareTrafficWorkContextInput,
+  ): ReturnType<TrafficWorkContextPreparationPort["prepareContext"]> {
     const objectBindings = input.objectBindings
       .map(
         (item) =>
@@ -17,21 +19,31 @@ export class AgentAccessTrafficWorkContextPreparationAdapter implements TrafficW
       )
       .join("\n");
 
-    await this.agentAccessService.submitTaskPlanningRequest({
-      title: `traffic-work:${input.trafficWorkId}`,
-      context: input.context.taskMarkdown,
-      prompt: [
-        `Prepare the work-level context for a Cybernomads traffic work.`,
-        `Traffic work ID: ${input.trafficWorkId}`,
-        `Display name: ${input.displayName}`,
-        `Product: ${input.product.productId} (${input.product.name})`,
-        `Strategy: ${input.strategy.strategyId} (${input.strategy.name})`,
-        `Context directory: ${input.context.workDirectory}`,
-        `Task file: ${input.context.taskFilePath}`,
-        `Object bindings:`,
-        objectBindings,
-        `Stay within work-level context preparation. Do not design task scheduling, task execution, log structures, or platform script internals.`,
-      ].join("\n"),
-    });
+    const result = await this.agentAccessService.submitTaskDecompositionRequest(
+      {
+        title: `traffic-work:${input.trafficWorkId}`,
+        context: input.context.taskMarkdown,
+        prompt: [
+          `Decompose this Cybernomads traffic work into an atomic task set.`,
+          `Traffic work ID: ${input.trafficWorkId}`,
+          `Display name: ${input.displayName}`,
+          `Product: ${input.product.productId} (${input.product.name})`,
+          `Product content:`,
+          input.productContentMarkdown,
+          `Strategy: ${input.strategy.strategyId} (${input.strategy.name})`,
+          `Strategy content:`,
+          input.strategyContentMarkdown,
+          `Context directory: ${input.context.workDirectory}`,
+          `Task file: ${input.context.taskFilePath}`,
+          `Object bindings:`,
+          objectBindings,
+          `Use $cybernomads-task-decomposition when decomposing this traffic work into tasks.`,
+          `Return a task set with source.kind = "agent-decomposition" and task drafts that include taskKey, name, instruction, documentRef, contextRef, condition, and inputNeeds.`,
+          `Stay within work-level context preparation. Do not design task scheduling, task execution, log structures, or platform script internals.`,
+        ].join("\n"),
+      },
+    );
+
+    return result.taskSet;
   }
 }

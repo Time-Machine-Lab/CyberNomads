@@ -8,9 +8,8 @@ import AccountOnboardingPage from '@/pages/accounts/create/ui/AccountOnboardingP
 import AccountDetailPage from '@/pages/accounts/detail/ui/AccountDetailPage.vue'
 import AccountsListPage from '@/pages/accounts/list/ui/AccountsListPage.vue'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
+const apiBaseUrl = import.meta.env.VITE_BACKEND_SMOKE_BASE_URL?.trim()
 const smokeEnabled =
-  import.meta.env.VITE_USE_REAL_ACCOUNT_API === 'true' &&
   typeof apiBaseUrl === 'string' &&
   apiBaseUrl.length > 0
 

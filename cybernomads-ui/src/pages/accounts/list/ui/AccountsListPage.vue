@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { deleteAccount, isRealAccountApiEnabled, listAccounts, restoreAccount } from '@/entities/account/api/account-service'
 import type { AccountPlatformColor, AccountRecord } from '@/entities/account/model/types'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 type SummaryCardTone = 'primary' | 'red' | 'default' | 'blue'
 type SummaryCardSignal = 'primary' | 'error' | 'muted'
@@ -88,19 +87,7 @@ async function loadAccounts() {
   }
 }
 
-watch(
-  mockScenarioId,
-  () => {
-    if (!usesRealAccountApi) {
-      void loadAccounts()
-    }
-  },
-  { immediate: !usesRealAccountApi },
-)
-
-if (usesRealAccountApi) {
-  void loadAccounts()
-}
+onMounted(() => void loadAccounts())
 
 function resolveSummaryTone(color: AccountPlatformColor): SummaryCardTone {
   if (color === 'primary') return 'primary'

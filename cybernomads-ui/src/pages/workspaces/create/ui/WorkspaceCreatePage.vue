@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { listAccounts } from '@/entities/account/api/account-service'
@@ -11,7 +11,6 @@ import type { AccountRecord } from '@/entities/account/model/types'
 import type { AgentNodeRecord } from '@/entities/agent/model/types'
 import type { AssetAttachmentRecord, AssetRecord } from '@/entities/asset/model/types'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,7 +51,7 @@ async function loadPage() {
   ;[assets.value, strategies.value, accounts.value, agentNodes.value] = await Promise.all([
     listAssets(),
     listStrategies(),
-    listAccounts({ source: 'mock' }),
+    listAccounts({ onlyConsumable: true }),
     listAgentNodes(),
   ])
 
@@ -63,7 +62,7 @@ async function loadPage() {
   }
 }
 
-watch(mockScenarioId, loadPage, { immediate: true })
+onMounted(loadPage)
 
 function resolveAttachmentIcon(kind: AssetAttachmentRecord['kind']) {
   if (kind === 'video') return 'video_file'

@@ -4,16 +4,21 @@ import type {
   StrategyBindingSummary,
   TrafficWorkContextSnapshot,
 } from "../modules/traffic-works/types.js";
+import type { TaskSetWriteInput } from "../modules/tasks/types.js";
 
 export interface PrepareTrafficWorkContextInput {
   trafficWorkId: string;
   displayName: string;
   product: ProductBindingSummary;
+  productContentMarkdown: string;
   strategy: StrategyBindingSummary;
+  strategyContentMarkdown: string;
   objectBindings: ObjectBindingItem[];
   context: TrafficWorkContextSnapshot;
 }
 
 export interface TrafficWorkContextPreparationPort {
-  prepareContext(input: PrepareTrafficWorkContextInput): Promise<void>;
+  prepareContext(
+    input: PrepareTrafficWorkContextInput,
+  ): Promise<TaskSetWriteInput>;
 }

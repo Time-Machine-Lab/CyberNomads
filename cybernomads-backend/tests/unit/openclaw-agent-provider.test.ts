@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { AgentAccessService } from "../../src/modules/agent-access/service.js";
 import { OpenClawAgentProvider } from "../../src/adapters/agent/openclaw/openclaw-adapter.js";
-import type {
-  AgentProviderContext,
-} from "../../src/ports/agent-provider-port.js";
+import type { AgentProviderContext } from "../../src/ports/agent-provider-port.js";
 import type { AgentServiceCredentialStore } from "../../src/ports/agent-service-credential-store-port.js";
 import type { AgentServiceStateStore } from "../../src/ports/agent-service-state-store-port.js";
 import type {
@@ -68,17 +66,16 @@ describe("openclaw agent provider", () => {
       },
     ]);
 
-    expect(httpClient.invocations.map((invocation) => invocation.tool)).toEqual([
-      "sessions_list",
-      "sessions_list",
-      "subagents",
-    ]);
+    expect(httpClient.invocations.map((invocation) => invocation.tool)).toEqual(
+      ["sessions_list", "sessions_list", "subagents"],
+    );
     expect(wsClient.calls[0]).toMatchObject({
       method: "agent",
       params: {
         message: "Plan the launch tasks.",
         label: "Roadmap",
-        extraSystemPrompt: "Session title: Roadmap\n\nSession purpose: task planning.\n\nSession context:\nworkspace alpha",
+        extraSystemPrompt:
+          "Session title: Roadmap\n\nSession purpose: task planning.\n\nSession context:\nworkspace alpha",
       },
     });
   });
@@ -143,7 +140,12 @@ describe("agent access service with openclaw provider", () => {
         new OpenClawAgentProvider({
           httpClient: new FakeOpenClawHttpClient(),
           wsClient: new FakeOpenClawWsClient(),
-          createId: createSequence(["session-1", "run-1", "session-2", "run-2"]),
+          createId: createSequence([
+            "session-1",
+            "run-1",
+            "session-2",
+            "run-2",
+          ]),
         }),
       ],
       createAgentServiceId: () => "agent-service-1",
@@ -169,7 +171,8 @@ describe("agent access service with openclaw provider", () => {
 
     expect(result.status).toBe("completed");
     expect(result.executionId).toBe("task-1:run-1");
-    expect(result.outputText).toBe("handled:Execute the first task.");
+    expect(result.outputText).toContain("$cybernomads-task-execution");
+    expect(result.outputText).toContain("Execute the first task.");
     expect(result.history).toEqual([
       {
         role: "system",
@@ -177,11 +180,11 @@ describe("agent access service with openclaw provider", () => {
       },
       {
         role: "user",
-        content: "Execute the first task.",
+        content: expect.stringContaining("Execute the first task."),
       },
       {
         role: "assistant",
-        content: "handled:Execute the first task.",
+        content: expect.stringContaining("Execute the first task."),
       },
     ]);
   });
@@ -307,17 +310,20 @@ class InMemoryAgentServiceStateStore implements AgentServiceStateStore {
     return this.currentService;
   }
 
-  async saveCurrentService(record: AgentServiceConnectionRecord): Promise<void> {
+  async saveCurrentService(
+    record: AgentServiceConnectionRecord,
+  ): Promise<void> {
     this.currentService = { ...record };
   }
 
   close(): void {}
 }
 
-class InMemoryAgentServiceCredentialStore
-  implements AgentServiceCredentialStore
-{
-  private readonly credentials = new Map<string, AgentServiceCredentialRecord>();
+class InMemoryAgentServiceCredentialStore implements AgentServiceCredentialStore {
+  private readonly credentials = new Map<
+    string,
+    AgentServiceCredentialRecord
+  >();
 
   async writeCredential(
     credentialRef: string,

@@ -7,6 +7,10 @@ import {
 import type { AgentServiceCredentialStore } from "../../ports/agent-service-credential-store-port.js";
 import type { AgentServiceStateStore } from "../../ports/agent-service-state-store-port.js";
 import {
+  renderTaskDecompositionSkillInstruction,
+  renderTaskExecutionSkillInstruction,
+} from "../../shared/agent-task-skill-instructions.js";
+import {
   AgentServiceOperationConflictError,
   AgentServiceUnavailableError,
   AgentServiceValidationError,
@@ -23,6 +27,8 @@ import {
   type ConfigureAgentServiceInput,
   type ConnectionVerificationResult,
   type CurrentAgentService,
+  type TaskDecompositionRequest,
+  type TaskDecompositionResult,
   type TaskExecutionRequest,
   type TaskExecutionResult,
   type TaskPlanningRequest,
@@ -43,9 +49,7 @@ export class AgentAccessService {
   private readonly now: () => Date;
   private readonly createAgentServiceId: () => string;
 
-  constructor(
-    private readonly options: AgentAccessServiceOptions,
-  ) {
+  constructor(private readonly options: AgentAccessServiceOptions) {
     this.providers = new Map(
       Array.from(options.providers ?? []).map((provider) => [
         normalizeCode(provider.providerCode),
@@ -138,7 +142,9 @@ export class AgentAccessService {
       };
 
       await this.options.stateStore.saveCurrentService(record);
-      await this.options.credentialStore.deleteCredential(existing.credentialRef);
+      await this.options.credentialStore.deleteCredential(
+        existing.credentialRef,
+      );
 
       return toCurrentAgentService(record);
     } catch (error) {
@@ -303,7 +309,10 @@ export class AgentAccessService {
       providerAccess.context,
       {
         sessionId: session.sessionId,
-        message: normalizedRequest.prompt,
+        message: [
+          renderTaskDecompositionSkillInstruction(),
+          normalizedRequest.prompt,
+        ].join("\n\n"),
       },
     );
     const history = await providerAccess.provider.listSessionMessages(
@@ -317,6 +326,45 @@ export class AgentAccessService {
       sessionId: session.sessionId,
       outputText: messageResult.outputText,
       history,
+    };
+  }
+
+  async submitTaskDecompositionRequest(
+    request: TaskDecompositionRequest,
+  ): Promise<TaskDecompositionResult> {
+    const providerAccess = await this.loadCurrentServiceForTaskDecomposition();
+    const normalizedRequest = normalizeTaskDecompositionRequest(request);
+    const session = await providerAccess.provider.createSession(
+      providerAccess.context,
+      {
+        purpose: "task_planning",
+        title: normalizedRequest.title ?? null,
+        context: normalizedRequest.context,
+      },
+    );
+    const messageResult = await providerAccess.provider.sendMessage(
+      providerAccess.context,
+      {
+        sessionId: session.sessionId,
+        message: [
+          renderTaskDecompositionSkillInstruction(),
+          `Return only a JSON object that matches the Cybernomads TaskSetWriteInput contract.`,
+          normalizedRequest.prompt,
+        ].join("\n\n"),
+      },
+    );
+    const history = await providerAccess.provider.listSessionMessages(
+      providerAccess.context,
+      {
+        sessionId: session.sessionId,
+      },
+    );
+
+    return {
+      sessionId: session.sessionId,
+      outputText: messageResult.outputText,
+      history,
+      taskSet: parseTaskSetWriteInput(messageResult.outputText),
     };
   }
 
@@ -337,7 +385,10 @@ export class AgentAccessService {
       providerAccess.context,
       {
         sessionId: session.sessionId,
-        message: normalizedRequest.instructions,
+        message: [
+          renderTaskExecutionSkillInstruction(normalizedRequest.taskId),
+          normalizedRequest.instructions,
+        ].join("\n\n"),
       },
     );
     const history = await providerAccess.provider.listSessionMessages(
@@ -385,13 +436,36 @@ export class AgentAccessService {
     return this.loadProviderAccess(currentService);
   }
 
+  private async loadCurrentServiceForTaskDecomposition(): Promise<{
+    provider: AgentProviderPort;
+    context: AgentProviderContext;
+  }> {
+    const currentService = await this.getCurrentServiceRecord();
+
+    if (currentService.connectionStatus !== "connected") {
+      throw new AgentServiceOperationConflictError(
+        "The current agent service must be connected before task decomposition can be used.",
+      );
+    }
+
+    if (currentService.capabilityStatus !== "ready") {
+      throw new AgentServiceOperationConflictError(
+        "The current agent service capabilities must be prepared before task decomposition can be used.",
+      );
+    }
+
+    return this.loadProviderAccess(currentService);
+  }
+
   private async loadProviderAccess(
     currentService: AgentServiceConnectionRecord,
   ): Promise<{
     provider: AgentProviderPort;
     context: AgentProviderContext;
   }> {
-    const provider = this.providers.get(normalizeCode(currentService.providerCode));
+    const provider = this.providers.get(
+      normalizeCode(currentService.providerCode),
+    );
 
     if (!provider) {
       throw new AgentServiceUnavailableError(
@@ -568,11 +642,39 @@ function normalizeTaskPlanningRequest(
     context:
       request.context === undefined
         ? undefined
-        : normalizeRequiredString(request.context, "Task planning context must be a non-empty string."),
+        : normalizeRequiredString(
+            request.context,
+            "Task planning context must be a non-empty string.",
+          ),
     title:
       request.title === undefined
         ? undefined
-        : normalizeRequiredString(request.title, "Task planning title must be a non-empty string."),
+        : normalizeRequiredString(
+            request.title,
+            "Task planning title must be a non-empty string.",
+          ),
+  };
+}
+
+function normalizeTaskDecompositionRequest(
+  request: TaskDecompositionRequest,
+): TaskDecompositionRequest {
+  return {
+    prompt: normalizeRequiredString(
+      request.prompt,
+      "Task decomposition prompt is required.",
+    ),
+    context: normalizeRequiredString(
+      request.context,
+      "Task decomposition context is required.",
+    ),
+    title:
+      request.title === undefined
+        ? undefined
+        : normalizeRequiredString(
+            request.title,
+            "Task decomposition title must be a non-empty string.",
+          ),
   };
 }
 
@@ -608,4 +710,56 @@ function toErrorMessage(error: unknown): string {
   }
 
   return "An unexpected provider error occurred.";
+}
+
+function parseTaskSetWriteInput(
+  outputText: string,
+): TaskDecompositionResult["taskSet"] {
+  const jsonText = extractJsonObjectText(outputText);
+
+  if (!jsonText) {
+    throw new AgentServiceValidationError(
+      "Agent task decomposition did not return a JSON task set.",
+    );
+  }
+
+  let parsedValue: unknown;
+
+  try {
+    parsedValue = JSON.parse(jsonText);
+  } catch (error) {
+    throw new AgentServiceValidationError(
+      "Agent task decomposition returned invalid JSON.",
+      { cause: error },
+    );
+  }
+
+  if (
+    !parsedValue ||
+    typeof parsedValue !== "object" ||
+    Array.isArray(parsedValue)
+  ) {
+    throw new AgentServiceValidationError(
+      "Agent task decomposition task set must be an object.",
+    );
+  }
+
+  return parsedValue as TaskDecompositionResult["taskSet"];
+}
+
+function extractJsonObjectText(outputText: string): string | null {
+  const fencedMatch = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(outputText);
+
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const firstBrace = outputText.indexOf("{");
+  const lastBrace = outputText.lastIndexOf("}");
+
+  if (firstBrace < 0 || lastBrace <= firstBrace) {
+    return null;
+  }
+
+  return outputText.slice(firstBrace, lastBrace + 1).trim();
 }

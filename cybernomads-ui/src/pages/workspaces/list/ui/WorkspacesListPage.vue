@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { listAccounts } from '@/entities/account/api/account-service'
 import { listAgentNodes } from '@/entities/agent/api/agent-service'
@@ -11,7 +11,6 @@ import type { AgentNodeRecord } from '@/entities/agent/model/types'
 import type { AssetRecord } from '@/entities/asset/model/types'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
 import type { WorkspaceRecord } from '@/entities/workspace/model/types'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const workspaces = ref<WorkspaceRecord[]>([])
 const assets = ref<AssetRecord[]>([])
@@ -27,12 +26,12 @@ async function loadPage() {
     listWorkspaces(),
     listAssets(),
     listStrategies(),
-    listAccounts({ source: 'mock' }),
+    listAccounts({ onlyConsumable: true }),
     listAgentNodes(),
   ])
 }
 
-watch(mockScenarioId, loadPage, { immediate: true })
+onMounted(loadPage)
 
 function resolveAssetName(assetId: string) {
   const displayNameMap: Record<string, string> = {

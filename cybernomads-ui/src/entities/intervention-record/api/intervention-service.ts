@@ -1,14 +1,9 @@
 import type { InterventionRecord } from '@/entities/intervention-record/model/types'
+import { createTaskOutputRecord, getTaskById, listTaskOutputRecords } from '@/entities/task-run/api/task-service'
+import type { TaskOutputRecordDto } from '@/entities/task-run/model/types'
 import type { TaskRunRecord } from '@/entities/task-run/model/types'
+import { getWorkspaceById } from '@/entities/workspace/api/workspace-service'
 import type { WorkspaceRecord } from '@/entities/workspace/model/types'
-import { env } from '@/shared/config/env'
-import { getInterventionContextData, sendInterventionCommandData } from '@/shared/mocks/runtime'
-
-function assertMockOnly() {
-  if (!env.useMockApi) {
-    throw new Error('Real intervention APIs are not wired yet. Enable mock mode to continue.')
-  }
-}
 
 export interface InterventionContext {
   workspace: WorkspaceRecord
@@ -16,12 +11,41 @@ export interface InterventionContext {
   records: InterventionRecord[]
 }
 
+function mapOutputRecordToIntervention(
+  workspaceId: string,
+  output: TaskOutputRecordDto,
+): InterventionRecord {
+  return {
+    id: output.outputRecordId,
+    workspaceId,
+    taskId: output.taskId,
+    command: output.description,
+    response: output.dataLocation,
+    actor: 'Task Output',
+    createdAt: output.createdAt,
+    severity: 'info',
+  }
+}
+
 export async function getInterventionContext(
   workspaceId: string,
   taskId: string,
 ): Promise<InterventionContext | null> {
-  assertMockOnly()
-  return getInterventionContextData(workspaceId, taskId)
+  const [workspace, task, outputs] = await Promise.all([
+    getWorkspaceById(workspaceId),
+    getTaskById(taskId),
+    listTaskOutputRecords(taskId),
+  ])
+
+  if (!workspace || !task) {
+    return null
+  }
+
+  return {
+    workspace,
+    task,
+    records: outputs.map((output) => mapOutputRecordToIntervention(workspaceId, output)),
+  }
 }
 
 export async function sendInterventionCommand(
@@ -29,6 +53,10 @@ export async function sendInterventionCommand(
   taskId: string,
   command: string,
 ): Promise<InterventionRecord> {
-  assertMockOnly()
-  return sendInterventionCommandData(workspaceId, taskId, command)
+  const output = await createTaskOutputRecord(taskId, {
+    description: command,
+    dataLocation: `task-output://${taskId}/${Date.now()}`,
+  })
+
+  return mapOutputRecordToIntervention(workspaceId, output)
 }

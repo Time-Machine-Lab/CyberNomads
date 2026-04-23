@@ -1,6 +1,64 @@
 import type { ExecutionLogEntry, TaskRunRecord } from '@/entities/task-run/model/types'
 
 export type WorkspaceStatus = 'draft' | 'ready' | 'running' | 'attention'
+export type TrafficWorkLifecycleStatus = 'ready' | 'running' | 'ended' | 'archived' | 'deleted'
+export type TrafficWorkContextPreparationStatus = 'pending' | 'prepared' | 'failed'
+
+export interface ObjectBindingItem {
+  objectType: string
+  objectKey: string
+  resourceId: string
+  resourceLabel?: string | null
+}
+
+export interface TrafficWorkBindingSummary {
+  productId?: string
+  strategyId?: string
+  name: string
+}
+
+export interface TrafficWorkSummaryDto {
+  trafficWorkId: string
+  displayName: string
+  product: { productId: string; name: string }
+  strategy: { strategyId: string; name: string }
+  objectBindingCount: number
+  lifecycleStatus: TrafficWorkLifecycleStatus
+  contextPreparationStatus: TrafficWorkContextPreparationStatus
+  updatedAt: string
+}
+
+export interface TrafficWorkDetailDto {
+  trafficWorkId: string
+  displayName: string
+  product: { productId: string; name: string }
+  strategy: { strategyId: string; name: string }
+  objectBindings: ObjectBindingItem[]
+  lifecycleStatus: TrafficWorkLifecycleStatus
+  lifecycleStatusReason?: string | null
+  contextPreparationStatus: TrafficWorkContextPreparationStatus
+  contextPreparationStatusReason?: string | null
+  contextPreparedAt?: string | null
+  lastStartedAt?: string | null
+  endedAt?: string | null
+  archivedAt?: string | null
+  deletedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ListTrafficWorksResultDto {
+  items: TrafficWorkSummaryDto[]
+}
+
+export interface CreateTrafficWorkRequest {
+  displayName: string
+  productId: string
+  strategyId: string
+  objectBindings: ObjectBindingItem[]
+}
+
+export type UpdateTrafficWorkRequest = CreateTrafficWorkRequest
 
 export interface WorkspaceRecord {
   id: string
@@ -17,6 +75,9 @@ export interface WorkspaceRecord {
   assignedAgentLabels?: string[]
   highlightBanner?: string
   themeColor?: 'cyan' | 'lime' | 'blue' | 'red'
+  lifecycleStatus?: TrafficWorkLifecycleStatus
+  contextPreparationStatus?: TrafficWorkContextPreparationStatus
+  objectBindings?: ObjectBindingItem[]
 }
 
 export interface CreateWorkspaceInput {

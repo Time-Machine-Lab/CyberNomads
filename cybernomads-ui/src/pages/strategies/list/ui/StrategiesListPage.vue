@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { isRealStrategyApiEnabled, listStrategies } from '@/entities/strategy/api/strategy-service'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 interface StrategyDisplayCard extends StrategyRecord {
   icon: string
@@ -71,7 +70,7 @@ const stateMessage = computed(() => {
   return '当前还没有策略，可以直接创建第一条。'
 })
 
-watch([mockScenarioId, () => route.query.refresh], () => {
+watch(() => route.query.refresh, () => {
   void loadStrategies()
 }, { immediate: true })
 

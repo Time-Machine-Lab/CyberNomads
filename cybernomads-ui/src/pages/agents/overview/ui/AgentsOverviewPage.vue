@@ -1,23 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { listAgentNodes } from '@/entities/agent/api/agent-service'
 import type { AgentNodeRecord } from '@/entities/agent/model/types'
 import cybernomadsMarkUrl from '@/shared/assets/branding/cybernomads-mark.svg'
 import { referenceAgentDashboardAvatarUrl } from '@/shared/config/reference-ui'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const nodes = ref<AgentNodeRecord[]>([])
 
 const activeNode = computed(() => nodes.value.find((item) => item.status === 'active') ?? null)
 
-watch(
-  mockScenarioId,
-  async () => {
-    nodes.value = await listAgentNodes()
-  },
-  { immediate: true },
-)
+onMounted(async () => {
+  nodes.value = await listAgentNodes()
+})
 
 function resolveNodeIcon(node: AgentNodeRecord) {
   if (node.type === 'openclaw') return 'precision_manufacturing'

@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { listAssets } from '@/entities/asset/api/asset-service'
 import type { AssetRecord } from '@/entities/asset/model/types'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 interface AssetDisplayCard extends AssetRecord {
   accent: 'primary' | 'secondary' | 'error'
@@ -105,11 +104,7 @@ async function loadAssets() {
   }
 }
 
-watch(
-  mockScenarioId,
-  () => void loadAssets(),
-  { immediate: true },
-)
+onMounted(() => void loadAssets())
 
 const displayAssets = computed(() => {
   return assets.value.map((asset, index): AssetDisplayCard => {

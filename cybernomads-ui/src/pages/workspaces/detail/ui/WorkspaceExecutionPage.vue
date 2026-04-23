@@ -13,7 +13,6 @@ import type { WorkspaceExecutionView } from '@/entities/workspace/model/types'
 import { env } from '@/shared/config/env'
 import { usePolling } from '@/shared/hooks/usePolling'
 import { formatTime } from '@/shared/lib/format'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const route = useRoute()
 
@@ -73,7 +72,7 @@ const polling = usePolling(
 )
 
 watch(
-  [workspaceId, mockScenarioId],
+  workspaceId,
   async () => {
     await loadView()
 

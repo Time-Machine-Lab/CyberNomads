@@ -1,8 +1,6 @@
 import {
   mapAccountDetailDtoToRecord,
   mapAccountSummaryDtoToRecord,
-  mapLegacyMockAccountToDetailRecord,
-  mapLegacyMockAccountToRecord,
 } from '@/entities/account/model/mappers'
 import type {
   AccountDetailDto,
@@ -23,8 +21,6 @@ import type {
   VerifyAuthorizationAttemptResponseDto,
 } from '@/entities/account/model/types'
 import { HttpClientError, requestJson } from '@/shared/api/http-client'
-import { env } from '@/shared/config/env'
-import { getAccountData, listAccountsData, updateAccountStatusData } from '@/shared/mocks/runtime'
 
 type AccountDataSource = 'mock' | 'real'
 
@@ -40,28 +36,10 @@ const ACCOUNT_API_ROOT = '/accounts'
 const ACCOUNT_ONBOARDING_API_ROOT = '/account-onboarding-sessions'
 
 export function isRealAccountApiEnabled() {
-  return env.useRealAccountApi
-}
-
-function resolveSource(source?: AccountDataSource): AccountDataSource {
-  return source ?? (env.useRealAccountApi ? 'real' : 'mock')
-}
-
-function assertRealAccountApi(source: AccountDataSource) {
-  if (source === 'real') {
-    return
-  }
-
-  throw new Error('当前未启用账号模块真实后端，请开启 VITE_USE_REAL_ACCOUNT_API 后重试。')
+  return true
 }
 
 export async function listAccounts(options: ListAccountsOptions = {}): Promise<AccountRecord[]> {
-  const source = resolveSource(options.source)
-
-  if (source === 'mock') {
-    return listAccountsData().map(mapLegacyMockAccountToRecord)
-  }
-
   const query: Record<string, string | number | boolean | null | undefined> = {
     platform: options.platform,
     keyword: options.keyword,
@@ -80,14 +58,9 @@ export async function listAccounts(options: ListAccountsOptions = {}): Promise<A
 
 export async function getAccountById(
   id: string,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AccountDetailRecord | null> {
-  const source = resolveSource(options.source)
-
-  if (source === 'mock') {
-    const mockAccount = getAccountData(id)
-    return mockAccount ? mapLegacyMockAccountToDetailRecord(mockAccount) : null
-  }
+  void _options
 
   try {
     const dto = await requestJson<AccountDetailDto>(`${ACCOUNT_API_ROOT}/${encodeURIComponent(id)}`)
@@ -104,11 +77,9 @@ export async function getAccountById(
 export async function updateAccount(
   id: string,
   input: UpdateAccountInput,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AccountDetailRecord> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   const dto = await requestJson<AccountDetailDto>(`${ACCOUNT_API_ROOT}/${encodeURIComponent(id)}`, {
     method: 'PUT',
@@ -120,11 +91,9 @@ export async function updateAccount(
 
 export async function deleteAccount(
   id: string,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AccountDetailRecord> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   const dto = await requestJson<AccountDetailDto>(`${ACCOUNT_API_ROOT}/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -135,11 +104,9 @@ export async function deleteAccount(
 
 export async function restoreAccount(
   id: string,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AccountDetailRecord> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   const dto = await requestJson<AccountDetailDto>(`${ACCOUNT_API_ROOT}/${encodeURIComponent(id)}/restore`, {
     method: 'POST',
@@ -151,11 +118,9 @@ export async function restoreAccount(
 export async function startAuthorizationAttempt(
   accountId: string,
   input: StartAuthorizationAttemptInput,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AuthorizationAttemptSummary> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   return requestJson<AuthorizationAttemptSummary>(
     `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/authorization-attempts`,
@@ -170,11 +135,9 @@ export async function verifyAuthorizationAttempt(
   accountId: string,
   attemptId: string,
   input: VerifyAuthorizationAttemptInput,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<VerifyAuthorizationAttemptResponseDto> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   return requestJson<VerifyAuthorizationAttemptResponseDto>(
     `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/authorization-attempts/${encodeURIComponent(attemptId)}/verify`,
@@ -187,11 +150,9 @@ export async function verifyAuthorizationAttempt(
 
 export async function runAvailabilityCheck(
   accountId: string,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AvailabilityCheckResultDto> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   return requestJson<AvailabilityCheckResultDto>(
     `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/availability-checks`,
@@ -203,11 +164,9 @@ export async function runAvailabilityCheck(
 
 export async function startAccountOnboardingSession(
   input: StartAccountOnboardingSessionInput,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AccountOnboardingSessionDetailDto> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   return requestJson<AccountOnboardingSessionDetailDto>(ACCOUNT_ONBOARDING_API_ROOT, {
     method: 'POST',
@@ -217,11 +176,9 @@ export async function startAccountOnboardingSession(
 
 export async function getAccountOnboardingSession(
   sessionId: string,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AccountOnboardingSessionDetailDto> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   return requestJson<AccountOnboardingSessionDetailDto>(
     `${ACCOUNT_ONBOARDING_API_ROOT}/${encodeURIComponent(sessionId)}`,
@@ -231,11 +188,9 @@ export async function getAccountOnboardingSession(
 export async function resolveAccountOnboardingSession(
   sessionId: string,
   input: ResolveAccountOnboardingSessionInput,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AccountOnboardingSessionDetailDto> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   return requestJson<AccountOnboardingSessionDetailDto>(
     `${ACCOUNT_ONBOARDING_API_ROOT}/${encodeURIComponent(sessionId)}/resolve`,
@@ -248,11 +203,9 @@ export async function resolveAccountOnboardingSession(
 
 export async function finalizeAccountOnboardingSession(
   sessionId: string,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<FinalizeAccountOnboardingSessionResponseDto> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
+  void _options
 
   return requestJson<FinalizeAccountOnboardingSessionResponseDto>(
     `${ACCOUNT_ONBOARDING_API_ROOT}/${encodeURIComponent(sessionId)}/finalize`,
@@ -262,18 +215,12 @@ export async function finalizeAccountOnboardingSession(
   )
 }
 
-// 兼容旧的 mock 页面动作，真实后端不再支持直接改状态。
 export async function updateAccountStatus(
   id: string,
   status: AccountStatus,
-  options: AccountRequestOptions = {},
+  _options: AccountRequestOptions = {},
 ): Promise<AccountDetailRecord | null> {
-  const source = resolveSource(options.source)
+  void _options
 
-  if (source === 'real') {
-    throw new Error('Legacy updateAccountStatus 已废弃，请改用授权验证或可用性检查接口。')
-  }
-
-  const account = updateAccountStatusData(id, status)
-  return account ? mapLegacyMockAccountToDetailRecord(account) : null
+  throw new Error(`Legacy updateAccountStatus is removed for real backend runtime (${id}, ${status}).`)
 }

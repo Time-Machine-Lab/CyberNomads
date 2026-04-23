@@ -1,20 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { getConsoleOverview } from '@/entities/console/api/console-service'
 import type { ConsoleOverviewRecord } from '@/entities/console/model/types'
 import type { AgentNodeRecord } from '@/entities/agent/model/types'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const overview = ref<ConsoleOverviewRecord | null>(null)
 
-watch(
-  mockScenarioId,
-  async () => {
-    overview.value = await getConsoleOverview()
-  },
-  { immediate: true },
-)
+onMounted(async () => {
+  overview.value = await getConsoleOverview()
+})
 
 const isConfigured = computed(() => overview.value?.state === 'configured')
 

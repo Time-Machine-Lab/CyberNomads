@@ -137,6 +137,14 @@ describe('assets product pages', () => {
       .find((button) => button.text().includes('提交资产'))!
       .trigger('click')
 
+    expect(wrapper.get('[data-testid="asset-editor-alert"]').text()).toContain('产品标题')
+
+    await wrapper.get('input[required]').setValue('失败保留测试产品')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('提交资产'))!
+      .trigger('click')
+
     expect(wrapper.get('[data-testid="asset-editor-alert"]').text()).toContain('Markdown')
 
     await wrapper.get('textarea').setValue('# 保留内容\n\n保存失败后仍在。')
@@ -150,5 +158,30 @@ describe('assets product pages', () => {
       expect(wrapper.get('[data-testid="asset-editor-alert"]').text()).toContain('保存失败')
     })
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('保存失败后仍在')
+  })
+
+  it('shows a success message after creating a product', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const { wrapper, router } = await mountWithRouter('/assets/new', AssetEditorPage, '/assets/new')
+
+      await wrapper.get('input[required]').setValue('联调产品资产')
+      await wrapper.get('textarea').setValue('# 联调产品资产\n\n用于验证创建成功提示。')
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('提交资产'))!
+        .trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="asset-editor-alert"]').text()).toContain('产品创建成功')
+
+      await vi.advanceTimersByTimeAsync(900)
+      await flushPromises()
+
+      expect(router.currentRoute.value.path).toBe('/assets')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

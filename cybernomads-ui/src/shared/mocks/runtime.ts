@@ -18,7 +18,6 @@ import type {
   StrategySummaryDto,
 } from '@/entities/strategy/model/types'
 import type { CreateWorkspaceInput, WorkspaceRecord } from '@/entities/workspace/model/types'
-import { env } from '@/shared/config/env'
 import {
   referenceAccountBoardAvatarUrls,
   referenceTopbarAvatarUrl,
@@ -837,7 +836,7 @@ function normalizeScenario(value: string): MockScenarioId {
   return found ? found.id : 'baseline'
 }
 
-export const mockScenarioId = ref<MockScenarioId>(normalizeScenario(env.mockScenario))
+export const mockScenarioId = ref<MockScenarioId>(normalizeScenario('baseline'))
 
 let database = createScenarioDatabase(mockScenarioId.value)
 let consoleSetupState: ConsoleSetupState = 'unconfigured'

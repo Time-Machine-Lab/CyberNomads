@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -48,14 +48,22 @@ describe.sequential("traffic work module http api", () => {
     await configureConnectedAgentService(application);
 
     const productId = await createProduct(application, "CyberNomads Product");
-    await seedStrategy(runtimePaths.databaseFile, {
-      strategyId: "strategy-1",
-      name: "Growth Strategy",
-    });
-    await seedStrategy(runtimePaths.databaseFile, {
-      strategyId: "strategy-2",
-      name: "Retention Strategy",
-    });
+    await seedStrategy(
+      runtimePaths.databaseFile,
+      runtimePaths.strategyDirectory,
+      {
+        strategyId: "strategy-1",
+        name: "Growth Strategy",
+      },
+    );
+    await seedStrategy(
+      runtimePaths.databaseFile,
+      runtimePaths.strategyDirectory,
+      {
+        strategyId: "strategy-2",
+        name: "Retention Strategy",
+      },
+    );
 
     const createResponse = await fetch(
       `${application.http.url}/api/traffic-works`,
@@ -100,8 +108,22 @@ describe.sequential("traffic work module http api", () => {
     expect(created.lifecycleStatus).toBe("ready");
     expect(created.contextPreparationStatus).toBe("prepared");
     expect(provider.sentMessages.at(-1)?.message).toContain(
-      "Prepare the work-level context",
+      "Decompose this Cybernomads traffic work into an atomic task set.",
     );
+
+    const createdTasksResponse = await fetch(
+      `${application.http.url}/api/tasks?trafficWorkId=${created.trafficWorkId}`,
+    );
+    expect(createdTasksResponse.status).toBe(200);
+    await expect(createdTasksResponse.json()).resolves.toMatchObject({
+      items: [
+        {
+          trafficWorkId: created.trafficWorkId,
+          name: "Collect candidates 1",
+          status: "ready",
+        },
+      ],
+    });
 
     const taskFilePath = join(
       runtimePaths.workDirectory,
@@ -201,6 +223,20 @@ describe.sequential("traffic work module http api", () => {
       contextPreparationStatus: "prepared",
     });
 
+    const replacedTasksResponse = await fetch(
+      `${application.http.url}/api/tasks?trafficWorkId=${created.trafficWorkId}`,
+    );
+    expect(replacedTasksResponse.status).toBe(200);
+    await expect(replacedTasksResponse.json()).resolves.toMatchObject({
+      items: [
+        {
+          trafficWorkId: created.trafficWorkId,
+          name: "Collect candidates 2",
+          status: "ready",
+        },
+      ],
+    });
+
     const endResponse = await fetch(
       `${application.http.url}/api/traffic-works/${created.trafficWorkId}/end`,
       { method: "POST" },
@@ -239,10 +275,14 @@ describe.sequential("traffic work module http api", () => {
     );
     const runtimePaths = resolveRuntimePaths(workingDirectory);
     const productId = await createProduct(application, "CyberNomads Product");
-    await seedStrategy(runtimePaths.databaseFile, {
-      strategyId: "strategy-1",
-      name: "Growth Strategy",
-    });
+    await seedStrategy(
+      runtimePaths.databaseFile,
+      runtimePaths.strategyDirectory,
+      {
+        strategyId: "strategy-1",
+        name: "Growth Strategy",
+      },
+    );
 
     const createResponse = await fetch(
       `${application.http.url}/api/traffic-works`,
@@ -335,6 +375,12 @@ async function configureConnectedAgentService(
     { method: "POST" },
   );
   expect(verifyResponse.status).toBe(200);
+
+  const capabilityResponse = await fetch(
+    `${application.http.url}/api/agent-services/current/capability-provisioning`,
+    { method: "POST" },
+  );
+  expect(capabilityResponse.status).toBe(200);
 }
 
 async function createProduct(
@@ -359,6 +405,7 @@ async function createProduct(
 
 async function seedStrategy(
   databaseFile: string,
+  strategyDirectory: string,
   input: { strategyId: string; name: string },
 ): Promise<void> {
   const database = new DatabaseSync(databaseFile);
@@ -386,6 +433,11 @@ async function seedStrategy(
       "2026-04-21T08:00:00.000Z",
     );
   database.close();
+  await writeFile(
+    join(strategyDirectory, `${input.strategyId}.md`),
+    `# ${input.name}\n\nStrategy runtime content.`,
+    "utf8",
+  );
 }
 
 class FakeAgentProvider implements AgentProviderPort {
@@ -396,6 +448,7 @@ class FakeAgentProvider implements AgentProviderPort {
   >();
   private sessionCounter = 0;
   private messageCounter = 0;
+  private decompositionCounter = 0;
 
   constructor(readonly providerCode: string) {}
 
@@ -447,6 +500,11 @@ class FakeAgentProvider implements AgentProviderPort {
     void _context;
     this.messageCounter += 1;
     this.sentMessages.push(structuredClone(input));
+    const outputText = input.message.includes(
+      "Cybernomads TaskSetWriteInput contract",
+    )
+      ? this.createTaskSetOutputText()
+      : `handled:${input.message}`;
 
     const messages = this.sessionMessages.get(input.sessionId) ?? [];
     messages.push({
@@ -455,13 +513,13 @@ class FakeAgentProvider implements AgentProviderPort {
     });
     messages.push({
       role: "assistant",
-      content: `handled:${input.message}`,
+      content: outputText,
     });
     this.sessionMessages.set(input.sessionId, messages);
 
     return {
       messageId: `message-${this.messageCounter}`,
-      outputText: `handled:${input.message}`,
+      outputText,
     };
   }
 
@@ -483,5 +541,38 @@ class FakeAgentProvider implements AgentProviderPort {
       outputText: `subagent:${input.instructions}`,
       status: "completed",
     };
+  }
+
+  private createTaskSetOutputText(): string {
+    this.decompositionCounter += 1;
+    const taskKey = `collect-${this.decompositionCounter}`;
+
+    return JSON.stringify({
+      source: {
+        kind: "agent-decomposition",
+        requestId: `request-${this.decompositionCounter}`,
+        description: "Fake provider decomposition.",
+      },
+      tasks: [
+        {
+          taskKey,
+          name: `Collect candidates ${this.decompositionCounter}`,
+          instruction: "Collect candidate traffic targets.",
+          documentRef: `${taskKey}.md`,
+          contextRef: `work/demo/${taskKey}`,
+          condition: {
+            cron: null,
+            relyOnTaskKeys: [],
+          },
+          inputNeeds: [
+            {
+              name: "work-context",
+              description: "Use the prepared traffic work context.",
+              source: "work-context",
+            },
+          ],
+        },
+      ],
+    });
   }
 }

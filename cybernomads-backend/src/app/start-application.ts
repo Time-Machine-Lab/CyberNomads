@@ -121,6 +121,9 @@ export async function startApplication(
     credentialStore: agentServiceCredentialStore,
     providers: [new OpenClawAgentProvider(), ...(options.agentProviders ?? [])],
   });
+  const taskService = new TaskService({
+    taskStore: taskRepository,
+  });
   const trafficWorkService = new TrafficWorkService({
     stateStore: trafficWorkRepository,
     contextStore: trafficWorkContextStore,
@@ -128,10 +131,10 @@ export async function startApplication(
       agentAccessService,
     ),
     productStore: productRepository,
+    productContentStore,
     strategyStore: strategyReferenceRepository,
-  });
-  const taskService = new TaskService({
-    taskStore: taskRepository,
+    strategyContentStore,
+    taskSetPersistence: taskService,
   });
 
   try {

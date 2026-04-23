@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { getAssetById, saveAsset } from '@/entities/asset/api/asset-service'
 import type { AssetAttachmentRecord } from '@/entities/asset/model/types'
-import { mockScenarioId } from '@/shared/mocks/runtime'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,6 +15,7 @@ const isSaving = ref(false)
 const notFound = ref(false)
 const loadError = ref('')
 const saveError = ref('')
+const successMessage = ref('')
 const validationMessage = ref('')
 
 const form = reactive({
@@ -34,15 +34,16 @@ const wordCount = computed(() => form.markdown.trim().split(/\s+/).filter(Boolea
 const characterCount = computed(() => form.markdown.length)
 
 watch(
-  [assetId, mockScenarioId],
+  assetId,
   async () => {
     loadError.value = ''
     saveError.value = ''
+    successMessage.value = ''
     validationMessage.value = ''
     notFound.value = false
 
     if (!isEditMode.value) {
-      form.name = '面向B站科技粉的产品推介'
+      form.name = ''
       form.summary = ''
       form.markdown = `# 下一代编排器来了
 
@@ -102,9 +103,10 @@ function resolveAttachmentIcon(kind: AssetAttachmentRecord['kind']) {
 async function handleSave(status: 'draft' | 'ready') {
   validationMessage.value = ''
   saveError.value = ''
+  successMessage.value = ''
 
   if (!form.name.trim()) {
-    validationMessage.value = '请先填写资产标题。'
+    validationMessage.value = '请先填写产品标题。'
     return
   }
 
@@ -118,7 +120,7 @@ async function handleSave(status: 'draft' | 'ready') {
   try {
     await saveAsset({
       id: isEditMode.value ? assetId.value : undefined,
-      name: form.name,
+      name: form.name.trim(),
       platform: form.platform,
       summary: form.summary,
       markdown: form.markdown,
@@ -128,6 +130,8 @@ async function handleSave(status: 'draft' | 'ready') {
       tags: [form.category],
     })
 
+    successMessage.value = isEditMode.value ? '产品更新成功。' : '产品创建成功，即将返回资产列表。'
+    await new Promise((resolve) => window.setTimeout(resolve, 900))
     await router.push('/assets')
   } catch {
     saveError.value = '产品资产保存失败，请检查后端连接后重试。当前编辑内容已保留。'
@@ -155,12 +159,13 @@ async function handleSave(status: 'draft' | 'ready') {
 
       <div v-else class="asset-editor-canvas">
         <section
-          v-if="loadError || validationMessage || saveError"
+          v-if="loadError || validationMessage || saveError || successMessage"
           class="asset-editor-alert"
+          :class="{ 'asset-editor-alert--success': successMessage }"
           data-testid="asset-editor-alert"
         >
-          <span class="material-symbols-outlined">error</span>
-          <span>{{ loadError || validationMessage || saveError }}</span>
+          <span class="material-symbols-outlined">{{ successMessage ? 'check_circle' : 'error' }}</span>
+          <span>{{ successMessage || loadError || validationMessage || saveError }}</span>
         </section>
 
         <section class="asset-editor-meta">
@@ -369,6 +374,15 @@ async function handleSave(status: 'draft' | 'ready') {
 .asset-editor-alert .material-symbols-outlined {
   color: #ff716c;
   font-size: 1.2rem;
+}
+
+.asset-editor-alert--success {
+  color: #d8f9fc;
+  background: rgb(143 245 255 / 0.08);
+}
+
+.asset-editor-alert--success .material-symbols-outlined {
+  color: #8ff5ff;
 }
 
 .asset-editor-meta {
