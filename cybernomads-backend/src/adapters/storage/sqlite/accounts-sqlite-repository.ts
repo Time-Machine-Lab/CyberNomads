@@ -2,43 +2,35 @@ import { DatabaseSync } from "node:sqlite";
 
 import type { AccountStateStore } from "../../../ports/account-state-store-port.js";
 import type {
-  AuthorizationAttemptStatus,
-  AuthorizationStatus,
+  AccountRecord,
   AvailabilityStatus,
   JsonObject,
   LifecycleStatus,
   ListAccountsFilters,
-  PlatformAccountRecord,
+  LoginStatus,
 } from "../../../modules/accounts/types.js";
 
-interface PlatformAccountRow {
+interface AccountRow {
   account_id: string;
   platform: string;
-  platform_account_uid: string;
-  display_name: string;
+  internal_display_name: string;
   remark: string | null;
   tags_json: string;
   platform_metadata_json: string;
   lifecycle_status: LifecycleStatus;
-  authorization_status: AuthorizationStatus;
-  authorization_status_reason: string | null;
+  login_status: LoginStatus;
+  login_status_reason: string | null;
   availability_status: AvailabilityStatus;
   availability_status_reason: string | null;
-  active_credential_type: string | null;
-  active_credential_ref: string | null;
-  active_credential_expires_at: string | null;
-  active_credential_updated_at: string | null;
-  authorization_attempt_id: string | null;
-  authorization_attempt_method: string | null;
-  authorization_attempt_expected_credential_type: string | null;
-  authorization_attempt_payload_ref: string | null;
-  authorization_attempt_status: AuthorizationAttemptStatus | null;
-  authorization_attempt_status_reason: string | null;
-  authorization_attempt_expires_at: string | null;
-  authorization_attempt_created_at: string | null;
-  authorization_attempt_updated_at: string | null;
-  last_authorized_at: string | null;
-  last_availability_checked_at: string | null;
+  resolved_platform_account_uid: string | null;
+  resolved_display_name: string | null;
+  resolved_avatar_url: string | null;
+  resolved_profile_metadata_json: string;
+  active_token_ref: string | null;
+  active_token_expires_at: string | null;
+  active_token_updated_at: string | null;
+  last_connected_at: string | null;
+  last_validated_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -52,110 +44,89 @@ export class SqliteAccountsRepository implements AccountStateStore {
     this.database.exec("PRAGMA foreign_keys = ON;");
   }
 
-  async createAccount(record: PlatformAccountRecord): Promise<void> {
+  async createAccount(record: AccountRecord): Promise<void> {
     this.database
       .prepare(
         `
-          INSERT INTO platform_accounts (
+          INSERT INTO accounts (
             account_id,
             platform,
-            platform_account_uid,
-            display_name,
+            internal_display_name,
             remark,
             tags_json,
             platform_metadata_json,
             lifecycle_status,
-            authorization_status,
-            authorization_status_reason,
+            login_status,
+            login_status_reason,
             availability_status,
             availability_status_reason,
-            active_credential_type,
-            active_credential_ref,
-            active_credential_expires_at,
-            active_credential_updated_at,
-            authorization_attempt_id,
-            authorization_attempt_method,
-            authorization_attempt_expected_credential_type,
-            authorization_attempt_payload_ref,
-            authorization_attempt_status,
-            authorization_attempt_status_reason,
-            authorization_attempt_expires_at,
-            authorization_attempt_created_at,
-            authorization_attempt_updated_at,
-            last_authorized_at,
-            last_availability_checked_at,
+            resolved_platform_account_uid,
+            resolved_display_name,
+            resolved_avatar_url,
+            resolved_profile_metadata_json,
+            active_token_ref,
+            active_token_expires_at,
+            active_token_updated_at,
+            last_connected_at,
+            last_validated_at,
             deleted_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(...toRowValues(record));
   }
 
-  async saveAccount(record: PlatformAccountRecord): Promise<void> {
+  async saveAccount(record: AccountRecord): Promise<void> {
     this.database
       .prepare(
         `
-          INSERT INTO platform_accounts (
+          INSERT INTO accounts (
             account_id,
             platform,
-            platform_account_uid,
-            display_name,
+            internal_display_name,
             remark,
             tags_json,
             platform_metadata_json,
             lifecycle_status,
-            authorization_status,
-            authorization_status_reason,
+            login_status,
+            login_status_reason,
             availability_status,
             availability_status_reason,
-            active_credential_type,
-            active_credential_ref,
-            active_credential_expires_at,
-            active_credential_updated_at,
-            authorization_attempt_id,
-            authorization_attempt_method,
-            authorization_attempt_expected_credential_type,
-            authorization_attempt_payload_ref,
-            authorization_attempt_status,
-            authorization_attempt_status_reason,
-            authorization_attempt_expires_at,
-            authorization_attempt_created_at,
-            authorization_attempt_updated_at,
-            last_authorized_at,
-            last_availability_checked_at,
+            resolved_platform_account_uid,
+            resolved_display_name,
+            resolved_avatar_url,
+            resolved_profile_metadata_json,
+            active_token_ref,
+            active_token_expires_at,
+            active_token_updated_at,
+            last_connected_at,
+            last_validated_at,
             deleted_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(account_id) DO UPDATE SET
             platform = excluded.platform,
-            platform_account_uid = excluded.platform_account_uid,
-            display_name = excluded.display_name,
+            internal_display_name = excluded.internal_display_name,
             remark = excluded.remark,
             tags_json = excluded.tags_json,
             platform_metadata_json = excluded.platform_metadata_json,
             lifecycle_status = excluded.lifecycle_status,
-            authorization_status = excluded.authorization_status,
-            authorization_status_reason = excluded.authorization_status_reason,
+            login_status = excluded.login_status,
+            login_status_reason = excluded.login_status_reason,
             availability_status = excluded.availability_status,
             availability_status_reason = excluded.availability_status_reason,
-            active_credential_type = excluded.active_credential_type,
-            active_credential_ref = excluded.active_credential_ref,
-            active_credential_expires_at = excluded.active_credential_expires_at,
-            active_credential_updated_at = excluded.active_credential_updated_at,
-            authorization_attempt_id = excluded.authorization_attempt_id,
-            authorization_attempt_method = excluded.authorization_attempt_method,
-            authorization_attempt_expected_credential_type = excluded.authorization_attempt_expected_credential_type,
-            authorization_attempt_payload_ref = excluded.authorization_attempt_payload_ref,
-            authorization_attempt_status = excluded.authorization_attempt_status,
-            authorization_attempt_status_reason = excluded.authorization_attempt_status_reason,
-            authorization_attempt_expires_at = excluded.authorization_attempt_expires_at,
-            authorization_attempt_created_at = excluded.authorization_attempt_created_at,
-            authorization_attempt_updated_at = excluded.authorization_attempt_updated_at,
-            last_authorized_at = excluded.last_authorized_at,
-            last_availability_checked_at = excluded.last_availability_checked_at,
+            resolved_platform_account_uid = excluded.resolved_platform_account_uid,
+            resolved_display_name = excluded.resolved_display_name,
+            resolved_avatar_url = excluded.resolved_avatar_url,
+            resolved_profile_metadata_json = excluded.resolved_profile_metadata_json,
+            active_token_ref = excluded.active_token_ref,
+            active_token_expires_at = excluded.active_token_expires_at,
+            active_token_updated_at = excluded.active_token_updated_at,
+            last_connected_at = excluded.last_connected_at,
+            last_validated_at = excluded.last_validated_at,
             deleted_at = excluded.deleted_at,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at
@@ -164,102 +135,46 @@ export class SqliteAccountsRepository implements AccountStateStore {
       .run(...toRowValues(record));
   }
 
-  async getAccountById(
-    accountId: string,
-  ): Promise<PlatformAccountRecord | undefined> {
+  async getAccountById(accountId: string): Promise<AccountRecord | undefined> {
     const row = this.database
       .prepare(
         `
           SELECT
             account_id,
             platform,
-            platform_account_uid,
-            display_name,
+            internal_display_name,
             remark,
             tags_json,
             platform_metadata_json,
             lifecycle_status,
-            authorization_status,
-            authorization_status_reason,
+            login_status,
+            login_status_reason,
             availability_status,
             availability_status_reason,
-            active_credential_type,
-            active_credential_ref,
-            active_credential_expires_at,
-            active_credential_updated_at,
-            authorization_attempt_id,
-            authorization_attempt_method,
-            authorization_attempt_expected_credential_type,
-            authorization_attempt_payload_ref,
-            authorization_attempt_status,
-            authorization_attempt_status_reason,
-            authorization_attempt_expires_at,
-            authorization_attempt_created_at,
-            authorization_attempt_updated_at,
-            last_authorized_at,
-            last_availability_checked_at,
+            resolved_platform_account_uid,
+            resolved_display_name,
+            resolved_avatar_url,
+            resolved_profile_metadata_json,
+            active_token_ref,
+            active_token_expires_at,
+            active_token_updated_at,
+            last_connected_at,
+            last_validated_at,
             deleted_at,
             created_at,
             updated_at
-          FROM platform_accounts
+          FROM accounts
           WHERE account_id = ?
         `,
       )
-      .get(accountId) as PlatformAccountRow | undefined;
+      .get(accountId) as AccountRow | undefined;
 
-    return row ? mapPlatformAccountRow(row) : undefined;
+    return row ? mapAccountRow(row) : undefined;
   }
 
-  async getAccountByPlatformIdentity(
-    platform: string,
-    platformAccountUid: string,
-  ): Promise<PlatformAccountRecord | undefined> {
-    const row = this.database
-      .prepare(
-        `
-          SELECT
-            account_id,
-            platform,
-            platform_account_uid,
-            display_name,
-            remark,
-            tags_json,
-            platform_metadata_json,
-            lifecycle_status,
-            authorization_status,
-            authorization_status_reason,
-            availability_status,
-            availability_status_reason,
-            active_credential_type,
-            active_credential_ref,
-            active_credential_expires_at,
-            active_credential_updated_at,
-            authorization_attempt_id,
-            authorization_attempt_method,
-            authorization_attempt_expected_credential_type,
-            authorization_attempt_payload_ref,
-            authorization_attempt_status,
-            authorization_attempt_status_reason,
-            authorization_attempt_expires_at,
-            authorization_attempt_created_at,
-            authorization_attempt_updated_at,
-            last_authorized_at,
-            last_availability_checked_at,
-            deleted_at,
-            created_at,
-            updated_at
-          FROM platform_accounts
-          WHERE platform = ? AND platform_account_uid = ?
-        `,
-      )
-      .get(platform, platformAccountUid) as PlatformAccountRow | undefined;
-
-    return row ? mapPlatformAccountRow(row) : undefined;
-  }
-
-  async listAccounts(filters: ListAccountsFilters): Promise<PlatformAccountRecord[]> {
+  async listAccounts(filters: ListAccountsFilters): Promise<AccountRecord[]> {
     const conditions: string[] = [];
-    const parameters: Array<string | number> = [];
+    const parameters: string[] = [];
 
     if (filters.platform) {
       conditions.push("platform = ?");
@@ -270,14 +185,16 @@ export class SqliteAccountsRepository implements AccountStateStore {
       conditions.push(
         `
           (
-            LOWER(display_name) LIKE ?
+            LOWER(internal_display_name) LIKE ?
             OR LOWER(COALESCE(remark, '')) LIKE ?
-            OR LOWER(platform_account_uid) LIKE ?
+            OR LOWER(tags_json) LIKE ?
+            OR LOWER(COALESCE(resolved_platform_account_uid, '')) LIKE ?
+            OR LOWER(COALESCE(resolved_display_name, '')) LIKE ?
           )
         `,
       );
       const keyword = `%${filters.keyword.toLowerCase()}%`;
-      parameters.push(keyword, keyword, keyword);
+      parameters.push(keyword, keyword, keyword, keyword, keyword);
     }
 
     if (filters.lifecycleStatus) {
@@ -287,9 +204,9 @@ export class SqliteAccountsRepository implements AccountStateStore {
       conditions.push("lifecycle_status != 'deleted'");
     }
 
-    if (filters.authorizationStatus) {
-      conditions.push("authorization_status = ?");
-      parameters.push(filters.authorizationStatus);
+    if (filters.loginStatus) {
+      conditions.push("login_status = ?");
+      parameters.push(filters.loginStatus);
     }
 
     if (filters.availabilityStatus) {
@@ -301,58 +218,50 @@ export class SqliteAccountsRepository implements AccountStateStore {
       conditions.push(
         `
           lifecycle_status = 'active'
-          AND authorization_status = 'authorized'
+          AND login_status = 'connected'
           AND availability_status = 'healthy'
-          AND active_credential_ref IS NOT NULL
+          AND active_token_ref IS NOT NULL
         `,
       );
     }
 
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
     const rows = this.database
       .prepare(
         `
           SELECT
             account_id,
             platform,
-            platform_account_uid,
-            display_name,
+            internal_display_name,
             remark,
             tags_json,
             platform_metadata_json,
             lifecycle_status,
-            authorization_status,
-            authorization_status_reason,
+            login_status,
+            login_status_reason,
             availability_status,
             availability_status_reason,
-            active_credential_type,
-            active_credential_ref,
-            active_credential_expires_at,
-            active_credential_updated_at,
-            authorization_attempt_id,
-            authorization_attempt_method,
-            authorization_attempt_expected_credential_type,
-            authorization_attempt_payload_ref,
-            authorization_attempt_status,
-            authorization_attempt_status_reason,
-            authorization_attempt_expires_at,
-            authorization_attempt_created_at,
-            authorization_attempt_updated_at,
-            last_authorized_at,
-            last_availability_checked_at,
+            resolved_platform_account_uid,
+            resolved_display_name,
+            resolved_avatar_url,
+            resolved_profile_metadata_json,
+            active_token_ref,
+            active_token_expires_at,
+            active_token_updated_at,
+            last_connected_at,
+            last_validated_at,
             deleted_at,
             created_at,
             updated_at
-          FROM platform_accounts
+          FROM accounts
           ${whereClause}
-          ORDER BY updated_at DESC, account_id DESC
+          ORDER BY updated_at DESC, created_at DESC
         `,
       )
-      .all(...parameters) as unknown as PlatformAccountRow[];
+      .all(...parameters) as unknown as AccountRow[];
 
-    return rows.map(mapPlatformAccountRow);
+    return rows.map(mapAccountRow);
   }
 
   close(): void {
@@ -360,90 +269,71 @@ export class SqliteAccountsRepository implements AccountStateStore {
   }
 }
 
-function toRowValues(record: PlatformAccountRecord): Array<string | null> {
+function toRowValues(record: AccountRecord): Array<string | null> {
   return [
     record.accountId,
     record.platform,
-    record.platformAccountUid,
-    record.displayName,
+    record.internalDisplayName,
     record.remark,
     JSON.stringify(record.tags),
     JSON.stringify(record.platformMetadata),
     record.lifecycleStatus,
-    record.authorizationStatus,
-    record.authorizationStatusReason,
+    record.loginStatus,
+    record.loginStatusReason,
     record.availabilityStatus,
     record.availabilityStatusReason,
-    record.activeCredentialType,
-    record.activeCredentialRef,
-    record.activeCredentialExpiresAt,
-    record.activeCredentialUpdatedAt,
-    record.authorizationAttemptId,
-    record.authorizationAttemptMethod,
-    record.authorizationAttemptExpectedCredentialType,
-    record.authorizationAttemptPayloadRef,
-    record.authorizationAttemptStatus,
-    record.authorizationAttemptStatusReason,
-    record.authorizationAttemptExpiresAt,
-    record.authorizationAttemptCreatedAt,
-    record.authorizationAttemptUpdatedAt,
-    record.lastAuthorizedAt,
-    record.lastAvailabilityCheckedAt,
+    record.resolvedPlatformAccountUid,
+    record.resolvedDisplayName,
+    record.resolvedAvatarUrl,
+    JSON.stringify(record.resolvedProfileMetadata),
+    record.activeTokenRef,
+    record.activeTokenExpiresAt,
+    record.activeTokenUpdatedAt,
+    record.lastConnectedAt,
+    record.lastValidatedAt,
     record.deletedAt,
     record.createdAt,
     record.updatedAt,
   ];
 }
 
-function mapPlatformAccountRow(row: PlatformAccountRow): PlatformAccountRecord {
+function mapAccountRow(row: AccountRow): AccountRecord {
   return {
     accountId: row.account_id,
     platform: row.platform,
-    platformAccountUid: row.platform_account_uid,
-    displayName: row.display_name,
+    internalDisplayName: row.internal_display_name,
     remark: row.remark,
-    tags: parseJsonArray(row.tags_json),
+    tags: parseStringArray(row.tags_json),
     platformMetadata: parseJsonObject(row.platform_metadata_json),
     lifecycleStatus: row.lifecycle_status,
-    authorizationStatus: row.authorization_status,
-    authorizationStatusReason: row.authorization_status_reason,
+    loginStatus: row.login_status,
+    loginStatusReason: row.login_status_reason,
     availabilityStatus: row.availability_status,
     availabilityStatusReason: row.availability_status_reason,
-    activeCredentialType: row.active_credential_type,
-    activeCredentialRef: row.active_credential_ref,
-    activeCredentialExpiresAt: row.active_credential_expires_at,
-    activeCredentialUpdatedAt: row.active_credential_updated_at,
-    authorizationAttemptId: row.authorization_attempt_id,
-    authorizationAttemptMethod: row.authorization_attempt_method,
-    authorizationAttemptExpectedCredentialType:
-      row.authorization_attempt_expected_credential_type,
-    authorizationAttemptPayloadRef: row.authorization_attempt_payload_ref,
-    authorizationAttemptStatus: row.authorization_attempt_status,
-    authorizationAttemptStatusReason: row.authorization_attempt_status_reason,
-    authorizationAttemptExpiresAt: row.authorization_attempt_expires_at,
-    authorizationAttemptCreatedAt: row.authorization_attempt_created_at,
-    authorizationAttemptUpdatedAt: row.authorization_attempt_updated_at,
-    lastAuthorizedAt: row.last_authorized_at,
-    lastAvailabilityCheckedAt: row.last_availability_checked_at,
+    resolvedPlatformAccountUid: row.resolved_platform_account_uid,
+    resolvedDisplayName: row.resolved_display_name,
+    resolvedAvatarUrl: row.resolved_avatar_url,
+    resolvedProfileMetadata: parseJsonObject(row.resolved_profile_metadata_json),
+    activeTokenRef: row.active_token_ref,
+    activeTokenExpiresAt: row.active_token_expires_at,
+    activeTokenUpdatedAt: row.active_token_updated_at,
+    lastConnectedAt: row.last_connected_at,
+    lastValidatedAt: row.last_validated_at,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function parseJsonArray(value: string): string[] {
+function parseStringArray(value: string): string[] {
   const parsed = JSON.parse(value) as unknown;
-
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
-
-  return parsed.filter((item): item is string => typeof item === "string");
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function parseJsonObject(value: string): JsonObject {
   const parsed = JSON.parse(value) as unknown;
-
   if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
     return {};
   }

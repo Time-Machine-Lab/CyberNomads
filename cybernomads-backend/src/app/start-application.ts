@@ -11,7 +11,7 @@ import { FileSystemProductContentStore } from "../adapters/storage/file-system/p
 import { FileSystemTrafficWorkContextStore } from "../adapters/storage/file-system/traffic-work-context-store.js";
 import { FileSystemStrategyContentStore } from "../adapters/storage/file-system/strategy-content-store.js";
 import { OpenClawAgentProvider } from "../adapters/agent/openclaw/openclaw-adapter.js";
-import { SqliteAccountOnboardingRepository } from "../adapters/storage/sqlite/account-onboarding-sqlite-repository.js";
+import { SqliteAccountConnectionAttemptsRepository } from "../adapters/storage/sqlite/account-connection-attempts-sqlite-repository.js";
 import { SqliteAccountsRepository } from "../adapters/storage/sqlite/accounts-sqlite-repository.js";
 import { SqliteAgentServiceStateRepository } from "../adapters/storage/sqlite/agent-services-sqlite-repository.js";
 import { SqliteProductRepository } from "../adapters/storage/sqlite/products-sqlite-repository.js";
@@ -21,7 +21,7 @@ import {
 } from "../adapters/storage/sqlite/strategies-sqlite-repository.js";
 import { SqliteTaskRepository } from "../adapters/storage/sqlite/tasks-sqlite-repository.js";
 import { SqliteTrafficWorkRepository } from "../adapters/storage/sqlite/traffic-works-sqlite-repository.js";
-import { AccountOnboardingService } from "../modules/account-onboarding/service.js";
+import { AccountConnectionAttemptService } from "../modules/account-connection-attempts/service.js";
 import { AgentAccessService } from "../modules/agent-access/service.js";
 import { AccountService } from "../modules/accounts/service.js";
 import { ProductService } from "../modules/products/service.js";
@@ -71,7 +71,7 @@ export async function startApplication(
   const accountRepository = new SqliteAccountsRepository(
     runtime.paths.databaseFile,
   );
-  const accountOnboardingRepository = new SqliteAccountOnboardingRepository(
+  const accountConnectionAttemptRepository = new SqliteAccountConnectionAttemptsRepository(
     runtime.paths.databaseFile,
   );
   const agentServiceStateRepository = new SqliteAgentServiceStateRepository(
@@ -109,15 +109,16 @@ export async function startApplication(
   });
   const accountService = new AccountService({
     stateStore: accountRepository,
+    connectionAttemptStateStore: accountConnectionAttemptRepository,
     secretStore: accountSecretStore,
     platforms: [
       new BilibiliStubAccountPlatformAdapter(),
       ...(options.accountPlatforms ?? []),
     ],
   });
-  const accountOnboardingService = new AccountOnboardingService({
-    stateStore: accountOnboardingRepository,
+  const accountConnectionAttemptService = new AccountConnectionAttemptService({
     accountStateStore: accountRepository,
+    attemptStateStore: accountConnectionAttemptRepository,
     secretStore: accountSecretStore,
     platforms: [
       new BilibiliStubAccountPlatformAdapter(),
@@ -163,7 +164,7 @@ export async function startApplication(
       productService,
       strategyService,
       accountService,
-      accountOnboardingService,
+      accountConnectionAttemptService,
       agentAccessService,
       trafficWorkService,
       taskService,
@@ -184,7 +185,7 @@ export async function startApplication(
         productService.close();
         strategyService.close();
         accountService.close();
-        accountOnboardingService.close();
+        accountConnectionAttemptService.close();
         agentAccessService.close();
         trafficWorkService.close();
         taskService.close();
@@ -196,7 +197,7 @@ export async function startApplication(
     productService.close();
     strategyService.close();
     accountService.close();
-    accountOnboardingService.close();
+    accountConnectionAttemptService.close();
     agentAccessService.close();
     trafficWorkService.close();
     taskService.close();

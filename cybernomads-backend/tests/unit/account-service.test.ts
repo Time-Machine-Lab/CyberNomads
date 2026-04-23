@@ -1,590 +1,431 @@
 import { describe, expect, it } from "vitest";
 
-import { AccountService } from "../../src/modules/accounts/service.js";
+import { AccountConnectionAttemptService } from "../../src/modules/account-connection-attempts/service.js";
 import type {
-  AccountPlatformOnboardingResolveInput,
-  AccountPlatformOnboardingStartInput,
-  AccountPlatformAuthorizationStartInput,
+  AccountConnectionAttemptRecord,
+  ConnectionAttemptLogEntry,
+} from "../../src/modules/account-connection-attempts/types.js";
+import { AccountService } from "../../src/modules/accounts/service.js";
+import type { AccountRecord, StoredTokenSecret } from "../../src/modules/accounts/types.js";
+import type { AccountConnectionAttemptStateStore } from "../../src/ports/account-connection-attempt-state-store-port.js";
+import type {
+  AccountPlatformAvailabilityCheckInput,
+  AccountPlatformAvailabilityCheckResult,
   AccountPlatformPort,
+  AccountPlatformResolveConnectionAttemptInput,
+  AccountPlatformResolveConnectionAttemptResult,
+  AccountPlatformStartConnectionAttemptInput,
+  AccountPlatformStartConnectionAttemptResult,
+  AccountPlatformValidateConnectionAttemptInput,
+  AccountPlatformValidateConnectionAttemptResult,
 } from "../../src/ports/account-platform-port.js";
 import type { AccountSecretStore } from "../../src/ports/account-secret-store-port.js";
 import type { AccountStateStore } from "../../src/ports/account-state-store-port.js";
-import type {
-  ActiveCredentialSecret,
-  PlatformAccountRecord,
-} from "../../src/modules/accounts/types.js";
 
-describe("account service", () => {
-  it("keeps the current credential active until replacement authorization is verified", async () => {
+describe("account module services", () => {
+  it("creates wrapper accounts before login", async () => {
     const stateStore = new InMemoryAccountStateStore();
+    const attemptStore = new InMemoryAttemptStateStore();
     const secretStore = new InMemoryAccountSecretStore();
     const platform = new FakeAccountPlatform("bilibili");
-    const service = new AccountService({
+    const accountService = new AccountService({
       stateStore,
+      connectionAttemptStateStore: attemptStore,
       secretStore,
       platforms: [platform],
-      now: createSequentialNow(),
+      createAccountId: () => "account-1",
+    });
+
+    const created = await accountService.createAccount({
+      platform: "bilibili",
+      internalDisplayName: "Bili 主号",
+      remark: "运营包装对象",
+      tags: ["main", "bili"],
+      platformMetadata: {
+        region: "cn",
+      },
+    });
+
+    expect(created.accountId).toBe("account-1");
+    expect(created.loginStatus).toBe("not_logged_in");
+    expect(created.platform).toBe("bilibili");
+    expect(created.internalDisplayName).toBe("Bili 主号");
+    expect(created.resolvedPlatformProfile.resolvedPlatformAccountUid).toBeNull();
+    expect(created.activeToken.hasToken).toBe(false);
+  });
+
+  it("applies validated tokens and refreshes resolved profile", async () => {
+    const stateStore = new InMemoryAccountStateStore();
+    const attemptStore = new InMemoryAttemptStateStore();
+    const secretStore = new InMemoryAccountSecretStore();
+    const platform = new FakeAccountPlatform("bilibili");
+    const now = createSequentialNow();
+    const accountService = new AccountService({
+      stateStore,
+      connectionAttemptStateStore: attemptStore,
+      secretStore,
+      platforms: [platform],
+      now,
+      createAccountId: () => "account-1",
+    });
+    const attemptService = new AccountConnectionAttemptService({
+      accountStateStore: stateStore,
+      attemptStateStore: attemptStore,
+      secretStore,
+      platforms: [platform],
+      now,
       createAttemptId: () => "attempt-1",
     });
 
-    const originalCredentialRef = "account-1/credentials/original.json";
-    await stateStore.saveAccount(
-      buildAccountRecord({
-        accountId: "account-1",
-        authorizationStatus: "authorized",
+    await accountService.createAccount({
+      platform: "bilibili",
+      internalDisplayName: "内部主号",
+    });
+
+    platform.validateHandler = async (input) => ({
+      validationResult: "succeeded",
+      reason: "user info fetched",
+      resolvedPlatformProfile: {
+        resolvedPlatformAccountUid: "uid-verified",
+        resolvedDisplayName: "平台昵称",
+        resolvedAvatarUrl: "https://example.com/avatar.png",
+        resolvedProfileMetadata: {
+          fanLevel: 7,
+        },
+      },
+      token: {
+        token: input.candidateToken.token,
         availabilityStatus: "healthy",
-        activeCredentialType: "token",
-        activeCredentialRef: originalCredentialRef,
-        activeCredentialUpdatedAt: "2026-04-21T08:00:00.000Z",
-      }),
-    );
-    await secretStore.writeSecret(originalCredentialRef, {
-      credentialType: "token",
-      payload: {
-        token: "old-token",
       },
-      expiresAt: null,
-    } satisfies ActiveCredentialSecret);
-
-    platform.verifyHandler = async (input) => ({
-      verificationResult: "succeeded",
-      reason: "stub verification succeeded",
-      resolvedIdentity: {
-        platform: "bilibili",
-        platformAccountUid: input.account.platformAccountUid,
-      },
-      profile: {
-        displayName: "Verified Main Account",
-        platformMetadata: {
-          verified: true,
-        },
-      },
-      credential: {
-        credentialType: "token",
-        payload: {
-          token: "new-token",
-          availabilityStatus: "healthy",
-        },
-        expiresAt: "2026-04-22T08:00:00.000Z",
-      },
+      tokenExpiresAt: "2026-04-25T08:00:00.000Z",
+      logs: [logEntry("info", "validation succeeded")],
     });
 
-    const startedAttempt = await service.startAuthorizationAttempt("account-1", {
-      authorizationMethod: "token_input",
-      expectedCredentialType: "token",
-      payload: {
-        credentialPayload: {
-          token: "new-token",
-        },
-      },
+    const attempt = await attemptService.startConnectionAttempt("account-1", {
+      connectionMethod: "manual_token",
+      tokenValue: "token-1",
     });
 
-    expect(startedAttempt.attemptStatus).toBe("pending_verification");
-    expect((await stateStore.getAccountById("account-1"))?.authorizationStatus).toBe(
-      "authorized",
-    );
-    expect((await stateStore.getAccountById("account-1"))?.activeCredentialRef).toBe(
-      originalCredentialRef,
-    );
+    expect(attempt.attemptStatus).toBe("ready_for_validation");
+    expect(attempt.hasCandidateToken).toBe(true);
 
-    const verification = await service.verifyAuthorizationAttempt(
+    const validation = await attemptService.validateConnectionAttempt(
       "account-1",
       "attempt-1",
-      {
-        verificationPayload: {},
-      },
+      {},
     );
 
-    expect(verification.verificationResult).toBe("succeeded");
-    expect(verification.activeCredentialSwitched).toBe(true);
-    expect(verification.account.displayName).toBe("Verified Main Account");
-    expect(verification.account.authorizationStatus).toBe("authorized");
-    expect(verification.account.availabilityStatus).toBe("unknown");
-    expect(verification.account.authorizationAttempt?.attemptStatus).toBe(
-      "verification_succeeded",
+    expect(validation.validationResult).toBe("succeeded");
+    expect(validation.tokenApplied).toBe(true);
+    expect(validation.account.loginStatus).toBe("connected");
+    expect(validation.account.internalDisplayName).toBe("内部主号");
+    expect(validation.account.resolvedPlatformProfile.resolvedDisplayName).toBe(
+      "平台昵称",
     );
-    expect(verification.account.activeCredential.credentialType).toBe("token");
+    expect(validation.account.activeToken.hasToken).toBe(true);
+    expect(validation.attempt.attemptStatus).toBe("validation_succeeded");
 
-    const updatedRecord = await stateStore.getAccountById("account-1");
-    expect(updatedRecord?.activeCredentialRef).not.toBe(originalCredentialRef);
-    expect(updatedRecord?.lastAuthorizedAt).not.toBeNull();
-    expect(secretStore.has(originalCredentialRef)).toBe(false);
-    expect(secretStore.has(updatedRecord!.activeCredentialRef!)).toBe(true);
-  });
-
-  it("restores the previous authorization semantics when verification fails", async () => {
-    const stateStore = new InMemoryAccountStateStore();
-    const secretStore = new InMemoryAccountSecretStore();
-    const platform = new FakeAccountPlatform("bilibili");
-    const service = new AccountService({
-      stateStore,
-      secretStore,
-      platforms: [platform],
-      now: createSequentialNow(),
-      createAccountId: () => "account-1",
-      createAttemptId: () => "attempt-1",
-    });
-
-    await service.createAccount({
-      platform: "bilibili",
-      platformAccountUid: "uid-1",
-      displayName: "Main Account",
-    });
-
-    platform.verifyHandler = async () => ({
-      verificationResult: "failed",
-      reason: "stub verification failed",
-      resolvedIdentity: null,
-      profile: null,
-      credential: null,
-    });
-
-    await service.startAuthorizationAttempt("account-1", {
-      authorizationMethod: "token_input",
-      payload: {
-        token: "pending-token",
-      },
-    });
-
-    expect((await stateStore.getAccountById("account-1"))?.authorizationStatus).toBe(
-      "authorizing",
-    );
-
-    const verification = await service.verifyAuthorizationAttempt(
+    const logs = await attemptService.getConnectionAttemptLogs(
       "account-1",
       "attempt-1",
-      {
-        verificationPayload: {},
-      },
     );
+    expect(logs.entries).toEqual([
+      expect.objectContaining({ message: "attempt started" }),
+      expect.objectContaining({ message: "validation succeeded" }),
+    ]);
 
-    expect(verification.verificationResult).toBe("failed");
-    expect(verification.activeCredentialSwitched).toBe(false);
-    expect(verification.account.authorizationStatus).toBe("unauthorized");
-    expect(verification.account.authorizationAttempt?.attemptStatus).toBe(
-      "verification_failed",
-    );
+    const availability = await accountService.runAvailabilityCheck("account-1");
+    expect(availability.availabilityStatus).toBe("healthy");
+    expect(availability.isConsumable).toBe(true);
+
+    const resolved = await accountService.resolveActiveToken("account-1");
+    expect(resolved.payload).toMatchObject({
+      token: "token-1",
+    });
   });
 
-  it("rejects identity mismatch without replacing the current credential", async () => {
+  it("preserves the previous active token when replacement validation fails", async () => {
     const stateStore = new InMemoryAccountStateStore();
+    const attemptStore = new InMemoryAttemptStateStore();
     const secretStore = new InMemoryAccountSecretStore();
     const platform = new FakeAccountPlatform("bilibili");
-    const service = new AccountService({
+    const now = createSequentialNow();
+    const accountService = new AccountService({
       stateStore,
+      connectionAttemptStateStore: attemptStore,
       secretStore,
       platforms: [platform],
-      now: createSequentialNow(),
-      createAttemptId: () => "attempt-1",
+      now,
+      createAccountId: () => "account-1",
+    });
+    const attemptService = new AccountConnectionAttemptService({
+      accountStateStore: stateStore,
+      attemptStateStore: attemptStore,
+      secretStore,
+      platforms: [platform],
+      now,
+      createAttemptId: createSequentialIds("attempt"),
     });
 
-    const originalCredentialRef = "account-1/credentials/original.json";
-    await stateStore.saveAccount(
-      buildAccountRecord({
-        accountId: "account-1",
-        authorizationStatus: "authorized",
-        availabilityStatus: "healthy",
-        activeCredentialType: "token",
-        activeCredentialRef: originalCredentialRef,
-        activeCredentialUpdatedAt: "2026-04-21T08:00:00.000Z",
-      }),
-    );
-    await secretStore.writeSecret(originalCredentialRef, {
-      credentialType: "token",
-      payload: {
-        token: "old-token",
-      },
-      expiresAt: null,
-    } satisfies ActiveCredentialSecret);
-
-    platform.verifyHandler = async () => ({
-      verificationResult: "succeeded",
-      reason: "stub verification succeeded",
-      resolvedIdentity: {
-        platform: "bilibili",
-        platformAccountUid: "other-uid",
-      },
-      profile: {
-        displayName: "Other Account",
-        platformMetadata: {
-          verified: true,
-        },
-      },
-      credential: {
-        credentialType: "token",
-        payload: {
-          token: "new-token",
-        },
-        expiresAt: null,
-      },
+    await accountService.createAccount({
+      platform: "bilibili",
+      internalDisplayName: "内部主号",
     });
 
-    await service.startAuthorizationAttempt("account-1", {
-      authorizationMethod: "token_input",
-      payload: {
-        token: "pending-token",
-      },
+    await attemptService.startConnectionAttempt("account-1", {
+      connectionMethod: "manual_token",
+      tokenValue: "stable-token",
+    });
+    await attemptService.validateConnectionAttempt("account-1", "attempt-1", {});
+
+    platform.validateHandler = async () => ({
+      validationResult: "failed",
+      reason: "token expired",
+      resolvedPlatformProfile: null,
+      token: null,
+      tokenExpiresAt: null,
+      logs: [logEntry("error", "validation failed")],
     });
 
-    const verification = await service.verifyAuthorizationAttempt(
+    await attemptService.startConnectionAttempt("account-1", {
+      connectionMethod: "manual_token",
+      tokenValue: "broken-token",
+    });
+
+    const failed = await attemptService.validateConnectionAttempt(
       "account-1",
-      "attempt-1",
-      {
-        verificationPayload: {},
-      },
+      "attempt-2",
+      {},
     );
 
-    expect(verification.verificationResult).toBe("failed");
-    expect(verification.activeCredentialSwitched).toBe(false);
-    expect(verification.account.authorizationStatus).toBe("authorized");
-    expect(verification.account.authorizationAttempt?.attemptStatus).toBe(
-      "verification_failed",
-    );
-    expect((await stateStore.getAccountById("account-1"))?.activeCredentialRef).toBe(
-      originalCredentialRef,
-    );
-    expect(secretStore.has(originalCredentialRef)).toBe(true);
-  });
+    expect(failed.validationResult).toBe("failed");
+    expect(failed.tokenApplied).toBe(false);
+    expect(failed.account.loginStatus).toBe("connected");
+    expect(failed.attempt.attemptStatus).toBe("validation_failed");
 
-  it("supports soft delete, explicit restore, and restore-on-create for the same platform identity", async () => {
-    const service = new AccountService({
-      stateStore: new InMemoryAccountStateStore(),
-      secretStore: new InMemoryAccountSecretStore(),
-      platforms: [new FakeAccountPlatform("bilibili")],
-      now: createSequentialNow(),
-      createAccountId: () => "account-1",
-    });
+    await accountService.runAvailabilityCheck("account-1");
 
-    const created = await service.createAccount({
-      platform: "bilibili",
-      platformAccountUid: "uid-1",
-      displayName: "Main Account",
-      tags: ["main"],
-    });
-
-    const deleted = await service.softDeleteAccount(created.account.accountId);
-    expect(deleted.lifecycleStatus).toBe("deleted");
-    expect(deleted.deletedAt).not.toBeNull();
-
-    const restored = await service.restoreAccount(created.account.accountId);
-    expect(restored.lifecycleStatus).toBe("active");
-    expect(restored.deletedAt).toBeNull();
-
-    await service.softDeleteAccount(created.account.accountId);
-
-    const recreated = await service.createAccount({
-      platform: "bilibili",
-      platformAccountUid: "uid-1",
-      displayName: "Recreated Account",
-      tags: ["restored"],
-    });
-
-    expect(recreated.restoredFromDeleted).toBe(true);
-    expect(recreated.account.accountId).toBe(created.account.accountId);
-    expect(recreated.account.displayName).toBe("Recreated Account");
-    expect(recreated.account.tags).toEqual(["restored"]);
-  });
-
-  it("only resolves active credentials after the account becomes consumable", async () => {
-    const stateStore = new InMemoryAccountStateStore();
-    const secretStore = new InMemoryAccountSecretStore();
-    const platform = new FakeAccountPlatform("bilibili");
-    const service = new AccountService({
-      stateStore,
-      secretStore,
-      platforms: [platform],
-      now: createSequentialNow(),
-    });
-
-    const credentialRef = "account-1/credentials/original.json";
-    await stateStore.saveAccount(
-      buildAccountRecord({
-        accountId: "account-1",
-        authorizationStatus: "authorized",
-        availabilityStatus: "unknown",
-        activeCredentialType: "token",
-        activeCredentialRef: credentialRef,
-        activeCredentialUpdatedAt: "2026-04-21T08:00:00.000Z",
-      }),
-    );
-    await secretStore.writeSecret(credentialRef, {
-      credentialType: "token",
-      payload: {
-        token: "old-token",
-      },
-      expiresAt: null,
-    } satisfies ActiveCredentialSecret);
-
-    platform.availabilityHandler = async () => ({
-      availabilityStatus: "healthy",
-      reason: "stub availability healthy",
-    });
-
-    await expect(service.resolveActiveCredential("account-1")).rejects.toMatchObject({
-      code: "ACCOUNT_OPERATION_NOT_ALLOWED",
-    });
-
-    const availabilityResult = await service.runAvailabilityCheck("account-1");
-    expect(availabilityResult.availabilityStatus).toBe("healthy");
-    expect(availabilityResult.isConsumable).toBe(true);
-
-    const resolvedCredential = await service.resolveActiveCredential("account-1");
-    expect(resolvedCredential.credentialRef).toBe(credentialRef);
-    expect(resolvedCredential.payload).toEqual({
-      token: "old-token",
-    });
-  });
-
-  it("returns challenge summary when interactive authorization starts", async () => {
-    const service = new AccountService({
-      stateStore: new InMemoryAccountStateStore(),
-      secretStore: new InMemoryAccountSecretStore(),
-      platforms: [new FakeAccountPlatform("bilibili")],
-      now: createSequentialNow(),
-      createAccountId: () => "account-1",
-      createAttemptId: () => "attempt-1",
-    });
-
-    await service.createAccount({
-      platform: "bilibili",
-      platformAccountUid: "uid-1",
-      displayName: "Main Account",
-    });
-
-    const attempt = await service.startAuthorizationAttempt("account-1", {
-      authorizationMethod: "qr_authorization",
-      payload: {},
-    });
-
-    expect(attempt.challenge).toMatchObject({
-      challengeType: "stub_qr",
+    const resolved = await accountService.resolveActiveToken("account-1");
+    expect(resolved.payload).toMatchObject({
+      token: "stable-token",
     });
   });
 });
 
 class InMemoryAccountStateStore implements AccountStateStore {
-  private readonly accounts = new Map<string, PlatformAccountRecord>();
+  private readonly records = new Map<string, AccountRecord>();
 
-  async createAccount(record: PlatformAccountRecord): Promise<void> {
-    this.accounts.set(record.accountId, cloneRecord(record));
+  async createAccount(record: AccountRecord): Promise<void> {
+    this.records.set(record.accountId, cloneAccountRecord(record));
   }
 
-  async saveAccount(record: PlatformAccountRecord): Promise<void> {
-    this.accounts.set(record.accountId, cloneRecord(record));
+  async saveAccount(record: AccountRecord): Promise<void> {
+    this.records.set(record.accountId, cloneAccountRecord(record));
   }
 
-  async getAccountById(
+  async getAccountById(accountId: string): Promise<AccountRecord | undefined> {
+    const record = this.records.get(accountId);
+    return record ? cloneAccountRecord(record) : undefined;
+  }
+
+  async listAccounts(): Promise<AccountRecord[]> {
+    return [...this.records.values()].map(cloneAccountRecord);
+  }
+
+  close(): void {}
+}
+
+class InMemoryAttemptStateStore implements AccountConnectionAttemptStateStore {
+  private readonly records = new Map<string, AccountConnectionAttemptRecord>();
+
+  async createAttempt(record: AccountConnectionAttemptRecord): Promise<void> {
+    this.records.set(record.attemptId, cloneAttemptRecord(record));
+  }
+
+  async saveAttempt(record: AccountConnectionAttemptRecord): Promise<void> {
+    this.records.set(record.attemptId, cloneAttemptRecord(record));
+  }
+
+  async getAttemptById(
     accountId: string,
-  ): Promise<PlatformAccountRecord | undefined> {
-    const record = this.accounts.get(accountId);
-    return record ? cloneRecord(record) : undefined;
-  }
+    attemptId: string,
+  ): Promise<AccountConnectionAttemptRecord | undefined> {
+    const record = this.records.get(attemptId);
 
-  async getAccountByPlatformIdentity(
-    platform: string,
-    platformAccountUid: string,
-  ): Promise<PlatformAccountRecord | undefined> {
-    for (const record of this.accounts.values()) {
-      if (
-        record.platform === platform &&
-        record.platformAccountUid === platformAccountUid
-      ) {
-        return cloneRecord(record);
-      }
+    if (!record || record.accountId !== accountId) {
+      return undefined;
     }
 
-    return undefined;
+    return cloneAttemptRecord(record);
   }
 
-  async listAccounts(): Promise<PlatformAccountRecord[]> {
-    return Array.from(this.accounts.values()).map(cloneRecord);
+  async getLatestAttemptForAccount(
+    accountId: string,
+  ): Promise<AccountConnectionAttemptRecord | undefined> {
+    const records = [...this.records.values()]
+      .filter((record) => record.accountId === accountId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+    return records[0] ? cloneAttemptRecord(records[0]) : undefined;
   }
 
   close(): void {}
 }
 
 class InMemoryAccountSecretStore implements AccountSecretStore {
-  private readonly secrets = new Map<string, unknown>();
+  private readonly records = new Map<string, unknown>();
 
   async writeSecret(secretRef: string, payload: unknown): Promise<void> {
-    this.secrets.set(secretRef, structuredClone(payload));
+    this.records.set(secretRef, structuredClone(payload));
   }
 
   async readSecret<T>(secretRef: string): Promise<T> {
-    const payload = this.secrets.get(secretRef);
-
-    if (!payload) {
-      throw new Error(`Secret "${secretRef}" was not found.`);
+    if (!this.records.has(secretRef)) {
+      throw new Error(`Secret "${secretRef}" not found.`);
     }
 
-    return structuredClone(payload) as T;
+    return structuredClone(this.records.get(secretRef)) as T;
   }
 
   async deleteSecret(secretRef: string): Promise<void> {
-    this.secrets.delete(secretRef);
-  }
-
-  has(secretRef: string): boolean {
-    return this.secrets.has(secretRef);
+    this.records.delete(secretRef);
   }
 }
 
 class FakeAccountPlatform implements AccountPlatformPort {
-  onboardingStartHandler: AccountPlatformPort["startOnboardingSession"] = async (
-    input,
-  ) => ({
-    expectedCredentialType: input.expectedCredentialType,
-    sessionPayload: {
-      ...input.payload,
-    },
-    expiresAt: input.requestedExpiresAt,
-    challenge:
-      input.authorizationMethod === "qr_authorization"
-        ? {
-            challengeType: "stub_qr",
-          }
-        : null,
-  });
+  readonly platformCode: string;
 
-  onboardingResolveHandler: AccountPlatformPort["resolveOnboardingSession"] = async (
-    input,
-  ) => ({
-    verificationResult: "succeeded",
-    reason: "stub onboarding resolved",
-    resolvedIdentity: {
-      platform: this.platformCode,
-      platformAccountUid: "resolved-uid",
-    },
-    profile: {
-      displayName: "Resolved Account",
-      platformMetadata: {},
-    },
-    credential: {
-      credentialType: input.expectedCredentialType ?? "token",
-      payload: {
-        token: "resolved-token",
-      },
-      expiresAt: null,
-    },
-  });
+  startHandler?: (
+    input: AccountPlatformStartConnectionAttemptInput,
+  ) => Promise<AccountPlatformStartConnectionAttemptResult>;
+  resolveHandler?: (
+    input: AccountPlatformResolveConnectionAttemptInput,
+  ) => Promise<AccountPlatformResolveConnectionAttemptResult>;
+  validateHandler?: (
+    input: AccountPlatformValidateConnectionAttemptInput,
+  ) => Promise<AccountPlatformValidateConnectionAttemptResult>;
+  availabilityHandler?: (
+    input: AccountPlatformAvailabilityCheckInput,
+  ) => Promise<AccountPlatformAvailabilityCheckResult>;
 
-  verifyHandler: AccountPlatformPort["verifyAuthorizationAttempt"] = async (
-    input,
-  ) => ({
-    verificationResult: "succeeded",
-    reason: "stub verification succeeded",
-    resolvedIdentity: {
-      platform: this.platformCode,
-      platformAccountUid: input.account.platformAccountUid,
-    },
-    profile: null,
-    credential: {
-      credentialType: input.expectedCredentialType ?? "token",
-      payload: {
-        token: "default-token",
-      },
-      expiresAt: null,
-    },
-  });
-
-  availabilityHandler: AccountPlatformPort["checkAvailability"] = async () => ({
-    availabilityStatus: "healthy",
-    reason: "stub availability healthy",
-  });
-
-  constructor(readonly platformCode: string) {}
-
-  async startOnboardingSession(
-    input: AccountPlatformOnboardingStartInput,
-  ) {
-    return this.onboardingStartHandler(input);
+  constructor(platformCode: string) {
+    this.platformCode = platformCode;
   }
 
-  async resolveOnboardingSession(
-    input: AccountPlatformOnboardingResolveInput,
-  ) {
-    return this.onboardingResolveHandler(input);
-  }
-
-  async startAuthorizationAttempt(input: AccountPlatformAuthorizationStartInput) {
-    void input.account;
+  async startConnectionAttempt(
+    input: AccountPlatformStartConnectionAttemptInput,
+  ): Promise<AccountPlatformStartConnectionAttemptResult> {
+    if (this.startHandler) {
+      return this.startHandler(input);
+    }
 
     return {
-      expectedCredentialType: input.expectedCredentialType,
-      attemptPayload: {
-        ...input.payload,
-      },
+      challenge: null,
+      platformSession: { source: input.connectionMethod },
+      candidateToken: input.tokenValue ? { token: input.tokenValue } : null,
       expiresAt: input.requestedExpiresAt,
-      challenge:
-        input.authorizationMethod === "qr_authorization"
-          ? {
-              challengeType: "stub_qr",
-            }
-          : null,
+      logs: [logEntry("info", "attempt started")],
     };
   }
 
-  async verifyAuthorizationAttempt(
-    input: Parameters<AccountPlatformPort["verifyAuthorizationAttempt"]>[0],
-  ) {
-    return this.verifyHandler(input);
+  async resolveConnectionAttempt(
+    input: AccountPlatformResolveConnectionAttemptInput,
+  ): Promise<AccountPlatformResolveConnectionAttemptResult> {
+    if (this.resolveHandler) {
+      return this.resolveHandler(input);
+    }
+
+    return {
+      platformSession: input.platformSession,
+      candidateToken: { token: "resolved-token" },
+      reason: "resolved candidate token",
+      expiresAt: null,
+      logs: [logEntry("info", "attempt resolved")],
+    };
+  }
+
+  async validateConnectionAttempt(
+    input: AccountPlatformValidateConnectionAttemptInput,
+  ): Promise<AccountPlatformValidateConnectionAttemptResult> {
+    if (this.validateHandler) {
+      return this.validateHandler(input);
+    }
+
+    return {
+      validationResult: "succeeded",
+      reason: "validated",
+      resolvedPlatformProfile: {
+        resolvedPlatformAccountUid: "uid-default",
+        resolvedDisplayName: "默认平台昵称",
+        resolvedAvatarUrl: null,
+        resolvedProfileMetadata: {},
+      },
+      token: {
+        token: input.candidateToken.token,
+        availabilityStatus: "healthy",
+      },
+      tokenExpiresAt: null,
+      logs: [logEntry("info", "token validated")],
+    };
   }
 
   async checkAvailability(
-    input: Parameters<AccountPlatformPort["checkAvailability"]>[0],
-  ) {
-    return this.availabilityHandler(input);
+    input: AccountPlatformAvailabilityCheckInput,
+  ): Promise<AccountPlatformAvailabilityCheckResult> {
+    if (this.availabilityHandler) {
+      return this.availabilityHandler(input);
+    }
+
+    return {
+      availabilityStatus:
+        input.activeToken.availabilityStatus === "risk" ? "risk" : "healthy",
+      reason: "availability checked",
+    };
   }
 }
 
-function buildAccountRecord(
-  overrides: Partial<PlatformAccountRecord> = {},
-): PlatformAccountRecord {
+function cloneAccountRecord(record: AccountRecord): AccountRecord {
   return {
-    accountId: "account-1",
-    platform: "bilibili",
-    platformAccountUid: "uid-1",
-    displayName: "Main Account",
-    remark: null,
-    tags: [],
-    platformMetadata: {},
-    lifecycleStatus: "active",
-    authorizationStatus: "unauthorized",
-    authorizationStatusReason: null,
-    availabilityStatus: "unknown",
-    availabilityStatusReason: null,
-    activeCredentialType: null,
-    activeCredentialRef: null,
-    activeCredentialExpiresAt: null,
-    activeCredentialUpdatedAt: null,
-    authorizationAttemptId: null,
-    authorizationAttemptMethod: null,
-    authorizationAttemptExpectedCredentialType: null,
-    authorizationAttemptPayloadRef: null,
-    authorizationAttemptStatus: null,
-    authorizationAttemptStatusReason: null,
-    authorizationAttemptExpiresAt: null,
-    authorizationAttemptCreatedAt: null,
-    authorizationAttemptUpdatedAt: null,
-    lastAuthorizedAt: null,
-    lastAvailabilityCheckedAt: null,
-    deletedAt: null,
-    createdAt: "2026-04-21T08:00:00.000Z",
-    updatedAt: "2026-04-21T08:00:00.000Z",
-    ...overrides,
+    ...record,
+    tags: [...record.tags],
+    platformMetadata: structuredClone(record.platformMetadata),
+    resolvedProfileMetadata: structuredClone(record.resolvedProfileMetadata),
   };
 }
 
-function cloneRecord(record: PlatformAccountRecord): PlatformAccountRecord {
-  return structuredClone(record);
+function cloneAttemptRecord(
+  record: AccountConnectionAttemptRecord,
+): AccountConnectionAttemptRecord {
+  return {
+    ...record,
+    challenge: record.challenge ? structuredClone(record.challenge) : null,
+    resolvedProfileMetadata: structuredClone(record.resolvedProfileMetadata),
+  };
 }
 
 function createSequentialNow(): () => Date {
-  let tick = 0;
+  let cursor = Date.parse("2026-04-23T08:00:00.000Z");
 
   return () => {
-    const date = new Date(Date.UTC(2026, 3, 21, 8, 0, tick));
-    tick += 1;
-    return date;
+    const current = new Date(cursor);
+    cursor += 1_000;
+    return current;
+  };
+}
+
+function createSequentialIds(prefix: string): () => string {
+  let counter = 1;
+
+  return () => `${prefix}-${counter++}`;
+}
+
+function logEntry(
+  level: ConnectionAttemptLogEntry["level"],
+  message: string,
+): ConnectionAttemptLogEntry {
+  return {
+    timestamp: "2026-04-23T08:00:00.000Z",
+    level,
+    message,
   };
 }

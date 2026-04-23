@@ -1,97 +1,93 @@
 export type JsonObject = Record<string, unknown>;
 
 export type LifecycleStatus = "active" | "disabled" | "deleted";
-
-export type AuthorizationStatus =
-  | "unauthorized"
-  | "authorizing"
-  | "authorized"
-  | "expired"
-  | "revoked";
-
+export type LoginStatus =
+  | "not_logged_in"
+  | "connecting"
+  | "connected"
+  | "login_failed"
+  | "expired";
 export type AvailabilityStatus =
   | "unknown"
   | "healthy"
   | "risk"
   | "restricted"
   | "offline";
-
-export type AuthorizationAttemptStatus =
-  | "pending_verification"
-  | "verification_succeeded"
-  | "verification_failed"
+export type ConnectionMethod = "manual_token" | "qr_login";
+export type ConnectionAttemptStatus =
+  | "pending_resolution"
+  | "ready_for_validation"
+  | "validating"
+  | "validation_succeeded"
+  | "validation_failed"
   | "expired"
   | "canceled";
-
-export type VerificationResult = "succeeded" | "failed";
+export type ValidationResult = "succeeded" | "failed";
 
 export interface CreateAccountInput {
   platform: string;
-  platformAccountUid: string;
-  displayName: string;
+  internalDisplayName: string;
   remark?: string | null;
   tags?: string[];
   platformMetadata?: JsonObject;
 }
 
 export interface UpdateAccountInput {
-  displayName: string;
+  internalDisplayName: string;
   remark: string | null;
   tags: string[];
   platformMetadata: JsonObject;
-}
-
-export interface StartAuthorizationAttemptInput {
-  authorizationMethod: string;
-  expectedCredentialType?: string | null;
-  payload: JsonObject;
-  expiresAt?: string | null;
-}
-
-export interface VerifyAuthorizationAttemptInput {
-  verificationPayload?: JsonObject;
 }
 
 export interface ListAccountsFilters {
   platform?: string;
   keyword?: string;
   lifecycleStatus?: LifecycleStatus;
-  authorizationStatus?: AuthorizationStatus;
+  loginStatus?: LoginStatus;
   availabilityStatus?: AvailabilityStatus;
   includeDeleted?: boolean;
   onlyConsumable?: boolean;
 }
 
-export interface ActiveCredentialSummary {
-  hasCredential: boolean;
-  credentialType: string | null;
+export interface ResolvedPlatformProfile {
+  resolvedPlatformAccountUid: string | null;
+  resolvedDisplayName: string | null;
+  resolvedAvatarUrl: string | null;
+  resolvedProfileMetadata: JsonObject;
+}
+
+export interface ActiveTokenSummary {
+  hasToken: boolean;
   expiresAt: string | null;
   updatedAt: string | null;
 }
 
-export interface AuthorizationAttemptSummary {
+export interface LatestConnectionAttemptSummary {
   attemptId: string;
-  authorizationMethod: string;
-  expectedCredentialType: string | null;
-  attemptStatus: AuthorizationAttemptStatus;
+  connectionMethod: ConnectionMethod;
+  attemptStatus: ConnectionAttemptStatus;
   attemptStatusReason: string | null;
+  challenge: JsonObject | null;
+  hasCandidateToken: boolean;
+  tokenApplied: boolean;
+  hasLogs: boolean;
   expiresAt: string | null;
+  validatedAt: string | null;
+  appliedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  challenge: JsonObject | null;
 }
 
 export interface AccountSummary {
   accountId: string;
   platform: string;
-  platformAccountUid: string;
-  displayName: string;
+  internalDisplayName: string;
   tags: string[];
   lifecycleStatus: LifecycleStatus;
-  authorizationStatus: AuthorizationStatus;
+  loginStatus: LoginStatus;
   availabilityStatus: AvailabilityStatus;
-  hasActiveCredential: boolean;
-  hasPendingAuthorizationAttempt: boolean;
+  resolvedPlatformProfile: ResolvedPlatformProfile;
+  hasActiveToken: boolean;
   isConsumable: boolean;
   updatedAt: string;
 }
@@ -99,22 +95,21 @@ export interface AccountSummary {
 export interface AccountDetail {
   accountId: string;
   platform: string;
-  platformAccountUid: string;
-  displayName: string;
+  internalDisplayName: string;
   remark: string | null;
   tags: string[];
   platformMetadata: JsonObject;
   lifecycleStatus: LifecycleStatus;
-  authorizationStatus: AuthorizationStatus;
-  authorizationStatusReason: string | null;
+  loginStatus: LoginStatus;
+  loginStatusReason: string | null;
   availabilityStatus: AvailabilityStatus;
   availabilityStatusReason: string | null;
-  hasPendingAuthorizationAttempt: boolean;
+  resolvedPlatformProfile: ResolvedPlatformProfile;
+  activeToken: ActiveTokenSummary;
+  latestConnectionAttempt: LatestConnectionAttemptSummary | null;
   isConsumable: boolean;
-  activeCredential: ActiveCredentialSummary;
-  authorizationAttempt: AuthorizationAttemptSummary | null;
-  lastAuthorizedAt: string | null;
-  lastAvailabilityCheckedAt: string | null;
+  lastConnectedAt: string | null;
+  lastValidatedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -124,83 +119,45 @@ export interface ListAccountsResult {
   items: AccountSummary[];
 }
 
-export interface CreateAccountResult {
-  account: AccountDetail;
-  restoredFromDeleted: boolean;
-}
-
-export interface VerifyAuthorizationAttemptResponse {
-  attemptId: string;
-  verificationResult: VerificationResult;
-  verificationReason: string | null;
-  activeCredentialSwitched: boolean;
-  account: AccountDetail;
-}
-
 export interface AvailabilityCheckResult {
   accountId: string;
   lifecycleStatus: LifecycleStatus;
-  authorizationStatus: AuthorizationStatus;
+  loginStatus: LoginStatus;
   availabilityStatus: AvailabilityStatus;
   availabilityStatusReason: string | null;
-  hasActiveCredential: boolean;
+  hasActiveToken: boolean;
   isConsumable: boolean;
   consumabilityReason: string | null;
   checkedAt: string;
 }
 
-export interface PlatformAccountRecord {
+export interface AccountRecord {
   accountId: string;
   platform: string;
-  platformAccountUid: string;
-  displayName: string;
+  internalDisplayName: string;
   remark: string | null;
   tags: string[];
   platformMetadata: JsonObject;
   lifecycleStatus: LifecycleStatus;
-  authorizationStatus: AuthorizationStatus;
-  authorizationStatusReason: string | null;
+  loginStatus: LoginStatus;
+  loginStatusReason: string | null;
   availabilityStatus: AvailabilityStatus;
   availabilityStatusReason: string | null;
-  activeCredentialType: string | null;
-  activeCredentialRef: string | null;
-  activeCredentialExpiresAt: string | null;
-  activeCredentialUpdatedAt: string | null;
-  authorizationAttemptId: string | null;
-  authorizationAttemptMethod: string | null;
-  authorizationAttemptExpectedCredentialType: string | null;
-  authorizationAttemptPayloadRef: string | null;
-  authorizationAttemptStatus: AuthorizationAttemptStatus | null;
-  authorizationAttemptStatusReason: string | null;
-  authorizationAttemptExpiresAt: string | null;
-  authorizationAttemptCreatedAt: string | null;
-  authorizationAttemptUpdatedAt: string | null;
-  lastAuthorizedAt: string | null;
-  lastAvailabilityCheckedAt: string | null;
+  resolvedPlatformAccountUid: string | null;
+  resolvedDisplayName: string | null;
+  resolvedAvatarUrl: string | null;
+  resolvedProfileMetadata: JsonObject;
+  activeTokenRef: string | null;
+  activeTokenExpiresAt: string | null;
+  activeTokenUpdatedAt: string | null;
+  lastConnectedAt: string | null;
+  lastValidatedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface ActiveCredentialSecret {
-  credentialType: string;
+export interface StoredTokenSecret {
   payload: JsonObject;
   expiresAt: string | null;
-}
-
-export interface AuthorizationAttemptSecret {
-  authorizationMethod: string;
-  expectedCredentialType: string | null;
-  initialPayload: JsonObject;
-  platformAttemptPayload: JsonObject;
-  previousAuthorizationStatus: AuthorizationStatus;
-  previousAuthorizationStatusReason: string | null;
-}
-
-export interface ResolvedActiveCredential {
-  credentialType: string;
-  credentialRef: string;
-  payload: JsonObject;
-  expiresAt: string | null;
-  updatedAt: string | null;
 }

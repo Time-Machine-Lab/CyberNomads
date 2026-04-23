@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { deleteAccount, isRealAccountApiEnabled, listAccounts, restoreAccount } from '@/entities/account/api/account-service'
+import { deleteAccount, listAccounts } from '@/entities/account/api/account-service'
 import type { AccountPlatformColor, AccountRecord } from '@/entities/account/model/types'
 
 type SummaryCardTone = 'primary' | 'red' | 'default' | 'blue'
@@ -22,14 +22,13 @@ const accounts = ref<AccountRecord[]>([])
 const isLoading = ref(false)
 const errorMessage = ref('')
 const pendingActionId = ref<string | null>(null)
-
-const usesRealAccountApi = isRealAccountApiEnabled()
+const accountPendingDeletion = ref<AccountRecord | null>(null)
 
 const overviewCard = computed<PlatformSummaryCard>(() => ({
   platform: '全部账号',
   icon: 'group',
   count: accounts.value.length,
-  detail: usesRealAccountApi ? '账号列表已连接真实后端' : '当前仍为 mock 预览数据',
+  detail: accounts.value.length ? '当前账号池已接入真实后端数据' : '当前还没有账号包装对象',
   tone: 'default',
   signal: accounts.value.length ? 'primary' : 'muted',
 }))
@@ -63,6 +62,7 @@ const platformSummary = computed<PlatformSummaryCard[]>(() => {
 
   return Array.from(grouped.values())
     .sort((left, right) => right.count - left.count)
+    .slice(0, 4)
     .map((item) => ({
       platform: item.label,
       icon: item.icon,
@@ -87,7 +87,7 @@ async function loadAccounts() {
   }
 }
 
-onMounted(() => void loadAccounts())
+void loadAccounts()
 
 function resolveSummaryTone(color: AccountPlatformColor): SummaryCardTone {
   if (color === 'primary') return 'primary'
@@ -110,6 +110,23 @@ function resolvePlatformColor(color: AccountPlatformColor) {
   return 'default'
 }
 
+function resolveIdentityAvatar(account: AccountRecord) {
+  return account.resolvedPlatformProfile.resolvedAvatarUrl
+}
+
+function resolveIdentitySubline(account: AccountRecord) {
+  return account.remark || account.resolvedPlatformProfile.resolvedDisplayName || account.platformView.label
+}
+
+function resolvePlatformUid(account: AccountRecord) {
+  return account.resolvedPlatformProfile.resolvedPlatformAccountUid ?? '待解析'
+}
+
+function resolveIdentityFallback(account: AccountRecord) {
+  const label = account.internalDisplayName.trim()
+  return label ? label.slice(0, 1).toUpperCase() : 'A'
+}
+
 function openAccount(accountId: string) {
   void router.push(`/accounts/${accountId}`)
 }
@@ -118,33 +135,29 @@ function openCreateAccount() {
   void router.push('/accounts/new')
 }
 
-function resolveLifecycleActionLabel(account: AccountRecord) {
-  return account.lifecycleStatus === 'deleted' ? '恢复' : '删除'
+function openDeleteConfirm(account: AccountRecord) {
+  if (account.lifecycleStatus === 'deleted') return
+  accountPendingDeletion.value = account
 }
 
-function resolveLifecycleActionIcon(account: AccountRecord) {
-  return account.lifecycleStatus === 'deleted' ? 'restore_from_trash' : 'delete'
+function closeDeleteConfirm() {
+  if (pendingActionId.value) return
+  accountPendingDeletion.value = null
 }
 
-async function handleLifecycleAction(account: AccountRecord) {
-  if (!usesRealAccountApi) {
-    errorMessage.value = '当前未启用账号模块真实后端，删除与恢复操作仅在真实后端模式可用。'
-    return
-  }
+async function confirmDeleteAccount() {
+  const account = accountPendingDeletion.value
+  if (!account) return
 
   pendingActionId.value = account.id
   errorMessage.value = ''
 
   try {
-    if (account.lifecycleStatus === 'deleted') {
-      await restoreAccount(account.id)
-    } else {
-      await deleteAccount(account.id)
-    }
-
+    await deleteAccount(account.id)
     await loadAccounts()
+    accountPendingDeletion.value = null
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '账号生命周期操作失败，请稍后重试。'
+    errorMessage.value = error instanceof Error ? error.message : '账号删除失败，请稍后重试。'
   } finally {
     pendingActionId.value = null
   }
@@ -157,13 +170,18 @@ async function handleLifecycleAction(account: AccountRecord) {
       <header class="accounts-header">
         <div>
           <h1>账号池管理</h1>
-          <p>{{ usesRealAccountApi ? '真实 AccountSummary 列表已接入' : '当前仍使用 mock 数据预览账号池' }}</p>
+          <p>样式沿用上一版账号池控制台，交互已切换为新的包装账号模型。</p>
         </div>
 
         <div class="accounts-header__actions">
-          <button type="button" class="accounts-header__button accounts-header__button--secondary" @click="openCreateAccount">
+          <button
+            type="button"
+            class="accounts-header__button accounts-header__button--secondary"
+            data-testid="accounts-create-button"
+            @click="openCreateAccount"
+          >
             <span class="material-symbols-outlined">person_add</span>
-            <span>新增账号</span>
+            <span>添加账号</span>
           </button>
 
           <button type="button" class="accounts-header__button" :disabled="isLoading" @click="loadAccounts">
@@ -219,14 +237,16 @@ async function handleLifecycleAction(account: AccountRecord) {
       </section>
 
       <section v-else-if="isLoading" class="accounts-feedback">
-        <strong>正在加载账号列表</strong>
-        <p>正在请求当前账号摘要，请稍候。</p>
+        <div>
+          <strong>正在加载账号列表</strong>
+          <p>正在请求当前账号摘要，请稍候。</p>
+        </div>
       </section>
 
       <section v-else-if="!accounts.length" class="accounts-feedback accounts-feedback--empty">
         <div>
           <strong>当前没有账号记录</strong>
-          <p>可以从这里直接启动新增账号流程，先解析令牌，再创建或恢复账号。</p>
+          <p>先创建包装对象，再进入详情页完成令牌接入和日志查看。</p>
         </div>
         <button type="button" @click="openCreateAccount">新增账号</button>
       </section>
@@ -235,7 +255,7 @@ async function handleLifecycleAction(account: AccountRecord) {
         <div class="accounts-board__head">
           <span />
           <span>身份</span>
-          <span>UID</span>
+          <span>平台 UID</span>
           <span>标签</span>
           <span>状态</span>
           <span>最后更新</span>
@@ -264,16 +284,16 @@ async function handleLifecycleAction(account: AccountRecord) {
 
           <div class="accounts-row__identity">
             <div class="accounts-row__avatar">
-              <img v-if="account.avatarUrl" :src="account.avatarUrl" :alt="account.displayName" />
-              <span v-else class="material-symbols-outlined">person</span>
+              <img v-if="resolveIdentityAvatar(account)" :src="resolveIdentityAvatar(account)!" :alt="account.internalDisplayName" />
+              <span v-else>{{ resolveIdentityFallback(account) }}</span>
             </div>
             <div class="accounts-row__identity-copy">
-              <span>{{ account.displayName }}</span>
-              <small>{{ account.remark || account.platformView.label }}</small>
+              <span>{{ account.internalDisplayName }}</span>
+              <small>{{ resolveIdentitySubline(account) }}</small>
             </div>
           </div>
 
-          <div class="accounts-row__mono">{{ account.platformAccountUid }}</div>
+          <div class="accounts-row__mono">{{ resolvePlatformUid(account) }}</div>
 
           <div class="accounts-row__tag-list">
             <span v-if="account.tags.length" class="accounts-row__tag">{{ account.tags[0] }}</span>
@@ -291,31 +311,58 @@ async function handleLifecycleAction(account: AccountRecord) {
           <div class="accounts-row__actions">
             <button
               type="button"
-              class="accounts-row__action-button accounts-row__action-button--login"
-              @click.stop="openAccount(account.id)"
-            >
-              <span class="material-symbols-outlined">open_in_new</span>
-            </button>
-            <button
-              type="button"
-              class="accounts-row__action-button accounts-row__action-button--edit"
-              @click.stop="openAccount(account.id)"
-            >
-              <span class="material-symbols-outlined">edit_square</span>
-            </button>
-            <button
-              type="button"
               class="accounts-row__action-button accounts-row__action-button--delete"
-              :disabled="pendingActionId === account.id"
-              :title="resolveLifecycleActionLabel(account)"
-              @click.stop="handleLifecycleAction(account)"
+              :disabled="account.lifecycleStatus === 'deleted' || pendingActionId === account.id"
+              :title="account.lifecycleStatus === 'deleted' ? '账号已删除' : '删除账号'"
+              @click.stop="openDeleteConfirm(account)"
             >
-              <span class="material-symbols-outlined">{{ resolveLifecycleActionIcon(account) }}</span>
+              <span class="material-symbols-outlined">delete</span>
             </button>
           </div>
         </article>
       </section>
     </div>
+
+    <teleport to="body">
+      <div v-if="accountPendingDeletion" class="delete-dialog" role="presentation" @click.self="closeDeleteConfirm">
+        <section class="delete-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+          <div class="delete-dialog__icon">
+            <span class="material-symbols-outlined">delete</span>
+          </div>
+
+          <div class="delete-dialog__copy">
+            <p class="delete-dialog__eyebrow">删除账号</p>
+            <h2 id="delete-dialog-title">确认删除这个账号吗？</h2>
+            <p>
+              账号「{{ accountPendingDeletion.internalDisplayName }}」删除后会从账号池可用列表中移除，后续调用方将无法继续消费它的令牌。
+            </p>
+          </div>
+
+          <div class="delete-dialog__account">
+            <span class="material-symbols-outlined">{{ accountPendingDeletion.platformView.icon }}</span>
+            <div>
+              <strong>{{ accountPendingDeletion.internalDisplayName }}</strong>
+              <small>{{ accountPendingDeletion.platformView.label }} · {{ resolvePlatformUid(accountPendingDeletion) }}</small>
+            </div>
+          </div>
+
+          <div class="delete-dialog__actions">
+            <button type="button" class="delete-dialog__button delete-dialog__button--ghost" :disabled="!!pendingActionId" @click="closeDeleteConfirm">
+              取消
+            </button>
+            <button
+              type="button"
+              class="delete-dialog__button delete-dialog__button--danger"
+              :disabled="pendingActionId === accountPendingDeletion.id"
+              @click="confirmDeleteAccount"
+            >
+              <span v-if="pendingActionId === accountPendingDeletion.id">删除中…</span>
+              <span v-else>确认删除</span>
+            </button>
+          </div>
+        </section>
+      </div>
+    </teleport>
   </section>
 </template>
 
@@ -324,80 +371,6 @@ async function handleLifecycleAction(account: AccountRecord) {
   min-height: 100vh;
   color: #fff;
   background: transparent;
-}
-
-.accounts-topbar,
-.accounts-topbar__actions,
-.accounts-summary,
-.summary-card__top,
-.summary-card__label,
-.accounts-board__head,
-.accounts-row,
-.accounts-row__identity,
-.accounts-row__status,
-.accounts-row__actions {
-  display: flex;
-  align-items: center;
-}
-
-.accounts-topbar {
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 4.4rem;
-  padding: 0 1.9rem;
-  border-bottom: 1px solid rgb(72 72 71 / 0.15);
-}
-
-.accounts-topbar__title {
-  color: #00eefc;
-  font-family: var(--cn-font-display);
-  font-size: 1.18rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-}
-
-.accounts-topbar__search {
-  display: flex;
-  gap: 0.55rem;
-  align-items: center;
-  width: min(18rem, 100%);
-  height: 2.7rem;
-  padding: 0 0.9rem;
-  border-bottom: 1px solid rgb(72 72 71 / 0.35);
-  color: #767575;
-}
-
-.accounts-topbar__search input {
-  width: 100%;
-  border: 0;
-  outline: 0;
-  color: #fff;
-  background: transparent;
-}
-
-.accounts-topbar__search input::placeholder {
-  color: #767575;
-}
-
-.accounts-topbar__actions {
-  gap: 1rem;
-  color: #adaaaa;
-}
-
-.accounts-topbar__actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  color: inherit;
-  background: transparent;
-}
-
-.accounts-topbar__actions img {
-  width: 1.9rem;
-  height: 1.9rem;
-  border-radius: 999px;
-  object-fit: cover;
 }
 
 .accounts-canvas {
@@ -440,6 +413,7 @@ async function handleLifecycleAction(account: AccountRecord) {
   align-items: center;
   min-height: 3rem;
   padding: 0 1.2rem;
+  border: 0;
   border-radius: 0.75rem;
   color: #005d63;
   background: linear-gradient(135deg, #8ff5ff 0%, #00eefc 100%);
@@ -505,12 +479,16 @@ async function handleLifecycleAction(account: AccountRecord) {
 }
 
 .summary-card__top {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   margin-bottom: 1rem;
 }
 
 .summary-card__label {
+  display: flex;
   gap: 0.4rem;
+  align-items: center;
   color: #adaaaa;
   font-size: 0.86rem;
 }
@@ -620,22 +598,24 @@ async function handleLifecycleAction(account: AccountRecord) {
 .accounts-board__head,
 .accounts-row {
   display: grid;
-  grid-template-columns: 4rem 1.6fr 1fr 0.9fr 1fr 1fr 0.8fr;
-  gap: 0.75rem;
+  grid-template-columns: 3.4rem minmax(15rem, 1.7fr) minmax(9rem, 1fr) minmax(9rem, 0.95fr) minmax(9rem, 0.95fr) minmax(8.5rem, 0.9fr) 4.2rem;
+  gap: 0.9rem;
 }
 
 .accounts-board__head {
-  padding: 1rem 1.3rem;
+  padding: 0.95rem 1.4rem 0.9rem;
   color: #767575;
   font-family: var(--cn-font-display);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .accounts-row {
   position: relative;
   align-items: center;
-  padding: 0.9rem 1.3rem;
+  min-height: 5.15rem;
+  padding: 1rem 1.4rem;
   border: 0;
   color: #fff;
   background: transparent;
@@ -678,7 +658,13 @@ async function handleLifecycleAction(account: AccountRecord) {
 }
 
 .accounts-row__platform {
+  display: flex;
+  align-items: center;
   justify-content: center;
+}
+
+.accounts-row__platform .material-symbols-outlined {
+  font-size: 1.35rem;
 }
 
 .accounts-row__platform-icon--primary {
@@ -698,7 +684,9 @@ async function handleLifecycleAction(account: AccountRecord) {
 }
 
 .accounts-row__identity {
+  display: flex;
   gap: 0.7rem;
+  align-items: center;
   min-width: 0;
 }
 
@@ -708,15 +696,20 @@ async function handleLifecycleAction(account: AccountRecord) {
 }
 
 .accounts-row__identity-copy span {
-  font-size: 0.9rem;
+  overflow: hidden;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
 }
 
 .accounts-row__identity-copy small {
   overflow: hidden;
-  margin-top: 0.1rem;
+  margin-top: 0.18rem;
   color: #767575;
-  font-size: 0.72rem;
+  font-size: 0.76rem;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -724,12 +717,15 @@ async function handleLifecycleAction(account: AccountRecord) {
 .accounts-row__avatar {
   display: grid;
   place-items: center;
-  width: 2rem;
-  height: 2rem;
+  width: 2.35rem;
+  height: 2.35rem;
   overflow: hidden;
   border: 1px solid rgb(72 72 71 / 0.3);
   border-radius: 999px;
+  color: #d8f9fc;
   background: #131313;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .accounts-row__avatar img {
@@ -741,139 +737,246 @@ async function handleLifecycleAction(account: AccountRecord) {
 .accounts-row__mono {
   color: #adaaaa;
   font-family: ui-monospace, 'SFMono-Regular', monospace;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.accounts-row__tag-list {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .accounts-row__tag {
   display: inline-flex;
   align-items: center;
-  min-height: 1.45rem;
-  padding: 0 0.45rem;
-  border: 1px solid rgb(143 245 255 / 0.2);
-  border-radius: 0.35rem;
-  color: #c3f400;
-  background: rgb(195 244 0 / 0.08);
-  font-size: 0.68rem;
+  min-height: 1.7rem;
+  padding: 0 0.62rem;
+  border: 1px solid rgb(72 72 71 / 0.22);
+  border-radius: 999px;
+  color: #8ff5ff;
+  background: #151515;
+  font-size: 0.72rem;
+  white-space: nowrap;
 }
 
-.accounts-row__tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+.accounts-row__tag + .accounts-row__tag {
+  color: #adaaaa;
 }
 
 .accounts-row__tag--empty {
-  border-color: rgb(118 117 117 / 0.3);
   color: #767575;
-  background: rgb(118 117 117 / 0.08);
+  border-style: dashed;
 }
 
 .accounts-row__status {
-  gap: 0.42rem;
-  color: #8ff5ff;
-  font-size: 0.78rem;
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  color: #d7faff;
+  font-size: 0.82rem;
+  font-weight: 500;
 }
 
 .accounts-row__status-dot {
-  width: 0.38rem;
-  height: 0.38rem;
+  width: 0.42rem;
+  height: 0.42rem;
   border-radius: 999px;
-  background: #8ff5ff;
+  background: currentcolor;
+  box-shadow: 0 0 8px currentcolor;
 }
 
 .accounts-row--error .accounts-row__status {
   color: #ff716c;
 }
 
-.accounts-row--error .accounts-row__status-dot {
-  background: #ff716c;
-}
-
 .accounts-row--warning .accounts-row__status {
   color: #ffb800;
 }
 
-.accounts-row--warning .accounts-row__status-dot {
-  background: #ffb800;
-}
-
 .accounts-row--muted .accounts-row__status {
-  color: #8b8888;
-}
-
-.accounts-row--muted .accounts-row__status-dot {
-  background: #8b8888;
+  color: #767575;
 }
 
 .accounts-row__actions {
-  gap: 0.3rem;
-  justify-content: flex-end;
-  color: #adaaaa;
-  opacity: 0;
-  transition: opacity var(--cn-transition);
-}
-
-.accounts-row:hover .accounts-row__actions,
-.accounts-row:focus-visible .accounts-row__actions {
-  opacity: 1;
+  display: flex;
+  justify-content: center;
 }
 
 .accounts-row__action-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.65rem;
-  height: 1.65rem;
-  padding: 0;
-  border: 0;
-  outline: 0;
+  width: 2.3rem;
+  height: 2.3rem;
+  border: 1px solid rgb(72 72 71 / 0.2);
+  border-radius: 0.72rem;
   color: #adaaaa;
-  background: transparent;
-  appearance: none;
-  transition: color var(--cn-transition);
+  background: #151515;
+  transition:
+    color var(--cn-transition),
+    border-color var(--cn-transition),
+    background-color var(--cn-transition);
+}
+
+.accounts-row__action-button:hover:not(:disabled) {
+  color: #fff;
+  border-color: rgb(255 113 108 / 0.24);
+  background: rgb(255 113 108 / 0.08);
 }
 
 .accounts-row__action-button:disabled {
-  cursor: wait;
-  opacity: 0.6;
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
-.accounts-row__action-button .material-symbols-outlined {
-  font-size: 1rem;
+.delete-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgb(6 7 8 / 0.68);
+  backdrop-filter: blur(18px);
 }
 
-.accounts-row__action-button--login:hover {
+.delete-dialog__panel {
+  width: min(100%, 29rem);
+  padding: 1.3rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 1.15rem;
+  background:
+    radial-gradient(circle at top right, rgb(255 113 108 / 0.1), transparent 34%),
+    linear-gradient(180deg, rgb(24 24 24 / 0.98), rgb(16 16 16 / 0.98));
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.38);
+}
+
+.delete-dialog__icon {
+  display: grid;
+  place-items: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  border: 1px solid rgb(255 113 108 / 0.2);
+  border-radius: 0.9rem;
+  color: #ffb7b2;
+  background: rgb(255 113 108 / 0.08);
+}
+
+.delete-dialog__copy {
+  margin-top: 1rem;
+}
+
+.delete-dialog__eyebrow {
+  margin: 0;
+  color: #ffb7b2;
+  font-family: var(--cn-font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.delete-dialog__copy h2 {
+  margin: 0.45rem 0 0;
+  font-family: var(--cn-font-display);
+  font-size: 1.45rem;
+  letter-spacing: -0.03em;
+}
+
+.delete-dialog__copy p {
+  margin: 0.55rem 0 0;
+  color: #adaaaa;
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.delete-dialog__account {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgb(72 72 71 / 0.16);
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 0.02);
+}
+
+.delete-dialog__account .material-symbols-outlined {
   color: #8ff5ff;
 }
 
-.accounts-row__action-button--edit:hover {
-  color: #65afff;
+.delete-dialog__account strong,
+.delete-dialog__account small {
+  display: block;
 }
 
-.accounts-row__action-button--delete:hover {
-  color: #ff716c;
+.delete-dialog__account strong {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.delete-dialog__account small {
+  margin-top: 0.22rem;
+  color: #767575;
+  font-size: 0.75rem;
+}
+
+.delete-dialog__actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.15rem;
+}
+
+.delete-dialog__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 6.6rem;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.8rem;
+  font-family: var(--cn-font-display);
+  font-size: 0.84rem;
+  font-weight: 700;
+  transition:
+    border-color var(--cn-transition),
+    background-color var(--cn-transition),
+    color var(--cn-transition);
+}
+
+.delete-dialog__button--ghost {
+  border-color: rgb(72 72 71 / 0.24);
+  color: #f1f1f1;
+  background: rgb(255 255 255 / 0.04);
+}
+
+.delete-dialog__button--ghost:hover:not(:disabled) {
+  border-color: rgb(143 245 255 / 0.2);
+  background: rgb(143 245 255 / 0.08);
+}
+
+.delete-dialog__button--danger {
+  color: #2f0906;
+  background: linear-gradient(135deg, #ffb7b2 0%, #ff716c 100%);
+  box-shadow: 0 0 20px rgb(255 113 108 / 0.2);
+}
+
+.delete-dialog__button--danger:hover:not(:disabled) {
+  filter: brightness(1.02);
+}
+
+.delete-dialog__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 @media (max-width: 1200px) {
   .accounts-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .accounts-feedback {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-
-@media (max-width: 980px) {
-  .accounts-topbar,
-  .accounts-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .accounts-summary {
-    grid-template-columns: 1fr;
   }
 
   .accounts-board {
@@ -882,7 +985,103 @@ async function handleLifecycleAction(account: AccountRecord) {
 
   .accounts-board__head,
   .accounts-row {
-    min-width: 58rem;
+    min-width: 64rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .accounts-canvas {
+    padding: 1.25rem 1rem 2rem;
+  }
+
+  .accounts-header,
+  .accounts-feedback {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .accounts-header__actions {
+    justify-content: stretch;
+    flex-direction: column;
+  }
+
+  .accounts-header__button {
+    justify-content: center;
+  }
+
+  .accounts-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .accounts-board {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .accounts-board__head {
+    display: none;
+  }
+
+  .accounts-row {
+    grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    min-width: 0;
+    margin-bottom: 0.8rem;
+    padding: 1rem;
+    border: 1px solid rgb(72 72 71 / 0.14);
+    border-radius: 1rem;
+    background: #1a1919;
+    box-shadow: var(--cn-shadow-soft);
+  }
+
+  .accounts-row + .accounts-row {
+    border-top: 1px solid rgb(72 72 71 / 0.14);
+  }
+
+  .accounts-row__platform {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .accounts-row__identity {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .accounts-row__actions {
+    grid-column: 3;
+    grid-row: 1;
+    justify-content: flex-end;
+  }
+
+  .accounts-row__mono,
+  .accounts-row__tag-list,
+  .accounts-row__status {
+    grid-column: 2 / -1;
+  }
+
+  .accounts-row__mono {
+    display: flex;
+    align-items: center;
+    min-height: 1.45rem;
+  }
+
+  .delete-dialog {
+    padding: 1rem;
+  }
+
+  .delete-dialog__panel {
+    padding: 1.15rem;
+  }
+
+  .delete-dialog__actions {
+    flex-direction: column-reverse;
+  }
+
+  .delete-dialog__button {
+    width: 100%;
   }
 }
 </style>
