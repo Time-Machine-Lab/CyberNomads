@@ -36,35 +36,30 @@ const capabilityLabel = computed(() => {
   }
 })
 
-const readinessSteps = computed(() => [
+const agentServiceOptions = computed(() => [
   {
-    title: '保存 OpenClaw 服务配置',
-    description: service.value ? '已存在当前 Agent 服务配置，可继续更新端点或凭据。' : '填写 endpoint、认证方式和密钥，创建当前唯一 Agent 服务。',
-    state: service.value ? 'done' : 'active',
+    key: 'openclaw',
+    title: 'OpenClaw',
+    description: '推荐接入方式，当前可配置。',
+    icon: 'precision_manufacturing',
+    enabled: true,
+    badge: service.value?.providerCode === 'openclaw' ? '已选择' : '可用',
   },
   {
-    title: '显式测试连接',
-    description: '保存配置后必须由用户触发连接测试；连接成功后服务才可被 MVP 使用。',
-    state:
-      overview.value?.connectionStatus === 'connected'
-        ? 'done'
-        : overview.value?.connectionStatus === 'connection_failed'
-          ? 'error'
-          : service.value
-            ? 'active'
-            : 'pending',
+    key: 'internal-agent',
+    title: '内部 Agent',
+    description: '内置执行引擎，后续版本开放。',
+    icon: 'hub',
+    enabled: false,
+    badge: '未开放',
   },
   {
-    title: '准备 CyberNomads 能力',
-    description: '连接可用后继续准备运行本产品所需能力；这不改变“连接成功即可使用”的 MVP 语义。',
-    state:
-      overview.value?.capabilityStatus === 'ready'
-        ? 'done'
-        : overview.value?.capabilityStatus === 'prepare_failed'
-          ? 'error'
-          : overview.value?.isUsable
-            ? 'active'
-            : 'pending',
+    key: 'external-agent',
+    title: '外部 Agent 服务',
+    description: '连接自定义 Agent 服务，后续版本开放。',
+    icon: 'cloud_sync',
+    enabled: false,
+    badge: '未开放',
   },
 ])
 
@@ -91,9 +86,6 @@ onMounted(loadOverview)
         <div>
           <p class="console-hero__eyebrow">Console / Agent Service</p>
           <h1>控制台 Agent 服务接入</h1>
-          <p>
-            当前 MVP 只维护一个激活 Agent 服务。请先完成 OpenClaw 配置、连接测试与能力准备，再进入账号、产品、策略和推广工作区。
-          </p>
         </div>
 
         <button type="button" class="console-hero__refresh" :disabled="isLoading" @click="loadOverview">
@@ -110,15 +102,11 @@ onMounted(loadOverview)
           </div>
 
           <h2>{{ overview.hasCurrentService ? '当前 Agent 服务' : '尚未接入 Agent 服务' }}</h2>
-          <p>{{ overview.description }}</p>
 
           <div class="console-readiness__actions">
             <RouterLink class="console-readiness__primary" to="/console/openclaw">
               <span>{{ overview.actionLabel }}</span>
               <span class="material-symbols-outlined">arrow_forward</span>
-            </RouterLink>
-            <RouterLink class="console-readiness__secondary" to="/accounts">
-              <span>继续账号配置</span>
             </RouterLink>
           </div>
         </div>
@@ -160,25 +148,35 @@ onMounted(loadOverview)
 
       <section class="console-flow">
         <div class="console-flow__header">
-          <span class="material-symbols-outlined">route</span>
+          <span class="material-symbols-outlined">conversion_path</span>
           <div>
-            <h2>配置业务流程</h2>
-            <p>保存配置、测试连接、准备能力是三个独立业务动作，页面会按后端状态逐步推进。</p>
+            <h2>Agent 服务选择</h2>
           </div>
         </div>
 
-        <div class="console-flow__steps">
+        <div class="console-service-grid">
           <article
-            v-for="(step, index) in readinessSteps"
-            :key="step.title"
-            class="console-step"
-            :class="`console-step--${step.state}`"
+            v-for="option in agentServiceOptions"
+            :key="option.key"
+            class="console-service-card"
+            :class="{
+              'console-service-card--active': option.enabled,
+              'console-service-card--disabled': !option.enabled,
+            }"
           >
-            <span class="console-step__index">{{ index + 1 }}</span>
-            <div>
-              <h3>{{ step.title }}</h3>
-              <p>{{ step.description }}</p>
+            <div class="console-service-card__top">
+              <span class="console-service-card__icon material-symbols-outlined">{{ option.icon }}</span>
+              <span class="console-service-card__badge">{{ option.badge }}</span>
             </div>
+            <div>
+              <h3>{{ option.title }}</h3>
+              <p>{{ option.description }}</p>
+            </div>
+            <RouterLink v-if="option.enabled" class="console-service-card__action" to="/console/openclaw">
+              <span>选择配置</span>
+              <span class="material-symbols-outlined">arrow_forward</span>
+            </RouterLink>
+            <button v-else type="button" class="console-service-card__action" disabled>暂不可选</button>
           </article>
         </div>
       </section>
@@ -256,17 +254,9 @@ onMounted(loadOverview)
   line-height: 0.95;
 }
 
-.console-hero p:not(.console-hero__eyebrow) {
-  max-width: 48rem;
-  margin: 1rem 0 0;
-  color: var(--cn-on-surface-muted);
-  font-size: 1rem;
-  line-height: 1.8;
-}
-
 .console-hero__refresh,
 .console-readiness__primary,
-.console-readiness__secondary {
+.console-service-card__action {
   display: inline-flex;
   gap: 0.55rem;
   align-items: center;
@@ -385,11 +375,6 @@ onMounted(loadOverview)
   border-color: rgb(143 245 255 / 0.32);
 }
 
-.console-readiness__secondary {
-  color: var(--cn-on-surface);
-  background: rgb(26 25 25 / 0.92);
-}
-
 .console-readiness__status {
   display: grid;
   gap: 0.75rem;
@@ -460,61 +445,93 @@ onMounted(loadOverview)
   line-height: 1.75;
 }
 
-.console-flow__steps {
+.console-service-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
 }
 
-.console-step {
-  display: grid;
-  gap: 1rem;
-  padding: 1rem;
+.console-service-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 12.5rem;
+  padding: 1.1rem;
   border: 1px solid rgb(72 72 71 / 0.18);
   border-radius: 1rem;
   background: rgb(26 25 25 / 0.74);
+  transition:
+    border-color var(--cn-transition),
+    background-color var(--cn-transition),
+    opacity var(--cn-transition);
 }
 
-.console-step__index {
+.console-service-card--active {
+  border-color: rgb(143 245 255 / 0.32);
+  background:
+    linear-gradient(135deg, rgb(143 245 255 / 0.06), transparent 52%),
+    rgb(26 25 25 / 0.86);
+}
+
+.console-service-card--disabled {
+  opacity: 0.42;
+}
+
+.console-service-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.6rem;
+}
+
+.console-service-card__icon {
   display: grid;
   place-items: center;
-  width: 2.2rem;
-  height: 2.2rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid rgb(143 245 255 / 0.2);
+  border-radius: 0.8rem;
+  color: var(--cn-primary);
+  background: rgb(143 245 255 / 0.08);
+}
+
+.console-service-card__badge {
+  padding: 0.32rem 0.55rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
   border-radius: 999px;
   color: var(--cn-on-surface-muted);
-  background: rgb(10 10 10 / 0.5);
+  background: rgb(10 10 10 / 0.36);
   font-family: var(--cn-font-mono);
+  font-size: 0.68rem;
 }
 
-.console-step--done {
-  border-color: rgb(143 245 255 / 0.28);
+.console-service-card h3 {
+  margin: 0;
+  font-family: var(--cn-font-display);
+  font-size: 1.12rem;
+  font-weight: 800;
 }
 
-.console-step--done .console-step__index {
+.console-service-card p {
+  margin: 0.65rem 0 0;
+  color: var(--cn-on-surface-muted);
+  line-height: 1.7;
+}
+
+.console-service-card__action {
+  align-self: flex-start;
+  min-height: 2.55rem;
+  margin-top: auto;
+  padding: 0 0.9rem;
   color: #041316;
   background: var(--cn-primary);
+  border-color: rgb(143 245 255 / 0.32);
 }
 
-.console-step--active {
-  border-color: rgb(195 244 0 / 0.26);
-}
-
-.console-step--active .console-step__index {
-  color: #304000;
-  background: var(--cn-secondary);
-}
-
-.console-step--error {
-  border-color: rgb(255 113 108 / 0.28);
-}
-
-.console-step--error .console-step__index {
-  color: #fff;
-  background: var(--cn-error);
-}
-
-.console-step h3 {
-  font-size: 1.05rem;
+.console-service-card__action:disabled {
+  color: var(--cn-on-surface-muted);
+  background: rgb(32 31 31 / 0.74);
+  cursor: not-allowed;
 }
 
 @media (width <= 1280px) {
@@ -526,7 +543,7 @@ onMounted(loadOverview)
   }
 
   .console-readiness,
-  .console-flow__steps {
+  .console-service-grid {
     grid-template-columns: 1fr;
   }
 
