@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .env
+cybernomads/
 
 storage/sqlite/*.db
 storage/artifacts/logs/**
