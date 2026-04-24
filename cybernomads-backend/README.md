@@ -30,19 +30,37 @@ npm start
 
 ## Runtime Layout
 
-后端默认把当前工作目录下的 `cybernomads/` 作为运行根目录，并确保以下结构存在：
+后端默认把运行目录放在仓库外。
+
+在 macOS 上，默认运行根目录是：
 
 ```text
-cybernomads/
+~/Library/Application Support/CyberNomads/backend
+```
+
+如果你显式传入 `workingDirectory`，运行目录仍然会落在 `<workingDirectory>/cybernomads/`，这主要用于测试和临时运行。
+
+如果你想手动覆盖默认位置，也可以设置环境变量：
+
+```bash
+export CYBERNOMADS_RUNTIME_ROOT="/your/custom/runtime/root"
+```
+
+运行根目录会确保以下结构存在：
+
+```text
+<runtime-root>/
 ├── product/
 ├── strategy/
 ├── work/
+├── .account-secrets/
 └── runtime.sqlite
 ```
 
 说明：
 
 - `product/`、`strategy/`、`work/` 是固定运行时目录，启动时会自动补齐缺失项。
+- `.account-secrets/` 用于保存账号模块的运行时凭证、平台会话和连接日志，不会回写到 API 明文响应里。
 - `runtime.sqlite` 是运行时 SQLite 数据库文件，启动时会自动创建或复用。
 - 启动阶段不会创建任何 `work/<specific-work>/` 目录，也不会生成默认产品或策略内容。
 
