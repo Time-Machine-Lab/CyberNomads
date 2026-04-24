@@ -25,7 +25,6 @@ const form = reactive({
   markdown: '',
   status: 'draft' as 'draft' | 'ready',
   category: '本地草稿',
-  targetLabels: ['硬件发烧友', 'AI 开发者'],
 })
 
 const attachments = ref<AssetAttachmentRecord[]>([])
@@ -45,18 +44,18 @@ watch(
     if (!isEditMode.value) {
       form.name = ''
       form.summary = ''
-      form.markdown = `# 下一代编排器来了
+      form.markdown = `# 下一代编辑器来了
 
-大家好，快速分享一下为什么新的神经架构师 v1.0 将从根本上改变我们管理并行数据流的方式。 
+大家好，快速分享一下为什么新的工作流编辑器会从根本上改变我们管理产品资产的方式。
 
-如果你一直被手动提示工程搞得焦头烂额，你需要看看这个。
+如果你一直被手动整理素材和文案折腾到头大，现在可以先从这条资产开始：
 
 ## 关键升级
-* **量子解析：** 处理上下文数组的速度提高 40 倍。
-* **自动调优节点：** 它会从你的语法失败中学习。
-* **全息 CLI：** 可视化图表叠加让调试变得更轻松。
+* **上下文更稳定**：适合沉淀长期复用的产品信息。
+* **内容更容易协作**：Markdown 可以直接进入后续策略和任务链路。
+* **回收更清晰**：无效资产可以直接从列表删除，避免持续堆积。
 
-在下面留下你的想法。我们准备好全面编排了吗？`
+欢迎在这里继续完善你的完整内容。`
       form.status = 'draft'
       form.category = '本地草稿'
       attachments.value = [
@@ -82,7 +81,6 @@ watch(
       form.markdown = asset.markdown
       form.status = asset.status
       form.category = asset.category
-      form.targetLabels = asset.targetLabels
       attachments.value = asset.attachments
     } catch {
       loadError.value = '产品资产详情加载失败，请确认产品服务可用后重试。'
@@ -126,15 +124,17 @@ async function handleSave(status: 'draft' | 'ready') {
       markdown: form.markdown,
       status,
       category: form.category,
-      targetLabels: form.targetLabels,
       tags: [form.category],
     })
 
-    successMessage.value = isEditMode.value ? '产品更新成功。' : '产品创建成功，即将返回资产列表。'
+    successMessage.value = isEditMode.value
+      ? '产品更新成功。'
+      : '产品创建成功，即将返回资产列表。'
     await new Promise((resolve) => window.setTimeout(resolve, 900))
     await router.push('/assets')
   } catch {
-    saveError.value = '产品资产保存失败，请检查后端连接后重试。当前编辑内容已保留。'
+    saveError.value =
+      '产品资产保存失败，请检查后端连接后重试。当前编辑内容已经保留。'
   } finally {
     isSaving.value = false
   }
@@ -158,6 +158,22 @@ async function handleSave(status: 'draft' | 'ready') {
       </section>
 
       <div v-else class="asset-editor-canvas">
+        <header class="asset-editor-header">
+          <div class="asset-editor-header__trail">
+            <RouterLink to="/assets" class="asset-editor-header__back" data-testid="asset-editor-back-link">
+              <span class="material-symbols-outlined">arrow_back</span>
+              <span>返回资产列表</span>
+            </RouterLink>
+
+            <span class="asset-editor-header__eyebrow">{{ isEditMode ? '编辑资产' : '新建资产' }}</span>
+          </div>
+
+          <div class="asset-editor-header__signal">
+            <span class="asset-editor-header__signal-dot" />
+            <span>{{ form.status === 'draft' ? '本地草稿' : '已就绪' }}</span>
+          </div>
+        </header>
+
         <section
           v-if="loadError || validationMessage || saveError || successMessage"
           class="asset-editor-alert"
@@ -178,27 +194,6 @@ async function handleSave(status: 'draft' | 'ready') {
               </div>
             </div>
             <input v-model="form.name" required type="text" placeholder="在此输入资产标题..." />
-          </div>
-
-          <div class="asset-editor-meta__divider" />
-
-          <div class="asset-editor-meta__targets">
-            <label>目标节点 (标签)</label>
-            <div class="asset-editor-meta__chips">
-              <button
-                v-for="(label, index) in form.targetLabels"
-                :key="label"
-                type="button"
-                :class="{ 'asset-editor-meta__chip--primary': index === 0 }"
-              >
-                <span>{{ label }}</span>
-                <span class="material-symbols-outlined">close</span>
-              </button>
-              <button type="button" class="asset-editor-meta__chip asset-editor-meta__chip--add">
-                <span class="material-symbols-outlined">add</span>
-                <span>添加</span>
-              </button>
-            </div>
           </div>
         </section>
 
@@ -230,7 +225,7 @@ async function handleSave(status: 'draft' | 'ready') {
               <div class="asset-editor-body__lines">
                 <span v-for="line in lineCount" :key="line">{{ line }}</span>
               </div>
-              <textarea v-model="form.markdown" placeholder="在此处初始化传输序列..." />
+              <textarea v-model="form.markdown" placeholder="在此处输入产品的完整 Markdown 内容..." />
             </div>
 
             <div class="asset-editor-statusbar">
@@ -285,7 +280,7 @@ async function handleSave(status: 'draft' | 'ready') {
             @click="handleSave('ready')"
           >
             <span class="material-symbols-outlined">save</span>
-            <span>{{ isSaving ? '提交中…' : '提交资产' }}</span>
+            <span>{{ isSaving ? '提交中...' : '提交资产' }}</span>
           </button>
         </footer>
       </div>
@@ -309,6 +304,84 @@ async function handleSave(status: 'draft' | 'ready') {
   gap: 1.5rem;
   width: min(100%, 90rem);
   margin: 0 auto;
+}
+
+.asset-editor-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
+.asset-editor-header__trail {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.asset-editor-header__back {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 2.35rem;
+  padding: 0 0.9rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 999px;
+  color: #f3f3f3;
+  background: rgb(19 19 19 / 0.72);
+  backdrop-filter: blur(20px);
+  font-family: var(--cn-font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition:
+    border-color var(--cn-transition),
+    background-color var(--cn-transition),
+    color var(--cn-transition);
+}
+
+.asset-editor-header__back:hover {
+  border-color: rgb(143 245 255 / 0.24);
+  color: #d8f9fc;
+  background: rgb(26 26 26 / 0.86);
+}
+
+.asset-editor-header__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.05rem;
+  padding: 0 0.78rem;
+  border-radius: 999px;
+  color: #8ff5ff;
+  background: rgb(143 245 255 / 0.06);
+  font-family: var(--cn-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.asset-editor-header__signal {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 2.05rem;
+  padding: 0 0.82rem;
+  border-radius: 999px;
+  color: #cfcfcf;
+  background: #151515;
+  font-family: var(--cn-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.asset-editor-header__signal-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #c3f400;
+  box-shadow: 0 0 12px rgb(195 244 0 / 0.28);
 }
 
 .asset-editor-state,
@@ -386,14 +459,12 @@ async function handleSave(status: 'draft' | 'ready') {
 }
 
 .asset-editor-meta {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 1.25rem;
-  padding: 0 0.25rem 0.5rem;
+  padding: 0.1rem 0.25rem 0.5rem;
 }
 
-.asset-editor-meta__title,
-.asset-editor-meta__targets {
+.asset-editor-meta__title {
   display: grid;
   gap: 0.5rem;
 }
@@ -405,8 +476,7 @@ async function handleSave(status: 'draft' | 'ready') {
   margin-bottom: 0.05rem;
 }
 
-.asset-editor-meta__row label,
-.asset-editor-meta__targets label {
+.asset-editor-meta__row label {
   color: #adaaaa;
   font-size: 0.72rem;
   font-weight: 500;
@@ -447,43 +517,6 @@ async function handleSave(status: 'draft' | 'ready') {
   font-weight: 700;
   line-height: 1.1;
   outline: 0;
-}
-
-.asset-editor-meta__divider {
-  display: none;
-  width: 1px;
-  background: rgb(72 72 71 / 0.2);
-}
-
-.asset-editor-meta__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
-.asset-editor-meta__chips button {
-  display: inline-flex;
-  gap: 0.25rem;
-  align-items: center;
-  border: 1px solid rgb(72 72 71 / 0.22);
-  padding: 0.32rem 0.62rem;
-  border-radius: 0.3rem;
-  color: #adaaaa;
-  background: #000;
-  font-family: var(--cn-font-body);
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-
-.asset-editor-meta__chip--primary {
-  color: #8ff5ff !important;
-  border-color: rgb(143 245 255 / 0.25) !important;
-  background: rgb(143 245 255 / 0.05) !important;
-}
-
-.asset-editor-meta__chip--add {
-  border-style: dashed !important;
-  color: #7d7b7b !important;
 }
 
 .asset-editor-workspace {
@@ -579,17 +612,13 @@ async function handleSave(status: 'draft' | 'ready') {
   font-size: 0.72rem;
 }
 
-.asset-editor-body textarea,
-.asset-editor-side__summary {
+.asset-editor-body textarea {
   width: 100%;
   border: 0;
   color: #adaaaa;
   background: transparent;
   outline: 0;
   resize: none;
-}
-
-.asset-editor-body textarea {
   padding: 1rem;
   font-family: var(--cn-font-mono);
   font-size: 0.88rem;
@@ -819,25 +848,6 @@ async function handleSave(status: 'draft' | 'ready') {
 }
 
 @media (min-width: 1024px) {
-  .asset-editor-meta {
-    flex-direction: row;
-    align-items: flex-end;
-  }
-
-  .asset-editor-meta__title {
-    flex: 1;
-  }
-
-  .asset-editor-meta__divider {
-    display: block;
-    height: 3rem;
-    margin-bottom: 0.25rem;
-  }
-
-  .asset-editor-meta__targets {
-    min-width: 22rem;
-  }
-
   .asset-editor-workspace {
     grid-template-columns: minmax(0, 1fr) 20rem;
     align-items: start;
@@ -848,6 +858,15 @@ async function handleSave(status: 'draft' | 'ready') {
 @media (max-width: 900px) {
   .asset-editor-main {
     padding: 1rem;
+  }
+
+  .asset-editor-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .asset-editor-header__trail {
+    flex-wrap: wrap;
   }
 
   .asset-editor-workspace {
