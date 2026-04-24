@@ -31,6 +31,10 @@ const backLabel = computed(() => String(route.meta.backLabel ?? '返回工作区
 const selectedAsset = computed(() => assets.value.find((asset) => asset.id === selectedAssetId.value) ?? null)
 const selectedStrategy = computed(() => strategies.value.find((strategy) => strategy.id === selectedStrategyId.value) ?? null)
 
+function isConnectedAccount(account: AccountRecord) {
+  return account.lifecycleStatus === 'active' && account.connectionStatus === 'connected' && account.hasCurrentCredential
+}
+
 const workspaceName = computed(() => {
   if (!selectedAsset.value || !selectedStrategy.value) {
     return '增长编排工作区'
@@ -51,14 +55,14 @@ async function loadPage() {
   ;[assets.value, strategies.value, accounts.value, agentNodes.value] = await Promise.all([
     listAssets(),
     listStrategies(),
-    listAccounts({ onlyConsumable: true }),
+    listAccounts({ onlyConnected: true }),
     listAgentNodes(),
   ])
 
   selectedAssetId.value ||= assets.value[0]?.id ?? ''
   selectedStrategyId.value ||= strategies.value[1]?.id ?? strategies.value[0]?.id ?? ''
   if (!selectedAccountIds.value.length) {
-    selectedAccountIds.value = accounts.value.filter((account) => account.isConsumable).slice(0, 1).map((account) => account.id)
+    selectedAccountIds.value = accounts.value.filter(isConnectedAccount).slice(0, 1).map((account) => account.id)
   }
 }
 
@@ -91,16 +95,14 @@ function resolveStrategyTag(strategy: StrategyRecord) {
 }
 
 function resolveAccountVisualState(account: AccountRecord) {
-  if (account.statusLabel?.includes('风控')) return 'risk'
-  if (account.statusLabel?.includes('过期')) return 'expired'
-  if (account.statusLabel === '待命') return 'standby'
-  if (account.status === 'error') return 'risk'
-  if (account.status === 'needs-auth') return 'expired'
+  if (account.availabilityStatus === 'risk' || account.availabilityStatus === 'restricted' || account.availabilityStatus === 'offline') return 'risk'
+  if (account.connectionStatus === 'expired' || account.connectionStatus === 'connect_failed') return 'expired'
+  if (account.connectionStatus === 'connecting') return 'standby'
   return 'healthy'
 }
 
 function isSelectableAccount(account: AccountRecord) {
-  return account.isConsumable
+  return isConnectedAccount(account)
 }
 
 function toggleAccount(accountId: string) {
@@ -118,13 +120,7 @@ function toggleAccount(accountId: string) {
 }
 
 function resolveAccountStatus(account: AccountRecord) {
-  if (account.statusLabel) {
-    return account.statusLabel.replace(/\s+/g, '')
-  }
-
-  if (account.status === 'error') return '风控'
-  if (account.status === 'needs-auth') return 'Token过期'
-  return '健康'
+  return account.state.label.replace(/\s+/g, '')
 }
 
 function resolveAccountStatusClass(account: AccountRecord) {
@@ -281,10 +277,10 @@ async function handleSubmit() {
                 :key="account.id"
                 class="account-card"
                 :class="[
-                  `account-card--${resolveAccountStatusClass(account)}`,
+                    `account-card--${resolveAccountStatusClass(account)}`,
                   {
                     'account-card--active': selectedAccountIds.includes(account.id),
-                    'account-card--disabled': account.status === 'needs-auth',
+                    'account-card--disabled': !isSelectableAccount(account),
                   },
                 ]"
                 @click="toggleAccount(account.id)"
@@ -293,7 +289,12 @@ async function handleSubmit() {
 
                 <div class="account-card__top">
                   <div class="account-card__avatar">
-                    <img v-if="account.avatarUrl" :src="account.avatarUrl" :alt="account.name" />
+                    <img
+                      v-if="account.resolvedPlatformProfile.resolvedAvatarUrl"
+                      :src="account.resolvedPlatformProfile.resolvedAvatarUrl"
+                      :alt="account.internalDisplayName"
+                      referrerpolicy="no-referrer"
+                    />
                     <span v-else class="material-symbols-outlined">robot_2</span>
                   </div>
                   <div v-if="selectedAccountIds.includes(account.id)" class="create-card__check">
@@ -303,7 +304,7 @@ async function handleSubmit() {
                 </div>
 
                 <div>
-                  <h5>{{ account.name }}</h5>
+                  <h5>{{ account.internalDisplayName }}</h5>
                   <div class="account-card__meta">
                     <p>{{ account.platform }}</p>
                     <div class="account-card__status" :class="`account-card__status--${resolveAccountStatusClass(account)}`">

@@ -41,12 +41,12 @@ describe.sequential("strategy module http api", () => {
           name: "引流策略",
           tags: ["growth", "mvp", "growth"],
           contentMarkdown: [
-            '<!-- cn-strategy-import:start source-id="seed-1" -->',
+            "<!-- s:seed-1 -->",
             '# {{string:title="默认标题"}}',
             "",
             "重试次数：{{int:max_retry=3}}",
             '重复标题：{{string:title="默认标题"}}',
-            '<!-- cn-strategy-import:end source-id="seed-1" -->',
+            "<!-- /s -->",
           ].join("\n"),
         }),
       },
@@ -188,6 +188,19 @@ describe.sequential("strategy module http api", () => {
     await expect(readFile(contentPath, "utf8")).resolves.toBe(
       updatedStrategy.contentMarkdown,
     );
+
+    const deleteResponse = await fetch(
+      `${application.http.url}/api/strategies/${createdStrategy.strategyId}`,
+      {
+        method: "DELETE",
+      },
+    );
+    expect(deleteResponse.status).toBe(204);
+
+    const deletedDetailResponse = await fetch(
+      `${application.http.url}/api/strategies/${createdStrategy.strategyId}`,
+    );
+    expect(deletedDetailResponse.status).toBe(404);
   });
 
   it("rejects invalid placeholder syntax and returns 404 for missing strategy detail", async () => {
@@ -233,7 +246,7 @@ describe.sequential("strategy module http api", () => {
     });
   });
 
-  it("does not expose deletion, compile endpoints, binding results, or relation tables in mvp", async () => {
+  it("exposes deletion but still does not expose compile endpoints, binding results, or relation tables in mvp", async () => {
     const { application, workingDirectory } = await startTemporaryApplication(
       temporaryDirectories,
       applications,
@@ -263,8 +276,7 @@ describe.sequential("strategy module http api", () => {
         method: "DELETE",
       },
     );
-    expect(deleteResponse.status).toBe(405);
-    expect(deleteResponse.headers.get("allow")).toBe("GET, PUT");
+    expect(deleteResponse.status).toBe(204);
 
     const compileResponse = await fetch(
       `${application.http.url}/api/strategies/${createdStrategy.strategyId}/compile`,
@@ -277,16 +289,12 @@ describe.sequential("strategy module http api", () => {
     const detailResponse = await fetch(
       `${application.http.url}/api/strategies/${createdStrategy.strategyId}`,
     );
-    const detailPayload = (await detailResponse.json()) as Record<
-      string,
-      unknown
-    >;
+    expect(detailResponse.status).toBe(404);
+    const detailPayload = (await detailResponse.json()) as Record<string, unknown>;
 
-    expect(detailPayload).not.toHaveProperty("compiledContent");
-    expect(detailPayload).not.toHaveProperty("bindings");
-    expect(detailPayload).not.toHaveProperty("status");
-    expect(detailPayload).not.toHaveProperty("version");
-    expect(detailPayload).not.toHaveProperty("deletedAt");
+    expect(detailPayload).toMatchObject({
+      code: "STRATEGY_NOT_FOUND",
+    });
 
     const database = new DatabaseSync(runtimePaths.databaseFile);
     const relationTables = database

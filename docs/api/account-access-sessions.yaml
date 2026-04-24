@@ -1,0 +1,359 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Account Access Sessions API
+  version: 2.0.0
+  summary: 账号接入会话契约
+  description: >
+    access session 是账号绑定的短生命周期接入资源，用于承载手工令牌录入、
+    二维码登录、扫码轮询、令牌验证和日志读取。它不承担账号创建职责，也不会在验证成功前覆盖当前生效凭证。
+tags:
+  - name: AccountAccessSessions
+    description: 账号 access session 接口
+paths:
+  /api/accounts/{accountId}/access-sessions/token:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags: [AccountAccessSessions]
+      summary: 创建手工令牌接入会话
+      operationId: startManualAccessSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartManualAccessSessionRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessSessionDetail'
+        '400':
+          description: 参数不合法
+        '404':
+          description: 账号不存在
+        '409':
+          description: 当前状态不允许接入
+  /api/accounts/{accountId}/access-sessions/qr:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags: [AccountAccessSessions]
+      summary: 创建二维码接入会话
+      operationId: startQrAccessSession
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartQrAccessSessionRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessSessionDetail'
+        '400':
+          description: 参数不合法
+        '404':
+          description: 账号不存在
+        '409':
+          description: 当前状态不允许接入
+  /api/accounts/{accountId}/access-sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [AccountAccessSessions]
+      summary: 查询接入会话详情
+      operationId: getAccessSession
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessSessionDetail'
+        '404':
+          description: 账号或会话不存在
+  /api/accounts/{accountId}/access-sessions/{sessionId}/poll:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [AccountAccessSessions]
+      summary: 轮询二维码接入状态
+      operationId: pollAccessSession
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PollAccessSessionRequest'
+      responses:
+        '200':
+          description: 轮询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessSessionDetail'
+        '404':
+          description: 账号或会话不存在
+        '409':
+          description: 当前会话不是二维码流程或已不可轮询
+  /api/accounts/{accountId}/access-sessions/{sessionId}/verify:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [AccountAccessSessions]
+      summary: 验证接入会话并尝试生效
+      operationId: verifyAccessSession
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyAccessSessionRequest'
+      responses:
+        '200':
+          description: 验证完成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyAccessSessionResponse'
+        '404':
+          description: 账号或会话不存在
+        '409':
+          description: 当前状态不允许验证
+  /api/accounts/{accountId}/access-sessions/{sessionId}/logs:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [AccountAccessSessions]
+      summary: 查询接入会话日志
+      operationId: getAccessSessionLogs
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessSessionLogsResponse'
+        '404':
+          description: 账号或会话不存在
+components:
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    AccessMode:
+      type: string
+      enum: [manual_token, qr_login]
+    AccessSessionStatus:
+      type: string
+      enum:
+        - waiting_for_scan
+        - waiting_for_confirmation
+        - ready_for_verification
+        - verifying
+        - verified
+        - verify_failed
+        - expired
+        - canceled
+    VerificationResult:
+      type: string
+      enum: [succeeded, failed]
+    AccessSessionLogLevel:
+      type: string
+      enum: [info, warn, error]
+    ResolvedPlatformProfile:
+      type: object
+      required:
+        - resolvedPlatformAccountUid
+        - resolvedDisplayName
+        - resolvedAvatarUrl
+        - resolvedProfileMetadata
+      properties:
+        resolvedPlatformAccountUid:
+          type:
+            - string
+            - 'null'
+        resolvedDisplayName:
+          type:
+            - string
+            - 'null'
+        resolvedAvatarUrl:
+          type:
+            - string
+            - 'null'
+        resolvedProfileMetadata:
+          type: object
+          additionalProperties: true
+    AccessSessionDetail:
+      type: object
+      required:
+        - accountId
+        - sessionId
+        - platform
+        - accessMode
+        - sessionStatus
+        - sessionStatusReason
+        - challenge
+        - hasCandidateCredential
+        - credentialApplied
+        - resolvedPlatformProfile
+        - hasLogs
+        - expiresAt
+        - verifiedAt
+        - appliedAt
+        - createdAt
+        - updatedAt
+      properties:
+        accountId:
+          type: string
+        sessionId:
+          type: string
+        platform:
+          type: string
+        accessMode:
+          $ref: '#/components/schemas/AccessMode'
+        sessionStatus:
+          $ref: '#/components/schemas/AccessSessionStatus'
+        sessionStatusReason:
+          type:
+            - string
+            - 'null'
+        challenge:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: 'null'
+        hasCandidateCredential:
+          type: boolean
+        credentialApplied:
+          type: boolean
+        resolvedPlatformProfile:
+          $ref: '#/components/schemas/ResolvedPlatformProfile'
+        hasLogs:
+          type: boolean
+        expiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        verifiedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        appliedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    StartManualAccessSessionRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+        expiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    StartQrAccessSessionRequest:
+      type: object
+      properties:
+        expiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    PollAccessSessionRequest:
+      type: object
+      properties:
+        force:
+          type: boolean
+          default: false
+    VerifyAccessSessionRequest:
+      type: object
+      additionalProperties: false
+    AccessSessionLogEntry:
+      type: object
+      required:
+        - timestamp
+        - level
+        - message
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          $ref: '#/components/schemas/AccessSessionLogLevel'
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    VerifyAccessSessionResponse:
+      type: object
+      required:
+        - sessionId
+        - verificationResult
+        - verificationReason
+        - credentialApplied
+        - account
+        - session
+      properties:
+        sessionId:
+          type: string
+        verificationResult:
+          $ref: '#/components/schemas/VerificationResult'
+        verificationReason:
+          type:
+            - string
+            - 'null'
+        credentialApplied:
+          type: boolean
+        account:
+          $ref: 'accounts.yaml#/components/schemas/AccountDetail'
+        session:
+          $ref: '#/components/schemas/AccessSessionDetail'
+    AccessSessionLogsResponse:
+      type: object
+      required:
+        - accountId
+        - sessionId
+        - entries
+      properties:
+        accountId:
+          type: string
+        sessionId:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessSessionLogEntry'

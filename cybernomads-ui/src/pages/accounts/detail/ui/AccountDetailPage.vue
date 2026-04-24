@@ -1,46 +1,49 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
   getAccountById,
-  getConnectionAttempt,
-  getConnectionAttemptLogs,
-  runAvailabilityCheck,
-  startConnectionAttempt,
+  getAccessSession,
+  getAccessSessionLogs,
+  pollAccessSession,
+  startQrAccessSession,
+  startTokenAccessSession,
   updateAccount,
-  validateConnectionAttempt,
+  verifyAccessSession,
 } from '@/entities/account/api/account-service'
-import {
-  resolvePlatformColorClass,
-} from '@/entities/account/model/mappers'
+import { resolvePlatformColorClass } from '@/entities/account/model/mappers'
 import type {
-  AccountConnectionAttemptDetailRecord,
+  AccessMode,
+  AccessSessionDetailRecord,
+  AccessSessionLogsRecord,
   AccountDetailRecord,
   AvailabilityStatus,
-  ConnectionAttemptLogsRecord,
-  ConnectionMethod,
+  ConnectionStatus,
   JsonObject,
   LifecycleStatus,
-  LoginStatus,
 } from '@/entities/account/model/types'
 
 type FeedbackTone = 'info' | 'success' | 'error'
+type QrStepState = 'done' | 'active' | 'pending' | 'error'
 
 const route = useRoute()
 
 const account = ref<AccountDetailRecord | null>(null)
-const currentAttempt = ref<AccountConnectionAttemptDetailRecord | null>(null)
-const currentAttemptLogs = ref<ConnectionAttemptLogsRecord | null>(null)
+const currentSession = ref<AccessSessionDetailRecord | null>(null)
+const currentSessionLogs = ref<AccessSessionLogsRecord | null>(null)
 const isLoading = ref(false)
 const pageError = ref('')
 const feedbackMessage = ref('')
 const feedbackTone = ref<FeedbackTone>('info')
 const feedbackVisible = ref(false)
 const isSavingProfile = ref(false)
-const isStartingAttempt = ref(false)
-const isCheckingAvailability = ref(false)
+const isRefreshingQr = ref(false)
+const isVerifyingConnection = ref(false)
+const isQrPolling = ref(false)
 let feedbackTimer: ReturnType<typeof setTimeout> | null = null
+let qrPollingTimer: ReturnType<typeof setTimeout> | null = null
+let latestQrFeedbackKey: string | null = null
 
 const profileForm = reactive({
   internalDisplayName: '',
@@ -49,46 +52,257 @@ const profileForm = reactive({
   platformMetadataText: '{}',
 })
 
-const tagDraft = ref('')
-const isTagComposerOpen = ref(false)
-
 const connectForm = reactive({
-  connectionMethod: 'manual_token' as ConnectionMethod,
   tokenValue: '',
 })
+
+const tagDraft = ref('')
+const isTagComposerOpen = ref(false)
 
 const backTo = computed(() => String(route.meta.backTo ?? '/accounts'))
 const backLabel = computed(() => String(route.meta.backLabel ?? '返回账号池'))
 const accountId = computed(() => String(route.params.accountId ?? ''))
 const isDeleted = computed(() => account.value?.lifecycleStatus === 'deleted')
-
-const canEditProfile = computed(
-  () => Boolean(account.value) && !isDeleted.value && !isSavingProfile.value,
+const canEditProfile = computed(() => Boolean(account.value) && !isDeleted.value && !isSavingProfile.value)
+const canRefreshQr = computed(() => Boolean(account.value) && !isDeleted.value && !isRefreshingQr.value)
+const canVerifyConnection = computed(
+  () => Boolean(account.value) && !isDeleted.value && !isVerifyingConnection.value,
 )
-
-const canStartAttempt = computed(
-  () => Boolean(account.value) && !isDeleted.value && !isStartingAttempt.value,
-)
-
-const canRunAvailabilityCheck = computed(
-  () =>
-    Boolean(account.value) &&
-    account.value?.lifecycleStatus === 'active' &&
-    (
-      (account.value.loginStatus === 'connected' && account.value.activeToken.hasToken) ||
-      currentAttempt.value?.attemptStatus === 'ready_for_validation'
-    ) &&
-    !isCheckingAvailability.value,
-)
-
-const challengeImageUrl = computed(() => currentAttempt.value?.challengeImageUrl ?? null)
-const challengeMessage = computed(() => currentAttempt.value?.challengeMessage ?? null)
-const hasStoredActiveToken = computed(() => Boolean(account.value?.activeToken.hasToken))
+const hasStoredCurrentCredential = computed(() => Boolean(account.value?.currentCredential.hasCredential))
+const hasDraftToken = computed(() => Boolean(connectForm.tokenValue.trim()))
 const tokenInputPlaceholder = computed(() =>
-  hasStoredActiveToken.value
-    ? '输入新的 Token 以覆盖当前已保存凭证'
-    : '输入或粘贴新的 Token',
+  hasStoredCurrentCredential.value ? '输入新的令牌，验证成功后会替换当前生效令牌' : '输入或粘贴令牌',
 )
+const displaySession = computed(() => currentSession.value ?? account.value?.currentAccessSession ?? null)
+const challengeImageUrl = computed(() => displaySession.value?.challengeImageUrl ?? null)
+const challengeMessage = computed(() => displaySession.value?.challengeMessage ?? null)
+const profileTags = computed(() => parseTags(profileForm.tagsText))
+const qrSessionStatus = computed(() =>
+  displaySession.value?.accessMode === 'qr_login' ? displaySession.value.sessionStatus : null,
+)
+const isQrAutoManaged = computed(
+  () =>
+    !hasDraftToken.value &&
+    (qrSessionStatus.value === 'waiting_for_scan' ||
+      qrSessionStatus.value === 'waiting_for_confirmation' ||
+      qrSessionStatus.value === 'ready_for_verification' ||
+      isQrPolling.value),
+)
+const verifyButtonLabel = computed(() => {
+  if (isVerifyingConnection.value) {
+    return '验证中…'
+  }
+
+  if (hasDraftToken.value) {
+    return hasStoredCurrentCredential.value ? '验证并替换令牌' : '验证令牌'
+  }
+
+  if (qrSessionStatus.value === 'waiting_for_scan') {
+    return '等待扫码中'
+  }
+
+  if (qrSessionStatus.value === 'waiting_for_confirmation') {
+    return '等待手机确认'
+  }
+
+  if (qrSessionStatus.value === 'ready_for_verification' || isQrPolling.value) {
+    return '系统自动验证中'
+  }
+
+  if (qrSessionStatus.value === 'verified') {
+    return '扫码已完成'
+  }
+
+  if (qrSessionStatus.value === 'verify_failed') {
+    return '刷新二维码后重试'
+  }
+
+  return '输入令牌后验证'
+})
+const canManualVerify = computed(() => canVerifyConnection.value && hasDraftToken.value)
+const qrActionButtonLabel = computed(() => {
+  if (isRefreshingQr.value) {
+    return '生成中…'
+  }
+
+  if (qrSessionStatus.value === 'waiting_for_scan' || qrSessionStatus.value === 'waiting_for_confirmation') {
+    return '重新生成二维码'
+  }
+
+  if (qrSessionStatus.value === 'verified') {
+    return '重新扫码登录'
+  }
+
+  return '刷新二维码'
+})
+const tokenHelperCopy = computed(() => {
+  if (hasDraftToken.value) {
+    return '当前会按手工令牌流程处理，点击下方按钮后会直接验证并尝试替换当前令牌。'
+  }
+
+  if (qrSessionStatus.value === 'waiting_for_scan') {
+    return '当前正在扫码流程中，不需要手动点验证连接；系统会在检测到扫码后自动继续。'
+  }
+
+  if (qrSessionStatus.value === 'waiting_for_confirmation') {
+    return '已经检测到扫码，请在手机上确认授权；确认后系统会自动完成验证。'
+  }
+
+  if (qrSessionStatus.value === 'ready_for_verification') {
+    return '扫码结果已经返回，系统正在自动验证并切换当前令牌。'
+  }
+
+  if (qrSessionStatus.value === 'verified') {
+    return '扫码流程已经完成。如果要换一个账号，可以直接刷新二维码重新登录。'
+  }
+
+  return '如果你已经从其他地方拿到了令牌，也可以直接粘贴到这里，走手工验证流程。'
+})
+const passiveActionCopy = computed(() => {
+  if (isQrAutoManaged.value) {
+    return '扫码流程正在由系统自动处理，不需要你额外点击验证。'
+  }
+
+  if (qrSessionStatus.value === 'verified') {
+    return '当前扫码登录已经完成。如需切换账号，直接刷新二维码重新扫码即可。'
+  }
+
+  if (qrSessionStatus.value === 'verify_failed') {
+    return '当前扫码验证失败，建议刷新二维码重新开始，或者改用手工令牌。'
+  }
+
+  return '粘贴令牌后，下方会自动切换为可提交状态。'
+})
+const secondaryQrMessage = computed(() => {
+  const message = challengeMessage.value
+
+  if (!message) {
+    return null
+  }
+
+  if (message.includes('验证连接')) {
+    return null
+  }
+
+  if (message === qrStatusCopy.value.detail) {
+    return null
+  }
+
+  return message
+})
+const qrStepItems = computed(() => {
+  const status = qrSessionStatus.value
+  const steps: Array<{ label: string; state: QrStepState }> = [
+    {
+      label: '生成二维码',
+      state: status ? 'done' : 'active',
+    },
+    {
+      label: '手机确认',
+      state: 'pending',
+    },
+    {
+      label: '自动生效',
+      state: 'pending',
+    },
+  ]
+
+  if (!status) {
+    return steps
+  }
+
+  if (status === 'waiting_for_scan') {
+    steps[1].state = 'active'
+    return steps
+  }
+
+  if (status === 'waiting_for_confirmation') {
+    steps[1].state = 'active'
+    return steps
+  }
+
+  if (status === 'ready_for_verification') {
+    steps[1].state = 'done'
+    steps[2].state = 'active'
+    return steps
+  }
+
+  if (status === 'verified') {
+    steps[1].state = 'done'
+    steps[2].state = 'done'
+    return steps
+  }
+
+  if (status === 'verify_failed') {
+    steps[1].state = 'done'
+    steps[2].state = 'error'
+    return steps
+  }
+
+  if (status === 'expired' || status === 'canceled') {
+    steps[1].state = 'error'
+    return steps
+  }
+
+  return steps
+})
+const qrStatusCopy = computed(() => {
+  const session = displaySession.value
+
+  if (!session || session.accessMode !== 'qr_login') {
+    return {
+      label: '等待开始',
+      detail: '点击刷新二维码，使用目标平台 App 扫码登录。',
+    }
+  }
+
+  if (session.sessionStatus === 'waiting_for_scan') {
+    return {
+      label: '等待扫码',
+      detail: '二维码已生成，请使用目标平台 App 扫码。',
+    }
+  }
+
+  if (session.sessionStatus === 'waiting_for_confirmation') {
+    return {
+      label: '已扫码',
+      detail: '已经检测到扫码，请在手机上确认登录授权。',
+    }
+  }
+
+  if (session.sessionStatus === 'ready_for_verification') {
+    return {
+      label: '扫码完成',
+      detail: '已拿到登录结果，正在验证并生效当前令牌。',
+    }
+  }
+
+  if (session.sessionStatus === 'verified') {
+    return {
+      label: '登录成功',
+      detail: '扫码登录已经完成，当前令牌已生效。',
+    }
+  }
+
+  if (session.sessionStatus === 'verify_failed') {
+    return {
+      label: '验证失败',
+      detail: session.sessionStatusReason ?? '扫码结果验证失败，请刷新二维码后重试。',
+    }
+  }
+
+  if (session.sessionStatus === 'expired') {
+    return {
+      label: '二维码过期',
+      detail: '当前二维码已过期，请刷新后重新扫码。',
+    }
+  }
+
+  return {
+    label: '会话已结束',
+    detail: session.sessionStatusReason ?? '当前扫码会话已结束，请重新开始。',
+  }
+})
 
 watch(
   accountId,
@@ -97,6 +311,37 @@ watch(
   },
   { immediate: true },
 )
+
+watch(
+  displaySession,
+  (session) => {
+    if (!session || session.accessMode !== 'qr_login') {
+      stopQrPolling()
+      return
+    }
+
+    if (
+      session.sessionStatus === 'waiting_for_scan' ||
+      session.sessionStatus === 'waiting_for_confirmation' ||
+      session.sessionStatus === 'ready_for_verification'
+    ) {
+      scheduleQrPolling(1200)
+      return
+    }
+
+    stopQrPolling()
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  stopQrPolling()
+
+  if (feedbackTimer) {
+    clearTimeout(feedbackTimer)
+    feedbackTimer = null
+  }
+})
 
 function setFeedback(message: string, tone: FeedbackTone) {
   feedbackMessage.value = message
@@ -110,6 +355,15 @@ function setFeedback(message: string, tone: FeedbackTone) {
   feedbackTimer = setTimeout(() => {
     feedbackVisible.value = false
   }, 2800)
+}
+
+function setQrFeedbackOnce(key: string, message: string, tone: FeedbackTone) {
+  if (latestQrFeedbackKey === key) {
+    return
+  }
+
+  latestQrFeedbackKey = key
+  setFeedback(message, tone)
 }
 
 function dismissFeedback() {
@@ -138,8 +392,6 @@ function parseTags(rawValue: string) {
     ),
   )
 }
-
-const profileTags = computed(() => parseTags(profileForm.tagsText))
 
 function syncTagsText(nextTags: string[]) {
   profileForm.tagsText = nextTags.join(', ')
@@ -192,22 +444,134 @@ function parseJsonObject(rawValue: string, fieldLabel: string): JsonObject {
   return parsed as JsonObject
 }
 
-async function loadAttemptResources(attemptId: string) {
+async function refreshSessionLogs(sessionId: string) {
   if (!account.value) {
-    currentAttempt.value = null
-    currentAttemptLogs.value = null
+    currentSessionLogs.value = null
     return
   }
 
-  const detail = await getConnectionAttempt(account.value.id, attemptId)
-  currentAttempt.value = detail
-  currentAttemptLogs.value = detail.hasLogs
-    ? await getConnectionAttemptLogs(account.value.id, attemptId)
-    : {
-        accountId: account.value.id,
-        attemptId,
-        entries: [],
-      }
+  currentSessionLogs.value = await getAccessSessionLogs(account.value.id, sessionId)
+}
+
+function stopQrPolling() {
+  if (qrPollingTimer) {
+    clearTimeout(qrPollingTimer)
+    qrPollingTimer = null
+  }
+}
+
+function scheduleQrPolling(delayMs = 1800) {
+  stopQrPolling()
+
+  qrPollingTimer = setTimeout(() => {
+    void tickQrSession()
+  }, delayMs)
+}
+
+async function applyVerifiedSession(sessionId: string, options: { successMessage?: string } = {}) {
+  if (!account.value) {
+    return
+  }
+
+  const result = await verifyAccessSession(account.value.id, sessionId, {})
+  await loadAccount({ showLoading: false })
+
+  if (result.verificationResult === 'succeeded') {
+    setFeedback(options.successMessage ?? '连接验证成功，当前令牌已生效。', 'success')
+    return
+  }
+
+  setFeedback(result.verificationReason ?? '连接验证失败，请检查令牌或扫码状态。', 'error')
+}
+
+async function tickQrSession() {
+  const sessionId = currentSession.value?.sessionId ?? displaySession.value?.sessionId
+
+  if (!account.value || !sessionId) {
+    stopQrPolling()
+    return
+  }
+
+  let session =
+    currentSession.value?.sessionId === sessionId
+      ? currentSession.value
+      : await getAccessSession(account.value.id, sessionId)
+
+  currentSession.value = session
+
+  if (session.accessMode !== 'qr_login') {
+    stopQrPolling()
+    return
+  }
+
+  if (isQrPolling.value || isVerifyingConnection.value) {
+    scheduleQrPolling(1800)
+    return
+  }
+
+  if (
+    session.sessionStatus !== 'waiting_for_scan' &&
+    session.sessionStatus !== 'waiting_for_confirmation' &&
+    session.sessionStatus !== 'ready_for_verification'
+  ) {
+    stopQrPolling()
+    return
+  }
+
+  isQrPolling.value = true
+
+  try {
+    let nextSession =
+      session.sessionStatus === 'ready_for_verification'
+        ? session
+        : await pollAccessSession(account.value.id, session.sessionId, {})
+
+    currentSession.value = nextSession
+    await refreshSessionLogs(nextSession.sessionId)
+
+    if (nextSession.sessionStatus === 'waiting_for_scan') {
+      scheduleQrPolling(1800)
+      return
+    }
+
+    if (nextSession.sessionStatus === 'waiting_for_confirmation') {
+      setQrFeedbackOnce(
+        `${nextSession.sessionId}:waiting_for_confirmation`,
+        '已经检测到扫码，请在手机上确认登录授权。',
+        'info',
+      )
+      scheduleQrPolling(1500)
+      return
+    }
+
+    if (nextSession.sessionStatus === 'ready_for_verification') {
+      await applyVerifiedSession(nextSession.sessionId, {
+        successMessage: '扫码登录成功，当前令牌已自动生效。',
+      })
+      return
+    }
+
+    if (nextSession.sessionStatus === 'expired') {
+      await loadAccount({ showLoading: false })
+      setFeedback('二维码已过期，请刷新后重新扫码。', 'error')
+      return
+    }
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : '扫码状态同步失败。', 'error')
+  } finally {
+    isQrPolling.value = false
+  }
+}
+
+async function loadSessionResources(sessionId: string) {
+  if (!account.value) {
+    currentSession.value = null
+    currentSessionLogs.value = null
+    return
+  }
+
+  currentSession.value = await getAccessSession(account.value.id, sessionId)
+  await refreshSessionLogs(sessionId)
 }
 
 async function loadAccount(options: { showLoading?: boolean } = {}) {
@@ -222,14 +586,14 @@ async function loadAccount(options: { showLoading?: boolean } = {}) {
   try {
     const detail = await getAccountById(accountId.value)
     account.value = detail
-    currentAttempt.value = null
-    currentAttemptLogs.value = null
+    currentSession.value = null
+    currentSessionLogs.value = null
 
     if (detail) {
       syncProfileForm(detail)
 
-      if (detail.latestConnectionAttempt) {
-        await loadAttemptResources(detail.latestConnectionAttempt.attemptId)
+      if (detail.currentAccessSession) {
+        await loadSessionResources(detail.currentAccessSession.sessionId)
       }
     }
   } catch (error) {
@@ -279,100 +643,100 @@ async function handleSaveProfile() {
   }
 }
 
-async function handleStartAttempt() {
+async function handleRefreshQrSession() {
   if (!account.value) {
     return
   }
 
-  if (connectForm.connectionMethod === 'manual_token' && !connectForm.tokenValue.trim()) {
-    setFeedback('请输入令牌。', 'error')
+  isRefreshingQr.value = true
+
+  try {
+    currentSession.value = await startQrAccessSession(account.value.id, {})
+    latestQrFeedbackKey = null
+    await refreshSessionLogs(currentSession.value.sessionId)
+    await loadAccount({ showLoading: false })
+    setFeedback('二维码已刷新，请使用对应平台 App 扫码。', 'success')
+    scheduleQrPolling(1200)
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : '二维码刷新失败。', 'error')
+  } finally {
+    isRefreshingQr.value = false
+  }
+}
+
+async function handleVerifyConnection() {
+  if (!account.value) {
     return
   }
 
-  isStartingAttempt.value = true
+  isVerifyingConnection.value = true
 
   try {
-    const attempt = await startConnectionAttempt(account.value.id, {
-      connectionMethod: connectForm.connectionMethod,
-      tokenValue: connectForm.connectionMethod === 'manual_token' ? connectForm.tokenValue.trim() : null,
-      context: connectForm.connectionMethod === 'qr_login' ? {} : undefined,
-    })
+    let session = currentSession.value
+    const trimmedToken = connectForm.tokenValue.trim()
 
-    currentAttempt.value = attempt
-    currentAttemptLogs.value = attempt.hasLogs
-      ? await getConnectionAttemptLogs(account.value.id, attempt.attemptId)
-      : {
-          accountId: account.value.id,
-          attemptId: attempt.attemptId,
-          entries: [],
-        }
+    if (trimmedToken) {
+      session = await startTokenAccessSession(account.value.id, {
+        token: trimmedToken,
+      })
+      currentSession.value = session
+      connectForm.tokenValue = ''
+      await refreshSessionLogs(session.sessionId)
+    } else {
+      const sessionId = currentSession.value?.sessionId ?? account.value.currentAccessSession?.sessionId
 
-    const latest = await getAccountById(account.value.id)
+      if (!sessionId) {
+        throw new Error('请先输入令牌，或者先刷新二维码开始扫码授权。')
+      }
 
-    if (latest) {
-      account.value = latest
-      syncProfileForm(latest)
+      session =
+        currentSession.value?.sessionId === sessionId
+          ? currentSession.value
+          : await getAccessSession(account.value.id, sessionId)
+      currentSession.value = session
     }
 
-    if (attempt.connectionMethod === 'qr_login') {
-      setFeedback('二维码已生成，请扫码完成授权。', 'success')
+    if (!session) {
+      throw new Error('当前没有可用的接入会话。')
+    }
+
+    if (session.accessMode === 'qr_login' && (
+      session.sessionStatus === 'waiting_for_scan' ||
+      session.sessionStatus === 'waiting_for_confirmation'
+    )) {
+      session = await pollAccessSession(account.value.id, session.sessionId, {})
+      currentSession.value = session
+      await refreshSessionLogs(session.sessionId)
+    }
+
+    if (session.sessionStatus === 'waiting_for_scan') {
+      await loadAccount({ showLoading: false })
+      setFeedback('二维码还未被扫码，请先完成扫码。', 'info')
       return
     }
 
-    setFeedback('令牌已写入待校验连接尝试，接下来点击“验证连接”。', 'success')
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : '连接尝试创建失败。', 'error')
-  } finally {
-    isStartingAttempt.value = false
-  }
-}
-
-async function handleStartManualAttempt() {
-  connectForm.connectionMethod = 'manual_token'
-  await handleStartAttempt()
-}
-
-async function handleStartQrAttempt() {
-  connectForm.connectionMethod = 'qr_login'
-  await handleStartAttempt()
-}
-
-async function handleAvailabilityCheck() {
-  if (!account.value) {
-    return
-  }
-
-  isCheckingAvailability.value = true
-
-  try {
-    if (!account.value.activeToken.hasToken || account.value.loginStatus !== 'connected') {
-      if (!currentAttempt.value || currentAttempt.value.attemptStatus !== 'ready_for_validation') {
-        throw new Error('当前还没有可验证的令牌，请先录入令牌或完成扫码授权。')
-      }
-
-      const validation = await validateConnectionAttempt(account.value.id, currentAttempt.value.attemptId, {})
-
-      if (validation.validationResult !== 'succeeded') {
-        await loadAttemptResources(currentAttempt.value.attemptId)
-        await loadAccount({ showLoading: false })
-        throw new Error(validation.validationReason ?? '令牌校验失败，请检查后重试。')
-      }
-
-      await loadAttemptResources(currentAttempt.value.attemptId)
+    if (session.sessionStatus === 'waiting_for_confirmation') {
       await loadAccount({ showLoading: false })
+      setFeedback('请在移动端确认登录授权后，再次点击验证连接。', 'info')
+      return
     }
 
-    const result = await runAvailabilityCheck(account.value.id)
-    await loadAccount({ showLoading: false })
-    setFeedback(
-      result.availabilityStatusReason ??
-        (result.availabilityStatus === 'healthy' ? '可用性检查通过。' : '可用性检查已完成。'),
-      result.availabilityStatus === 'healthy' ? 'success' : 'error',
-    )
+    if (session.sessionStatus === 'expired' || session.sessionStatus === 'canceled') {
+      await loadAccount({ showLoading: false })
+      throw new Error('当前接入会话已失效，请重新刷新二维码或重新录入令牌。')
+    }
+
+    if (session.sessionStatus !== 'ready_for_verification' && session.sessionStatus !== 'verify_failed') {
+      await loadAccount({ showLoading: false })
+      setFeedback(session.sessionStatusReason ?? '当前会话暂时还不能验证，请稍后重试。', 'info')
+      return
+    }
+
+    await applyVerifiedSession(session.sessionId)
   } catch (error) {
-    setFeedback(error instanceof Error ? error.message : '可用性检查失败。', 'error')
+    setFeedback(error instanceof Error ? error.message : '连接验证失败。', 'error')
   } finally {
-    isCheckingAvailability.value = false
+    isVerifyingConnection.value = false
   }
 }
 
@@ -382,12 +746,20 @@ function resolveLifecycleLabel(status: LifecycleStatus) {
   return '已删除'
 }
 
-function resolveLoginLabel(status: LoginStatus) {
+function resolveConnectionLabel(status: ConnectionStatus) {
   if (status === 'not_logged_in') return '未登录'
   if (status === 'connecting') return '接入中'
   if (status === 'connected') return '已连接'
-  if (status === 'login_failed') return '登录失败'
-  return '令牌过期'
+  if (status === 'connect_failed') return '接入失败'
+  return '已过期'
+}
+
+function resolveConnectionIcon(status: ConnectionStatus) {
+  if (status === 'connected') return 'check_circle'
+  if (status === 'connecting') return 'sync'
+  if (status === 'connect_failed') return 'error'
+  if (status === 'expired') return 'schedule'
+  return 'wifi_tethering_error'
 }
 
 function resolveAvailabilityLabel(status: AvailabilityStatus) {
@@ -398,8 +770,8 @@ function resolveAvailabilityLabel(status: AvailabilityStatus) {
   return '未知'
 }
 
-function resolveConnectionMethodLabel(method: ConnectionMethod) {
-  return method === 'qr_login' ? '扫码登录' : '手工令牌'
+function resolveAccessModeLabel(mode: AccessMode) {
+  return mode === 'qr_login' ? '扫码授权' : '令牌录入'
 }
 
 function resolveIdentityFallback(label: string) {
@@ -418,7 +790,7 @@ function resolveIdentityFallback(label: string) {
 
       <section v-else-if="isLoading" class="account-banner account-banner--info">
         <strong>正在加载账号详情</strong>
-        <p>正在请求账号脱敏视图、连接尝试和日志信息，请稍候。</p>
+        <p>正在请求账号信息、当前接入会话和日志信息，请稍候。</p>
       </section>
 
       <section v-else-if="!account" class="account-banner account-banner--info">
@@ -460,11 +832,11 @@ function resolveIdentityFallback(label: string) {
           <div class="account-detail-header__chips">
             <span>
               <span class="material-symbols-outlined">schedule</span>
-              <span>{{ account.activeToken.updatedAtLabel ? `令牌更新 ${account.activeToken.updatedAtLabel}` : '令牌未生效' }}</span>
+              <span>{{ account.currentCredential.updatedAtLabel ? `令牌更新 ${account.currentCredential.updatedAtLabel}` : '令牌未生效' }}</span>
             </span>
             <span>
               <span class="material-symbols-outlined">vpn_lock</span>
-              <span>{{ account.activeToken.hasToken ? 'Encrypted' : 'Pending Login' }}</span>
+              <span>{{ account.currentCredential.hasCredential ? '已保存令牌' : '未接入令牌' }}</span>
             </span>
           </div>
         </header>
@@ -479,6 +851,7 @@ function resolveIdentityFallback(label: string) {
                     v-if="account.resolvedPlatformProfile.resolvedAvatarUrl"
                     :src="account.resolvedPlatformProfile.resolvedAvatarUrl"
                     :alt="account.internalDisplayName"
+                    referrerpolicy="no-referrer"
                   />
                   <div v-else class="account-profile__avatar-fallback">
                     <span>{{ resolveIdentityFallback(account.internalDisplayName) }}</span>
@@ -625,7 +998,6 @@ function resolveIdentityFallback(label: string) {
                 </button>
               </div>
             </section>
-
           </div>
 
           <div class="account-detail-center">
@@ -645,7 +1017,32 @@ function resolveIdentityFallback(label: string) {
                   </div>
                 </div>
                 <div class="account-qr-inline__content">
-                  <p>{{ challengeMessage ?? '请使用目标平台移动端 App 扫描二维码进行授权登录。' }}</p>
+                  <div class="account-qr-inline__headline">
+                    <div class="account-qr-inline__status">
+                      <strong>{{ qrStatusCopy.label }}</strong>
+                      <span v-if="isQrPolling">状态同步中…</span>
+                    </div>
+                    <div class="account-qr-steps" aria-label="扫码流程进度">
+                      <div
+                        v-for="step in qrStepItems"
+                        :key="step.label"
+                        class="account-qr-step"
+                        :class="`account-qr-step--${step.state}`"
+                      >
+                        <span class="account-qr-step__dot" />
+                        <span class="account-qr-step__label">{{ step.label }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="account-qr-inline__detail">{{ qrStatusCopy.detail }}</p>
+                  <small v-if="secondaryQrMessage">
+                    {{ secondaryQrMessage }}
+                  </small>
+                  <div v-if="displaySession" class="account-token-meta">
+                    <span>当前会话：{{ resolveAccessModeLabel(displaySession.accessMode) }}</span>
+                    <span>状态：{{ displaySession.stateLabel }}</span>
+                    <span v-if="displaySession.updatedAtLabel">更新时间：{{ displaySession.updatedAtLabel }}</span>
+                  </div>
                 </div>
               </div>
 
@@ -653,12 +1050,12 @@ function resolveIdentityFallback(label: string) {
                 <button
                   type="button"
                   class="account-secondary-button"
-                  data-testid="detail-mode-qr"
-                  :disabled="!canStartAttempt"
-                  @click="handleStartQrAttempt"
+                  data-testid="detail-refresh-qr"
+                  :disabled="!canRefreshQr"
+                  @click="handleRefreshQrSession"
                 >
                   <span class="material-symbols-outlined">refresh</span>
-                  <span>{{ isStartingAttempt && connectForm.connectionMethod === 'qr_login' ? '生成中…' : '刷新二维码' }}</span>
+                  <span>{{ qrActionButtonLabel }}</span>
                 </button>
               </div>
             </section>
@@ -667,15 +1064,16 @@ function resolveIdentityFallback(label: string) {
               <div class="account-card__row account-card__row--compact">
                 <h3>
                   <span class="material-symbols-outlined account-section-icon account-section-icon--blue">key</span>
-                  <span>访问凭证 (Token)</span>
+                  <span>访问令牌</span>
                 </h3>
+                <span class="account-card__caption">手工方式</span>
               </div>
 
-              <div v-if="hasStoredActiveToken && !connectForm.tokenValue.trim()" class="account-token-saved">
+              <div v-if="hasStoredCurrentCredential && !connectForm.tokenValue.trim()" class="account-token-saved">
                 <span class="material-symbols-outlined">verified_user</span>
                 <div>
                   <strong>当前生效令牌已保存</strong>
-                  <p>出于安全原因不回显明文。输入新的 Token 后保存，将覆盖当前凭证。</p>
+                  <p>出于安全原因不回显明文。输入新令牌并验证成功后，会替换当前值。</p>
                 </div>
               </div>
 
@@ -685,31 +1083,42 @@ function resolveIdentityFallback(label: string) {
                   v-model="connectForm.tokenValue"
                   data-testid="detail-token-input"
                   rows="1"
-                  :readonly="!canStartAttempt"
+                  :readonly="!canVerifyConnection"
                   :placeholder="tokenInputPlaceholder"
                 />
-                <span class="material-symbols-outlined account-token-field__trailing">visibility</span>
+                <span class="material-symbols-outlined account-token-field__trailing">vpn_key</span>
               </label>
 
+              <div class="account-inline-tip" :class="{ 'account-inline-tip--active': isQrAutoManaged }">
+                <span class="material-symbols-outlined">
+                  {{ isQrAutoManaged ? 'auto_awesome' : 'info' }}
+                </span>
+                <p>{{ tokenHelperCopy }}</p>
+              </div>
+
               <div class="account-token-meta">
-                <span>
-                  当前生效令牌：{{ account.activeToken.hasToken ? '已保存（不回显明文）' : '未配置' }}
-                </span>
-                <span v-if="account.activeToken.updatedAtLabel">
-                  最近更新：{{ account.activeToken.updatedAtLabel }}
-                </span>
+                <span>当前令牌：{{ account.currentCredential.hasCredential ? '已保存（不回显）' : '未配置' }}</span>
+                <span v-if="account.currentCredential.updatedAtLabel">最近更新：{{ account.currentCredential.updatedAtLabel }}</span>
+                <span v-if="account.currentCredential.expiresAtLabel">过期时间：{{ account.currentCredential.expiresAtLabel }}</span>
               </div>
 
               <div class="account-card__actions">
                 <button
+                  v-if="hasDraftToken"
                   type="button"
                   class="account-primary-button"
-                  data-testid="detail-start-attempt"
-                  :disabled="!canStartAttempt"
-                  @click="handleStartManualAttempt"
+                  data-testid="detail-verify-connection"
+                  :disabled="!canManualVerify"
+                  @click="handleVerifyConnection"
                 >
-                  <span>{{ isStartingAttempt ? '处理中…' : '保存凭证配置' }}</span>
+                  <span>{{ verifyButtonLabel }}</span>
                 </button>
+                <div v-else class="account-passive-action">
+                  <span class="material-symbols-outlined">
+                    {{ isQrAutoManaged ? 'bolt' : qrSessionStatus === 'verified' ? 'check_circle' : 'edit_note' }}
+                  </span>
+                  <span>{{ passiveActionCopy }}</span>
+                </div>
               </div>
             </section>
           </div>
@@ -724,9 +1133,7 @@ function resolveIdentityFallback(label: string) {
               <div class="account-status account-status--compact" :class="`account-status--${account.state.tone}`">
                 <div class="account-status__hero">
                   <div class="account-status__icon">
-                    <span class="material-symbols-outlined">
-                      {{ account.loginStatus === 'connected' ? 'check_circle' : account.loginStatus === 'connecting' ? 'sync' : 'wifi_tethering_error' }}
-                    </span>
+                    <span class="material-symbols-outlined">{{ resolveConnectionIcon(account.connectionStatus) }}</span>
                     <span class="account-status__indicator" />
                   </div>
                   <div class="account-status__summary">
@@ -736,7 +1143,7 @@ function resolveIdentityFallback(label: string) {
                   <div class="account-status__meta">
                     <div class="account-status__meta-item">
                       <span>认证状态</span>
-                      <strong>{{ resolveLoginLabel(account.loginStatus) }}</strong>
+                      <strong>{{ resolveConnectionLabel(account.connectionStatus) }}</strong>
                     </div>
                     <div class="account-status__meta-item">
                       <span>可用性</span>
@@ -746,16 +1153,11 @@ function resolveIdentityFallback(label: string) {
                 </div>
               </div>
 
-              <button
-                type="button"
-                class="account-secondary-button"
-                data-testid="detail-availability-check"
-                :disabled="!canRunAvailabilityCheck"
-                @click="handleAvailabilityCheck"
-              >
-                <span class="material-symbols-outlined">swap_calls</span>
-                <span>{{ isCheckingAvailability ? '验证中…' : '验证连接' }}</span>
-              </button>
+              <div class="account-token-meta account-token-meta--stacked">
+                <span>当前账号：{{ resolveLifecycleLabel(account.lifecycleStatus) }}</span>
+                <span v-if="account.lastVerifiedAtLabel">最近验证：{{ account.lastVerifiedAtLabel }}</span>
+                <span v-if="account.lastConnectedAtLabel">最近连接：{{ account.lastConnectedAtLabel }}</span>
+              </div>
             </section>
 
             <section class="account-console account-detail-console">
@@ -765,37 +1167,37 @@ function resolveIdentityFallback(label: string) {
                   <span>SYSTEM TERMINAL _</span>
                 </div>
                 <div class="account-console__tools">
-                  <span class="material-symbols-outlined">delete_sweep</span>
-                  <span class="material-symbols-outlined">content_copy</span>
+                  <span class="material-symbols-outlined">monitoring</span>
+                  <span class="material-symbols-outlined">receipt_long</span>
                 </div>
               </header>
 
-              <div v-if="currentAttempt" class="account-console__summary">
+              <div v-if="displaySession" class="account-console__summary">
                 <div>
-                  <span>当前连接尝试</span>
-                  <strong>{{ currentAttempt.attemptId }}</strong>
+                  <span>当前会话</span>
+                  <strong>{{ displaySession.sessionId }}</strong>
                 </div>
                 <div>
-                  <span>连接方式</span>
-                  <strong>{{ resolveConnectionMethodLabel(currentAttempt.connectionMethod) }}</strong>
+                  <span>接入方式</span>
+                  <strong>{{ resolveAccessModeLabel(displaySession.accessMode) }}</strong>
                 </div>
                 <div>
                   <span>状态</span>
-                  <strong>{{ currentAttempt.stateLabel }}</strong>
+                  <strong>{{ displaySession.stateLabel }}</strong>
                 </div>
                 <div>
                   <span>最后更新</span>
-                  <strong>{{ currentAttempt.updatedAtLabel ?? '未更新' }}</strong>
+                  <strong>{{ displaySession.updatedAtLabel ?? '未更新' }}</strong>
                 </div>
               </div>
 
               <div
-                v-if="currentAttemptLogs?.entries.length"
+                v-if="currentSessionLogs?.entries.length"
                 class="account-console__body"
                 data-testid="detail-log-console"
               >
                 <div
-                  v-for="(entry, index) in currentAttemptLogs.entries"
+                  v-for="(entry, index) in currentSessionLogs.entries"
                   :key="`${entry.timestamp}-${index}`"
                   class="account-console__line"
                   :class="`account-console__line--${entry.level}`"
@@ -807,23 +1209,23 @@ function resolveIdentityFallback(label: string) {
 
                 <div class="account-console__tail">
                   <span>_</span>
-                  <span>Awaiting input stream...</span>
+                  <span>Listening for access-session logs...</span>
                 </div>
               </div>
 
               <div v-else class="account-console__body account-console__body--empty">
-                <div>这里会展示二维码生成、解析、令牌校验和可用性检查的结构化日志。</div>
-                <div>发起一次连接尝试后，系统会按真实后端返回的日志逐条输出。</div>
+                <div>这里会展示二维码生成、扫码轮询、令牌验证和生效过程的结构化日志。</div>
+                <div>当你刷新二维码或验证连接后，系统会把本次接入会话的日志实时写在这里。</div>
                 <div class="account-console__tail">
                   <span>_</span>
-                  <span>Awaiting first attempt...</span>
+                  <span>Awaiting first access session...</span>
                 </div>
               </div>
 
               <div class="account-console__footnotes">
-                <p v-if="account.loginStatusReason">登录说明：{{ account.loginStatusReason }}</p>
+                <p v-if="account.connectionStatusReason">连接说明：{{ account.connectionStatusReason }}</p>
                 <p v-if="account.availabilityStatusReason">可用性说明：{{ account.availabilityStatusReason }}</p>
-                <p v-if="currentAttempt?.attemptStatusReason">尝试说明：{{ currentAttempt.attemptStatusReason }}</p>
+                <p v-if="displaySession?.sessionStatusReason">会话说明：{{ displaySession.sessionStatusReason }}</p>
               </div>
             </section>
           </div>
@@ -1019,10 +1421,12 @@ function resolveIdentityFallback(label: string) {
 .account-detail-side {
   align-items: start;
   align-content: start;
+  min-height: 0;
 }
 
 .account-detail-side {
   grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
 }
 
 .account-detail-header {
@@ -1312,6 +1716,21 @@ function resolveIdentityFallback(label: string) {
 
 .account-card__row--plain {
   border-bottom: 0;
+}
+
+.account-card__caption {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.7rem;
+  padding: 0 0.6rem;
+  border: 1px solid rgb(72 72 71 / 0.25);
+  border-radius: 999px;
+  color: #8b8888;
+  background: rgb(255 255 255 / 0.03);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .account-card__link {
@@ -1668,6 +2087,57 @@ function resolveIdentityFallback(label: string) {
   font-size: 0.7rem;
 }
 
+.account-inline-tip {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.8rem 0.9rem;
+  margin-top: 0.75rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 0.75rem;
+  color: #9a9898;
+  background: rgb(255 255 255 / 0.02);
+}
+
+.account-inline-tip .material-symbols-outlined {
+  margin-top: 0.05rem;
+  color: #8b8888;
+}
+
+.account-inline-tip p {
+  margin: 0;
+  font-size: 0.73rem;
+  line-height: 1.6;
+}
+
+.account-inline-tip--active {
+  border-color: rgb(143 245 255 / 0.2);
+  background: rgb(143 245 255 / 0.05);
+}
+
+.account-inline-tip--active .material-symbols-outlined {
+  color: #8ff5ff;
+}
+
+.account-passive-action {
+  display: inline-flex;
+  gap: 0.6rem;
+  align-items: center;
+  min-height: 3.1rem;
+  width: 100%;
+  padding: 0 1rem;
+  border: 1px dashed rgb(72 72 71 / 0.26);
+  border-radius: 0.45rem;
+  color: #9c9a9a;
+  background: rgb(255 255 255 / 0.02);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.account-passive-action .material-symbols-outlined {
+  color: #8ff5ff;
+}
+
 .account-card__actions {
   display: flex;
   gap: 0.75rem;
@@ -1776,19 +2246,21 @@ function resolveIdentityFallback(label: string) {
 
 .account-qr-inline {
   display: grid;
-  gap: 1.1rem;
+  grid-template-columns: minmax(8.4rem, 9.6rem) minmax(0, 1fr);
+  gap: 1rem;
   margin-top: 0;
-  padding: 1.45rem 0 0.5rem;
+  padding: 1rem 0 0.15rem;
   border: 0;
   background: transparent;
-  justify-items: center;
+  align-items: start;
 }
 
 .account-qr-inline__image {
   display: grid;
   place-items: center;
-  width: min(100%, 11.25rem);
-  padding: 0.55rem;
+  width: 100%;
+  max-width: 9.6rem;
+  padding: 0.45rem;
   border: 1px solid rgb(72 72 71 / 0.2);
   border-radius: 0.6rem;
   background: #0e0e0e;
@@ -1814,7 +2286,7 @@ function resolveIdentityFallback(label: string) {
 }
 
 .account-qr-inline__placeholder .material-symbols-outlined {
-  font-size: 2.1rem !important;
+  font-size: 1.9rem !important;
   color: #484847;
 }
 
@@ -1837,8 +2309,98 @@ function resolveIdentityFallback(label: string) {
 }
 
 .account-qr-inline__content {
-  text-align: center;
-  max-width: 13rem;
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+  text-align: left;
+}
+
+.account-qr-inline__headline {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.account-qr-inline__status {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.account-qr-inline__status strong {
+  color: #f5f5f5;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.account-qr-inline__status span {
+  color: #8ff5ff;
+  font-size: 0.69rem;
+}
+
+.account-qr-steps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.account-qr-step {
+  display: flex;
+  gap: 0.42rem;
+  align-items: center;
+  padding: 0.34rem 0.62rem;
+  border: 1px solid rgb(72 72 71 / 0.16);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.02);
+  min-height: 2rem;
+}
+
+.account-qr-step__dot {
+  width: 0.46rem;
+  height: 0.46rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #4d4c4c;
+}
+
+.account-qr-step__label {
+  color: #efefef;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.account-qr-step--done {
+  border-color: rgb(143 245 255 / 0.16);
+  background: rgb(143 245 255 / 0.04);
+}
+
+.account-qr-step--done .account-qr-step__dot {
+  background: #8ff5ff;
+  box-shadow: 0 0 10px rgb(143 245 255 / 0.35);
+}
+
+.account-qr-step--active {
+  border-color: rgb(192 255 109 / 0.2);
+  background: rgb(192 255 109 / 0.05);
+}
+
+.account-qr-step--active .account-qr-step__dot {
+  background: #c0ff6d;
+  box-shadow: 0 0 10px rgb(192 255 109 / 0.35);
+}
+
+.account-qr-step--error {
+  border-color: rgb(255 113 108 / 0.2);
+  background: rgb(255 113 108 / 0.05);
+}
+
+.account-qr-step--error .account-qr-step__dot {
+  background: #ff716c;
+  box-shadow: 0 0 10px rgb(255 113 108 / 0.35);
 }
 
 .account-qr-inline__content strong,
@@ -1846,18 +2408,23 @@ function resolveIdentityFallback(label: string) {
   margin: 0;
 }
 
-.account-qr-inline__content p {
+.account-qr-inline__detail {
   color: #adaaaa;
   font-size: 0.74rem;
   line-height: 1.55;
 }
 
+.account-qr-inline__content small {
+  display: block;
+  color: #767575;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
 .account-card--qr {
   display: flex;
   flex-direction: column;
-  align-items: center;
   background: #131313;
-  text-align: center;
 }
 
 .account-card--qr .account-card__row {
@@ -2037,6 +2604,7 @@ function resolveIdentityFallback(label: string) {
 .account-detail-side > .account-card {
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .account-detail-side > .account-card > .account-secondary-button:first-of-type {
@@ -2045,6 +2613,10 @@ function resolveIdentityFallback(label: string) {
 
 .account-detail-console {
   min-width: 0;
+  min-height: 0;
+  height: clamp(24rem, 58vh, 34rem);
+  max-height: clamp(24rem, 58vh, 34rem);
+  overflow: hidden;
 }
 
 .account-json-block {
@@ -2063,7 +2635,7 @@ function resolveIdentityFallback(label: string) {
 .account-console {
   display: flex;
   flex-direction: column;
-  min-height: 22rem;
+  min-height: 0;
   height: 100%;
   padding: 0;
   background: #0a0a0a;
@@ -2101,11 +2673,31 @@ function resolveIdentityFallback(label: string) {
 
 .account-console__body {
   flex: 1;
+  min-height: 0;
   padding: 1rem 1rem 1.15rem;
   overflow: auto;
   font-family: var(--cn-font-mono);
   font-size: 0.76rem;
   line-height: 1.75;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(143 245 255 / 0.28) transparent;
+}
+
+.account-console__body::-webkit-scrollbar {
+  width: 0.42rem;
+}
+
+.account-console__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.account-console__body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(143 245 255 / 0.22);
+}
+
+.account-console__body::-webkit-scrollbar-thumb:hover {
+  background: rgb(143 245 255 / 0.34);
 }
 
 .account-console__body--empty {
@@ -2231,6 +2823,20 @@ function resolveIdentityFallback(label: string) {
     width: 100%;
     min-width: 0;
   }
+
+  .account-detail-console {
+    height: 22rem;
+    max-height: 22rem;
+  }
+
+  .account-qr-inline {
+    grid-template-columns: minmax(7.8rem, 8.8rem) minmax(0, 1fr);
+    gap: 0.85rem;
+  }
+
+  .account-qr-steps {
+    gap: 0.4rem;
+  }
 }
 
 
@@ -2268,6 +2874,28 @@ function resolveIdentityFallback(label: string) {
     justify-self: end;
     margin-top: -0.35rem;
     margin-bottom: 0.25rem;
+  }
+
+  .account-qr-inline {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 0.85rem;
+    padding-top: 0.85rem;
+  }
+
+  .account-qr-inline__content {
+    width: 100%;
+    text-align: center;
+  }
+
+  .account-qr-inline__status,
+  .account-qr-steps {
+    justify-content: center;
+  }
+
+  .account-qr-inline__detail {
+    max-width: 24rem;
+    margin-inline: auto;
   }
 }
 </style>

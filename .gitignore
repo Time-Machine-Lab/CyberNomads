@@ -1,2 +1,10 @@
 .cursor/
 /temp/
+.idea/
+
+# Backend runtime artifacts
+/cybernomads-backend/cybernomads/
+/cybernomads-backend/*.db
+
+# Frontend local debug artifacts
+/cybernomads-ui/.tmp-screens/

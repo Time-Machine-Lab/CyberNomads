@@ -118,7 +118,7 @@ export const router = createRouter({
         {
           path: 'accounts/new',
           name: 'accounts-create',
-          component: () => import('@/pages/accounts/create/ui/AccountOnboardingPage.vue'),
+          component: () => import('@/pages/accounts/create/ui/AccountCreatePage.vue'),
           meta: {
             moduleTitle: '账号池',
             shellNavKey: 'accounts',

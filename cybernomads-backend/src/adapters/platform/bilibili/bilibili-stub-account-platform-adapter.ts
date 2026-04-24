@@ -1,157 +1,240 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import type {
   AccountPlatformAvailabilityCheckInput,
   AccountPlatformAvailabilityCheckResult,
+  AccountPlatformPollQrSessionInput,
+  AccountPlatformPollQrSessionResult,
   AccountPlatformPort,
-  AccountPlatformResolveConnectionAttemptInput,
-  AccountPlatformResolveConnectionAttemptResult,
-  AccountPlatformStartConnectionAttemptInput,
-  AccountPlatformStartConnectionAttemptResult,
-  AccountPlatformValidateConnectionAttemptInput,
-  AccountPlatformValidateConnectionAttemptResult,
+  AccountPlatformStartQrSessionInput,
+  AccountPlatformStartQrSessionResult,
+  AccountPlatformVerifyCredentialInput,
+  AccountPlatformVerifyCredentialResult,
 } from "../../../ports/account-platform-port.js";
 import type { JsonObject } from "../../../modules/accounts/types.js";
-import type { ConnectionAttemptLogEntry } from "../../../modules/account-connection-attempts/types.js";
+import type { AccessSessionLogEntry } from "../../../modules/account-access-sessions/types.js";
+import { resolveBundledRuntimeSkillsDirectory } from "../../skill/local/runtime-skill-assets.js";
+import { runJsonScriptCommand } from "../shared/node-script-command-runner.js";
 
 export class BilibiliStubAccountPlatformAdapter implements AccountPlatformPort {
   readonly platformCode = "bilibili";
+  private skillDirectoryPromise: Promise<string> | null = null;
 
-  async startConnectionAttempt(
-    input: AccountPlatformStartConnectionAttemptInput,
-  ): Promise<AccountPlatformStartConnectionAttemptResult> {
-    const logs = [createLog("info", "connection attempt started")];
-
-    if (input.connectionMethod === "manual_token") {
-      return {
-        challenge: null,
-        platformSession: { source: "manual_token" },
-        candidateToken: input.tokenValue ? { token: input.tokenValue } : null,
-        expiresAt: input.requestedExpiresAt,
-        logs,
-      };
-    }
+  async startQrSession(
+    _input: AccountPlatformStartQrSessionInput,
+  ): Promise<AccountPlatformStartQrSessionResult> {
+    const payload = await this.runSkillCommand("auth", "qr-start");
+    const data = ensureObject(payload.data);
+    const loginUrl = ensureNonEmptyString(data.loginUrl, "Bilibili qr-start did not return loginUrl.");
+    const qrcodeKey = ensureNonEmptyString(
+      data.qrcodeKey,
+      "Bilibili qr-start did not return qrcodeKey.",
+    );
+    const { default: QRCode } = await import("qrcode");
+    const imageUrl = await QRCode.toDataURL(loginUrl, {
+      margin: 1,
+      width: 220,
+    });
 
     return {
       challenge: {
         challengeType: "qr_image",
-        imageUrl: createStubQrCodeDataUrl(
-          `${this.platformCode}:${String(input.context.qrSeed ?? "default")}`,
-        ),
-        message: "请使用平台客户端扫码，扫码完成后点击解析二维码。",
+        imageUrl,
+        loginUrl,
+        message: "请使用 Bilibili App 扫码，并在扫码后点击验证连接。",
       },
-      platformSession: {
-        source: "qr_login",
-        qrSeed: String(input.context.qrSeed ?? "stub"),
+      providerSession: {
+        qrcodeKey,
+        loginUrl,
       },
-      candidateToken: null,
-      expiresAt: input.requestedExpiresAt,
-      logs,
-    };
-  }
-
-  async resolveConnectionAttempt(
-    input: AccountPlatformResolveConnectionAttemptInput,
-  ): Promise<AccountPlatformResolveConnectionAttemptResult> {
-    const seed = resolveStringValue(
-      input.resolutionPayload.tokenSeed,
-      input.platformSession.qrSeed,
-      "qr-token",
-    );
-
-    return {
-      platformSession: input.platformSession,
-      candidateToken: {
-        token: `resolved-${seed}`,
-        source: input.connectionMethod,
-      },
-      reason: "Stub QR token resolved.",
       expiresAt: null,
-      logs: [createLog("info", "connection attempt resolved")],
+      logs: [createLog("info", "bilibili qr session started")],
     };
   }
 
-  async validateConnectionAttempt(
-    input: AccountPlatformValidateConnectionAttemptInput,
-  ): Promise<AccountPlatformValidateConnectionAttemptResult> {
-    const forcedResult = resolveStringValue(
-      input.validationPayload.forceResult,
-      input.candidateToken.forceResult,
+  async pollQrSession(
+    input: AccountPlatformPollQrSessionInput,
+  ): Promise<AccountPlatformPollQrSessionResult> {
+    const qrcodeKey = ensureNonEmptyString(
+      input.providerSession.qrcodeKey,
+      "Bilibili QR session is missing qrcodeKey.",
+    );
+    const payload = await this.runSkillCommand("auth", "qr-poll", "--qrcodeKey", qrcodeKey);
+    const data = ensureObject(payload.data);
+    const status = ensureNonEmptyString(
+      data.status,
+      "Bilibili qr-poll did not return status.",
     );
 
-    if (forcedResult === "failed") {
+    if (status === "waiting_scan") {
       return {
-        validationResult: "failed",
-        reason:
-          resolveStringValue(
-            input.validationPayload.reason,
-            input.candidateToken.reason,
-          ) ?? "Stub token validation failed.",
-        resolvedPlatformProfile: null,
-        token: null,
-        tokenExpiresAt: null,
-        logs: [createLog("error", "token validation failed")],
+        progressStatus: "waiting_for_scan",
+        providerSession: input.providerSession,
+        candidateCredential: null,
+        reason: stringOrNull(data.message) ?? "Waiting for QR scan.",
+        expiresAt: null,
+        logs: [createLog("info", "waiting for bilibili qr scan")],
       };
     }
 
-    const tokenSeed =
-      resolveStringValue(
-        input.validationPayload.resolvedPlatformAccountUid,
-        input.candidateToken.resolvedPlatformAccountUid,
-        input.candidateToken.token,
-      ) ?? "default";
+    if (status === "waiting_confirm") {
+      return {
+        progressStatus: "waiting_for_confirmation",
+        providerSession: input.providerSession,
+        candidateCredential: null,
+        reason: stringOrNull(data.message) ?? "Waiting for QR confirmation.",
+        expiresAt: null,
+        logs: [createLog("info", "bilibili qr scanned, waiting for confirmation")],
+      };
+    }
+
+    if (status === "expired") {
+      return {
+        progressStatus: "expired",
+        providerSession: input.providerSession,
+        candidateCredential: null,
+        reason: stringOrNull(data.message) ?? "QR code expired.",
+        expiresAt: null,
+        logs: [createLog("warn", "bilibili qr session expired")],
+      };
+    }
+
+    if (status !== "success") {
+      throw new Error(`Unexpected bilibili qr status "${status}".`);
+    }
+
+    const cookie = ensureNonEmptyString(
+      data.cookie,
+      "Bilibili qr-poll did not return cookie.",
+    );
 
     return {
-      validationResult: "succeeded",
-      reason:
-        resolveStringValue(input.validationPayload.reason) ??
-        "Stub token validation succeeded.",
+      progressStatus: "ready_for_verification",
+      providerSession: input.providerSession,
+      candidateCredential: {
+        token: cookie,
+        refreshToken: stringOrNull(data.refreshToken),
+        cookieInfo: ensureOptionalObject(data.cookieInfo),
+        platformUserSnapshot: ensureOptionalObject(data.userInfo),
+      },
+      reason: "QR login succeeded. Credential is ready for verification.",
+      expiresAt: null,
+      logs: [createLog("info", "bilibili qr credential resolved")],
+    };
+  }
+
+  async verifyCredential(
+    input: AccountPlatformVerifyCredentialInput,
+  ): Promise<AccountPlatformVerifyCredentialResult> {
+    const token = ensureNonEmptyString(
+      input.candidateCredential.token,
+      "Bilibili credential token is required.",
+    );
+    const payload = await this.runSkillCommand(
+      "account",
+      "self-get",
+      "--cookie",
+      token,
+    );
+    const data = ensureObject(payload.data);
+    const mid = ensureStringLike(data.mid, "Bilibili self-get did not return mid.");
+    const uname = ensureNonEmptyString(
+      data.uname,
+      "Bilibili self-get did not return uname.",
+    );
+
+    return {
+      verificationResult: "succeeded",
+      reason: "Bilibili credential verified successfully.",
       resolvedPlatformProfile: {
-        resolvedPlatformAccountUid: `stub-bili-uid-${sanitizeSeed(tokenSeed)}`,
-        resolvedDisplayName:
-          resolveStringValue(input.validationPayload.displayName) ??
-          input.account.internalDisplayName,
-        resolvedAvatarUrl: resolveStringValue(input.validationPayload.avatarUrl),
+        resolvedPlatformAccountUid: String(mid),
+        resolvedDisplayName: uname,
+        resolvedAvatarUrl: stringOrNull(data.avatar),
         resolvedProfileMetadata: {
-          ...input.account.platformMetadata,
-          ...resolveObjectValue(input.validationPayload.platformMetadata),
-          stubVerified: true,
+          sign: stringOrNull(data.sign),
+          levelInfo: data.levelInfo ?? null,
+          vipStatus: data.vipStatus ?? null,
+          vipType: data.vipType ?? null,
         },
       },
-      token: {
-        ...input.candidateToken,
+      credential: {
+        ...input.candidateCredential,
         platform: this.platformCode,
       },
-      tokenExpiresAt: resolveStringValue(
-        input.validationPayload.tokenExpiresAt,
-        input.candidateToken.tokenExpiresAt,
-      ),
-      logs: [createLog("info", "token validation succeeded")],
+      credentialExpiresAt: null,
+      logs: [createLog("info", "bilibili credential verified")],
     };
   }
 
   async checkAvailability(
     input: AccountPlatformAvailabilityCheckInput,
   ): Promise<AccountPlatformAvailabilityCheckResult> {
-    const status = resolveStringValue(input.activeToken.availabilityStatus);
+    try {
+      const token = ensureNonEmptyString(
+        input.activeCredential.token,
+        "Bilibili active credential token is required.",
+      );
+      await this.runSkillCommand("account", "self-get", "--cookie", token);
+      return {
+        availabilityStatus: "healthy",
+        reason: "Bilibili account self-get succeeded.",
+      };
+    } catch (error) {
+      return {
+        availabilityStatus: "offline",
+        reason: error instanceof Error ? error.message : "Availability check failed.",
+      };
+    }
+  }
 
-    return {
-      availabilityStatus:
-        status === "risk" ||
-        status === "restricted" ||
-        status === "offline" ||
-        status === "unknown"
-          ? status
-          : "healthy",
-      reason:
-        resolveStringValue(input.activeToken.availabilityReason) ??
-        "Stub availability check succeeded.",
-    };
+  private async runSkillCommand(
+    group: string,
+    command: string,
+    ...args: string[]
+  ): Promise<JsonObject> {
+    const skillDirectory = await this.resolveSkillDirectory();
+    const payload = await runJsonScriptCommand({
+      cwd: skillDirectory,
+      scriptPath: join(skillDirectory, "scripts", "bili.js"),
+      args: [group, command, ...args],
+      timeoutMs: 20_000,
+    });
+    const parsed = ensureObject(payload);
+
+    if (parsed.ok !== true) {
+      const error = ensureOptionalObject(parsed.error);
+      throw new Error(
+        stringOrNull(error?.message) ??
+          `Bilibili command ${group}.${command} failed.`,
+      );
+    }
+
+    return parsed;
+  }
+
+  private async resolveSkillDirectory(): Promise<string> {
+    if (!this.skillDirectoryPromise) {
+      this.skillDirectoryPromise = (async () => {
+        const explicitSkillsRoot = join(
+          dirname(fileURLToPath(import.meta.url)),
+          "../../../../runtime-assets/skills",
+        );
+        const skillsRoot = await resolveBundledRuntimeSkillsDirectory(
+          explicitSkillsRoot,
+        );
+        return join(skillsRoot, "bilibili-web-api");
+      })();
+    }
+
+    return this.skillDirectoryPromise;
   }
 }
 
 function createLog(
-  level: ConnectionAttemptLogEntry["level"],
+  level: AccessSessionLogEntry["level"],
   message: string,
-): ConnectionAttemptLogEntry {
+): AccessSessionLogEntry {
   return {
     timestamp: new Date().toISOString(),
     level,
@@ -159,29 +242,44 @@ function createLog(
   };
 }
 
-function resolveStringValue(...values: unknown[]): string | null {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-
-  return null;
-}
-
-function resolveObjectValue(value: unknown): JsonObject {
+function ensureObject(value: unknown): JsonObject {
   if (!value || Array.isArray(value) || typeof value !== "object") {
-    return {};
+    throw new Error("Expected a JSON object.");
   }
 
   return { ...(value as JsonObject) };
 }
 
-function sanitizeSeed(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 48);
+function ensureOptionalObject(value: unknown): JsonObject | null {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return null;
+  }
+
+  return { ...(value as JsonObject) };
 }
 
-function createStubQrCodeDataUrl(seed: string): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180"><rect width="180" height="180" fill="#0f1115"/><rect x="20" y="20" width="42" height="42" fill="#8ff5ff"/><rect x="118" y="20" width="42" height="42" fill="#8ff5ff"/><rect x="20" y="118" width="42" height="42" fill="#8ff5ff"/><text x="90" y="96" fill="#8ff5ff" font-size="13" text-anchor="middle" font-family="monospace">${seed.slice(0, 12)}</text></svg>`;
-  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+function ensureNonEmptyString(value: unknown, message: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(message);
+  }
+
+  return value.trim();
+}
+
+function ensureStringLike(value: unknown, message: string): string | number {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  if (typeof value === "number") {
+    return value;
+  }
+
+  throw new Error(message);
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }

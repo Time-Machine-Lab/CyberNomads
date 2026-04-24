@@ -57,21 +57,6 @@ export function createAccountsController(accountService: AccountService) {
         return true;
       }
 
-      const availabilityMatch = matchAvailabilityChecksPath(url.pathname);
-
-      if (availabilityMatch) {
-        if (method === "POST") {
-          const result = await accountService.runAvailabilityCheck(
-            availabilityMatch.accountId,
-          );
-          sendJson(response, 200, result);
-          return true;
-        }
-
-        sendMethodNotAllowed(response, ["POST"]);
-        return true;
-      }
-
       const detailMatch = matchAccountDetailPath(url.pathname);
 
       if (!detailMatch) {
@@ -167,8 +152,8 @@ function readListAccountFilters(url: URL): ListAccountsFilters {
     lifecycleStatus:
       (url.searchParams.get("lifecycleStatus") as ListAccountsFilters["lifecycleStatus"]) ??
       undefined,
-    loginStatus:
-      (url.searchParams.get("loginStatus") as ListAccountsFilters["loginStatus"]) ??
+    connectionStatus:
+      (url.searchParams.get("connectionStatus") as ListAccountsFilters["connectionStatus"]) ??
       undefined,
     availabilityStatus:
       (url.searchParams.get("availabilityStatus") as ListAccountsFilters["availabilityStatus"]) ??
@@ -177,9 +162,9 @@ function readListAccountFilters(url: URL): ListAccountsFilters {
       url.searchParams.get("includeDeleted"),
       "includeDeleted",
     ),
-    onlyConsumable: parseBooleanQueryValue(
-      url.searchParams.get("onlyConsumable"),
-      "onlyConsumable",
+    onlyConnected: parseBooleanQueryValue(
+      url.searchParams.get("onlyConnected"),
+      "onlyConnected",
     ),
   };
 }
@@ -212,12 +197,5 @@ function matchAccountDetailPath(pathname: string): { accountId: string } | null 
 
 function matchRestorePath(pathname: string): { accountId: string } | null {
   const match = /^\/api\/accounts\/([^/]+)\/restore$/.exec(pathname);
-  return match ? { accountId: decodeURIComponent(match[1]) } : null;
-}
-
-function matchAvailabilityChecksPath(
-  pathname: string,
-): { accountId: string } | null {
-  const match = /^\/api\/accounts\/([^/]+)\/availability-checks$/.exec(pathname);
   return match ? { accountId: decodeURIComponent(match[1]) } : null;
 }

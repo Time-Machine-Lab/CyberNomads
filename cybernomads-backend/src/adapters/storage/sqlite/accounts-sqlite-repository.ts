@@ -4,10 +4,10 @@ import type { AccountStateStore } from "../../../ports/account-state-store-port.
 import type {
   AccountRecord,
   AvailabilityStatus,
+  ConnectionStatus,
   JsonObject,
   LifecycleStatus,
   ListAccountsFilters,
-  LoginStatus,
 } from "../../../modules/accounts/types.js";
 
 interface AccountRow {
@@ -18,19 +18,19 @@ interface AccountRow {
   tags_json: string;
   platform_metadata_json: string;
   lifecycle_status: LifecycleStatus;
-  login_status: LoginStatus;
-  login_status_reason: string | null;
+  connection_status: ConnectionStatus;
+  connection_status_reason: string | null;
   availability_status: AvailabilityStatus;
   availability_status_reason: string | null;
   resolved_platform_account_uid: string | null;
   resolved_display_name: string | null;
   resolved_avatar_url: string | null;
   resolved_profile_metadata_json: string;
-  active_token_ref: string | null;
-  active_token_expires_at: string | null;
-  active_token_updated_at: string | null;
+  active_credential_ref: string | null;
+  active_credential_expires_at: string | null;
+  active_credential_updated_at: string | null;
   last_connected_at: string | null;
-  last_validated_at: string | null;
+  last_verified_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -56,19 +56,19 @@ export class SqliteAccountsRepository implements AccountStateStore {
             tags_json,
             platform_metadata_json,
             lifecycle_status,
-            login_status,
-            login_status_reason,
+            connection_status,
+            connection_status_reason,
             availability_status,
             availability_status_reason,
             resolved_platform_account_uid,
             resolved_display_name,
             resolved_avatar_url,
             resolved_profile_metadata_json,
-            active_token_ref,
-            active_token_expires_at,
-            active_token_updated_at,
+            active_credential_ref,
+            active_credential_expires_at,
+            active_credential_updated_at,
             last_connected_at,
-            last_validated_at,
+            last_verified_at,
             deleted_at,
             created_at,
             updated_at
@@ -90,19 +90,19 @@ export class SqliteAccountsRepository implements AccountStateStore {
             tags_json,
             platform_metadata_json,
             lifecycle_status,
-            login_status,
-            login_status_reason,
+            connection_status,
+            connection_status_reason,
             availability_status,
             availability_status_reason,
             resolved_platform_account_uid,
             resolved_display_name,
             resolved_avatar_url,
             resolved_profile_metadata_json,
-            active_token_ref,
-            active_token_expires_at,
-            active_token_updated_at,
+            active_credential_ref,
+            active_credential_expires_at,
+            active_credential_updated_at,
             last_connected_at,
-            last_validated_at,
+            last_verified_at,
             deleted_at,
             created_at,
             updated_at
@@ -114,19 +114,19 @@ export class SqliteAccountsRepository implements AccountStateStore {
             tags_json = excluded.tags_json,
             platform_metadata_json = excluded.platform_metadata_json,
             lifecycle_status = excluded.lifecycle_status,
-            login_status = excluded.login_status,
-            login_status_reason = excluded.login_status_reason,
+            connection_status = excluded.connection_status,
+            connection_status_reason = excluded.connection_status_reason,
             availability_status = excluded.availability_status,
             availability_status_reason = excluded.availability_status_reason,
             resolved_platform_account_uid = excluded.resolved_platform_account_uid,
             resolved_display_name = excluded.resolved_display_name,
             resolved_avatar_url = excluded.resolved_avatar_url,
             resolved_profile_metadata_json = excluded.resolved_profile_metadata_json,
-            active_token_ref = excluded.active_token_ref,
-            active_token_expires_at = excluded.active_token_expires_at,
-            active_token_updated_at = excluded.active_token_updated_at,
+            active_credential_ref = excluded.active_credential_ref,
+            active_credential_expires_at = excluded.active_credential_expires_at,
+            active_credential_updated_at = excluded.active_credential_updated_at,
             last_connected_at = excluded.last_connected_at,
-            last_validated_at = excluded.last_validated_at,
+            last_verified_at = excluded.last_verified_at,
             deleted_at = excluded.deleted_at,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at
@@ -147,19 +147,19 @@ export class SqliteAccountsRepository implements AccountStateStore {
             tags_json,
             platform_metadata_json,
             lifecycle_status,
-            login_status,
-            login_status_reason,
+            connection_status,
+            connection_status_reason,
             availability_status,
             availability_status_reason,
             resolved_platform_account_uid,
             resolved_display_name,
             resolved_avatar_url,
             resolved_profile_metadata_json,
-            active_token_ref,
-            active_token_expires_at,
-            active_token_updated_at,
+            active_credential_ref,
+            active_credential_expires_at,
+            active_credential_updated_at,
             last_connected_at,
-            last_validated_at,
+            last_verified_at,
             deleted_at,
             created_at,
             updated_at
@@ -204,9 +204,9 @@ export class SqliteAccountsRepository implements AccountStateStore {
       conditions.push("lifecycle_status != 'deleted'");
     }
 
-    if (filters.loginStatus) {
-      conditions.push("login_status = ?");
-      parameters.push(filters.loginStatus);
+    if (filters.connectionStatus) {
+      conditions.push("connection_status = ?");
+      parameters.push(filters.connectionStatus);
     }
 
     if (filters.availabilityStatus) {
@@ -214,13 +214,12 @@ export class SqliteAccountsRepository implements AccountStateStore {
       parameters.push(filters.availabilityStatus);
     }
 
-    if (filters.onlyConsumable) {
+    if (filters.onlyConnected) {
       conditions.push(
         `
           lifecycle_status = 'active'
-          AND login_status = 'connected'
-          AND availability_status = 'healthy'
-          AND active_token_ref IS NOT NULL
+          AND connection_status = 'connected'
+          AND active_credential_ref IS NOT NULL
         `,
       );
     }
@@ -238,19 +237,19 @@ export class SqliteAccountsRepository implements AccountStateStore {
             tags_json,
             platform_metadata_json,
             lifecycle_status,
-            login_status,
-            login_status_reason,
+            connection_status,
+            connection_status_reason,
             availability_status,
             availability_status_reason,
             resolved_platform_account_uid,
             resolved_display_name,
             resolved_avatar_url,
             resolved_profile_metadata_json,
-            active_token_ref,
-            active_token_expires_at,
-            active_token_updated_at,
+            active_credential_ref,
+            active_credential_expires_at,
+            active_credential_updated_at,
             last_connected_at,
-            last_validated_at,
+            last_verified_at,
             deleted_at,
             created_at,
             updated_at
@@ -278,19 +277,19 @@ function toRowValues(record: AccountRecord): Array<string | null> {
     JSON.stringify(record.tags),
     JSON.stringify(record.platformMetadata),
     record.lifecycleStatus,
-    record.loginStatus,
-    record.loginStatusReason,
+    record.connectionStatus,
+    record.connectionStatusReason,
     record.availabilityStatus,
     record.availabilityStatusReason,
     record.resolvedPlatformAccountUid,
     record.resolvedDisplayName,
     record.resolvedAvatarUrl,
     JSON.stringify(record.resolvedProfileMetadata),
-    record.activeTokenRef,
-    record.activeTokenExpiresAt,
-    record.activeTokenUpdatedAt,
+    record.activeCredentialRef,
+    record.activeCredentialExpiresAt,
+    record.activeCredentialUpdatedAt,
     record.lastConnectedAt,
-    record.lastValidatedAt,
+    record.lastVerifiedAt,
     record.deletedAt,
     record.createdAt,
     record.updatedAt,
@@ -303,37 +302,41 @@ function mapAccountRow(row: AccountRow): AccountRecord {
     platform: row.platform,
     internalDisplayName: row.internal_display_name,
     remark: row.remark,
-    tags: parseStringArray(row.tags_json),
+    tags: parseJsonStringArray(row.tags_json),
     platformMetadata: parseJsonObject(row.platform_metadata_json),
     lifecycleStatus: row.lifecycle_status,
-    loginStatus: row.login_status,
-    loginStatusReason: row.login_status_reason,
+    connectionStatus: row.connection_status,
+    connectionStatusReason: row.connection_status_reason,
     availabilityStatus: row.availability_status,
     availabilityStatusReason: row.availability_status_reason,
     resolvedPlatformAccountUid: row.resolved_platform_account_uid,
     resolvedDisplayName: row.resolved_display_name,
     resolvedAvatarUrl: row.resolved_avatar_url,
     resolvedProfileMetadata: parseJsonObject(row.resolved_profile_metadata_json),
-    activeTokenRef: row.active_token_ref,
-    activeTokenExpiresAt: row.active_token_expires_at,
-    activeTokenUpdatedAt: row.active_token_updated_at,
+    activeCredentialRef: row.active_credential_ref,
+    activeCredentialExpiresAt: row.active_credential_expires_at,
+    activeCredentialUpdatedAt: row.active_credential_updated_at,
     lastConnectedAt: row.last_connected_at,
-    lastValidatedAt: row.last_validated_at,
+    lastVerifiedAt: row.last_verified_at,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function parseStringArray(value: string): string[] {
+function parseJsonStringArray(value: string): string[] {
   const parsed = JSON.parse(value) as unknown;
-  return Array.isArray(parsed)
-    ? parsed.filter((item): item is string => typeof item === "string")
-    : [];
+
+  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) {
+    throw new Error("Invalid tags_json payload.");
+  }
+
+  return [...parsed];
 }
 
 function parseJsonObject(value: string): JsonObject {
   const parsed = JSON.parse(value) as unknown;
+
   if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
     return {};
   }

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { StrategyNotFoundError, StrategyValidationError } from "./errors.js";
 import {
@@ -40,7 +40,7 @@ export class StrategyService {
     this.metadataStore = options.metadataStore;
     this.contentStore = options.contentStore;
     this.now = options.now ?? (() => new Date());
-    this.createStrategyId = options.createStrategyId ?? (() => randomUUID());
+    this.createStrategyId = options.createStrategyId ?? createShortStrategyId;
   }
 
   async createStrategy(input: CreateStrategyInput): Promise<StrategyDetail> {
@@ -54,7 +54,7 @@ export class StrategyService {
       normalizedInput.contentMarkdown,
     );
     const timestamp = this.now().toISOString();
-    const strategyId = this.createStrategyId();
+    const strategyId = await this.createAvailableStrategyId();
     const contentRef = `${strategyId}.md`;
     const record: StrategyRecord = {
       strategyId,
@@ -162,9 +162,43 @@ export class StrategyService {
     return toStrategyDetail(record, contentMarkdown, placeholders);
   }
 
+  async deleteStrategy(strategyId: string): Promise<void> {
+    const record = await this.metadataStore.getStrategyById(strategyId);
+
+    if (!record) {
+      throw new StrategyNotFoundError(strategyId);
+    }
+
+    await this.metadataStore.deleteStrategy(strategyId);
+
+    try {
+      await this.contentStore.deleteContent(record.contentRef);
+    } catch (error) {
+      await this.metadataStore.createStrategy(record);
+      throw error;
+    }
+  }
+
   close(): void {
     this.metadataStore.close();
   }
+
+  private async createAvailableStrategyId(): Promise<string> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const strategyId = this.createStrategyId();
+      const existingRecord = await this.metadataStore.getStrategyById(strategyId);
+
+      if (!existingRecord) {
+        return strategyId;
+      }
+    }
+
+    throw new StrategyValidationError("Failed to allocate a unique strategy ID.");
+  }
+}
+
+function createShortStrategyId(): string {
+  return randomBytes(4).toString("hex");
 }
 
 function normalizeStrategyInput(

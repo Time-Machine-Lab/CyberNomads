@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import {
@@ -23,9 +24,9 @@ export interface RuntimePathDependencies {
   ensureDirectory?: (targetPath: string, options: { recursive: boolean }) => Promise<unknown>;
 }
 
-export function resolveRuntimePaths(workingDirectory = process.cwd()): RuntimePaths {
-  const absoluteWorkingDirectory = resolve(workingDirectory);
-  const runtimeRoot = join(absoluteWorkingDirectory, RUNTIME_ROOT_NAME);
+export function resolveRuntimePaths(workingDirectory?: string): RuntimePaths {
+  const absoluteWorkingDirectory = resolve(workingDirectory ?? process.cwd());
+  const runtimeRoot = resolveRuntimeRoot(workingDirectory);
 
   return {
     workingDirectory: absoluteWorkingDirectory,
@@ -63,4 +64,40 @@ export async function ensureRuntimePaths(
       },
     );
   }
+}
+
+function resolveRuntimeRoot(workingDirectory?: string): string {
+  const runtimeRootOverride = process.env.CYBERNOMADS_RUNTIME_ROOT?.trim();
+
+  if (runtimeRootOverride) {
+    return resolve(runtimeRootOverride);
+  }
+
+  if (workingDirectory) {
+    return join(resolve(workingDirectory), RUNTIME_ROOT_NAME);
+  }
+
+  if (process.platform === "darwin") {
+    return join(
+      homedir(),
+      "Library",
+      "Application Support",
+      "CyberNomads",
+      "backend",
+    );
+  }
+
+  if (process.platform === "win32") {
+    return join(
+      process.env.APPDATA || join(homedir(), "AppData", "Roaming"),
+      "CyberNomads",
+      "backend",
+    );
+  }
+
+  return join(
+    process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"),
+    "CyberNomads",
+    "backend",
+  );
 }

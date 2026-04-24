@@ -1,23 +1,48 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { EditorState, RangeSetBuilder, StateField } from '@codemirror/state'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { Decoration, EditorView, WidgetType, keymap } from '@codemirror/view'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { getStrategyById, listStrategies, saveStrategy } from '@/entities/strategy/api/strategy-service'
-import {
-  buildPlaceholderDeclaration,
-  mapStrategyPlaceholderDtoToRecord,
-  parseStrategyPlaceholdersFromMarkdown,
-} from '@/entities/strategy/model/mappers'
+import { buildPlaceholderDeclaration } from '@/entities/strategy/model/mappers'
 import type {
   StrategyDetailRecord,
   StrategyPlaceholderRecord,
   StrategyRecord,
 } from '@/entities/strategy/model/types'
 
+interface MarkdownPlaceholderMatch {
+  type: StrategyPlaceholderRecord['type']
+  key: string
+  defaultValue: string | number
+  displayDefaultValue: string
+  declaration: string
+  start: number
+  end: number
+}
+
+interface StrategyImportBlockMatch {
+  sourceId: string
+  title: string
+  content: string
+  start: number
+  end: number
+  startMarkerStart: number
+  startMarkerEnd: number
+  endMarkerStart: number
+  endMarkerEnd: number
+  contentStart: number
+  contentEnd: number
+}
+
 const route = useRoute()
 const router = useRouter()
 
-const editorRef = ref<HTMLTextAreaElement | null>(null)
+const editorHostRef = ref<HTMLDivElement | null>(null)
+const tagInputRef = ref<HTMLInputElement | null>(null)
+const summaryRef = ref<HTMLTextAreaElement | null>(null)
 const strategyId = computed(() => String(route.params.strategyId ?? ''))
 const isEditMode = computed(() => Boolean(strategyId.value))
 const isSaving = ref(false)
@@ -27,14 +52,14 @@ const pageErrorMessage = ref('')
 const catalogErrorMessage = ref('')
 const insertingStrategyId = ref('')
 const moduleKeyword = ref('')
+const tagDraft = ref('')
+const isTagInputVisible = ref(false)
+const activePlaceholderKey = ref('')
+const isPlaceholderDialogOpen = ref(false)
+const placeholderDraftKey = ref('')
+const placeholderDraftValue = ref('')
 const currentStrategy = ref<StrategyDetailRecord | null>(null)
 const strategyCatalog = ref<StrategyRecord[]>([])
-
-const snapshotMarkerPreview = [
-  '<!-- cn-strategy-import:start source-id="strategy-demo" -->',
-  '# 来源策略正文',
-  '<!-- cn-strategy-import:end -->',
-].join('\n')
 
 const form = reactive({
   name: '',
@@ -51,6 +76,8 @@ const parsedTags = computed(() => {
 
   return [...new Set(tokens)]
 })
+
+const placeholderMatches = computed<MarkdownPlaceholderMatch[]>(() => scanMarkdownPlaceholderMatches(form.markdown))
 
 const filteredCatalog = computed(() => {
   const normalizedKeyword = moduleKeyword.value.trim().toLowerCase()
@@ -72,35 +99,461 @@ const filteredCatalog = computed(() => {
 })
 
 const placeholderPreview = computed<StrategyPlaceholderRecord[]>(() => {
-  if (currentStrategy.value && form.markdown === currentStrategy.value.contentMarkdown) {
-    return currentStrategy.value.placeholders
-  }
-
   const deduplicated = new Map<string, StrategyPlaceholderRecord>()
 
-  for (const placeholder of parseStrategyPlaceholdersFromMarkdown(form.markdown)) {
-    deduplicated.set(placeholder.key, mapStrategyPlaceholderDtoToRecord(placeholder))
+  for (const placeholder of placeholderMatches.value) {
+    deduplicated.set(placeholder.key, {
+      type: placeholder.type,
+      key: placeholder.key,
+      defaultValue: placeholder.defaultValue,
+      displayDefaultValue: placeholder.displayDefaultValue,
+      declaration: placeholder.declaration,
+    })
   }
 
   return [...deduplicated.values()]
 })
 
+const activePlaceholderRecord = computed(() =>
+  placeholderPreview.value.find((placeholder) => placeholder.key === activePlaceholderKey.value) ?? null,
+)
+
+let editorView: EditorView | null = null
+let isSyncingFromEditor = false
+
 function createDefaultMarkdown() {
-  return [
-    '# 新策略',
-    '',
-    '## 使用说明',
-    '- 在这里编写 Markdown 提示词正文。',
-    '- 需要参数时，使用 {{string:title="默认标题"}} 或 {{int:max_retry=3}}。',
-  ].join('\n')
+  return '\n\n\n\n\n\n'
+}
+
+function scanMarkdownPlaceholderMatches(contentMarkdown: string): MarkdownPlaceholderMatch[] {
+  const matches = contentMarkdown.matchAll(/\{\{(string|int):([a-zA-Z_][\w.-]*)=("(?:[^"\\]|\\.)*"|-?\d+)\}\}/g)
+  const placeholders: MarkdownPlaceholderMatch[] = []
+
+  for (const match of matches) {
+    const [declaration, rawType, key, rawDefaultValue] = match
+    const start = match.index ?? 0
+    const end = start + declaration.length
+
+    if (rawType === 'int') {
+      const defaultValue = Number(rawDefaultValue)
+
+      if (!Number.isInteger(defaultValue)) {
+        continue
+      }
+
+      placeholders.push({
+        type: 'int',
+        key,
+        defaultValue,
+        displayDefaultValue: String(defaultValue),
+        declaration,
+        start,
+        end,
+      })
+      continue
+    }
+
+    try {
+      const defaultValue = JSON.parse(rawDefaultValue)
+      placeholders.push({
+        type: 'string',
+        key,
+        defaultValue,
+        displayDefaultValue: String(defaultValue),
+        declaration,
+        start,
+        end,
+      })
+    } catch {
+      continue
+    }
+  }
+
+  return placeholders
+}
+
+function scanStrategyImportBlocks(contentMarkdown: string): StrategyImportBlockMatch[] {
+  const matches = contentMarkdown.matchAll(
+    /(<!--\s*cn-strategy-import:start source-id="([^"]+)"\s*-->|<!--\s*s:([a-zA-Z0-9_-]+)\s*-->)([\s\S]*?)(<!--\s*cn-strategy-import:end(?:\s+source-id="[^"]+")?\s*-->|<!--\s*\/s\s*-->)/g,
+  )
+  const blocks: StrategyImportBlockMatch[] = []
+
+  for (const match of matches) {
+    const [rawBlock, rawStartMarker, legacySourceId, compactSourceId, rawContent, rawEndMarker] = match
+    const sourceId = legacySourceId || compactSourceId
+    const start = match.index ?? 0
+    const startMarkerEnd = start + rawStartMarker.length
+    const endMarkerStart = start + rawBlock.lastIndexOf(rawEndMarker)
+    const endMarkerEnd = endMarkerStart + rawEndMarker.length
+    const contentStart = contentMarkdown[startMarkerEnd] === '\n' ? startMarkerEnd + 1 : startMarkerEnd
+    const contentEnd = contentMarkdown[endMarkerStart - 1] === '\n' ? endMarkerStart - 1 : endMarkerStart
+    const title = strategyCatalog.value.find((strategy) => strategy.id === sourceId)?.name ?? '整篇插入模块'
+
+    blocks.push({
+      sourceId,
+      title,
+      content: rawContent.trim(),
+      start,
+      end: start + rawBlock.length,
+      startMarkerStart: start,
+      startMarkerEnd,
+      endMarkerStart,
+      endMarkerEnd,
+      contentStart,
+      contentEnd,
+    })
+  }
+
+  return blocks
+}
+
+class PlaceholderWidget extends WidgetType {
+  private readonly placeholder: MarkdownPlaceholderMatch
+
+  constructor(placeholder: MarkdownPlaceholderMatch) {
+    super()
+    this.placeholder = placeholder
+  }
+
+  eq(other: PlaceholderWidget) {
+    return other.placeholder.declaration === this.placeholder.declaration
+  }
+
+  toDOM() {
+    const token = document.createElement('button')
+    token.type = 'button'
+    token.className = `strategy-reference-chip strategy-reference-chip--${this.placeholder.type}`
+    token.dataset.placeholderKey = this.placeholder.key
+
+    const icon = document.createElement('span')
+    icon.className = 'material-symbols-outlined'
+    icon.textContent = this.placeholder.type === 'int' ? 'pin' : 'match_case'
+
+    const label = document.createElement('strong')
+    label.textContent = this.placeholder.key
+
+    token.append(icon, label)
+    return token
+  }
+
+  ignoreEvent() {
+    return false
+  }
+}
+
+function createStrategyDecorations(content: string) {
+  const builder = new RangeSetBuilder<Decoration>()
+  const importBlocks = scanStrategyImportBlocks(content)
+  const lines: Array<{ start: number; end: number }> = []
+  let currentLineStart = 0
+
+  for (let index = 0; index < content.length; index += 1) {
+    if (content[index] === '\n') {
+      lines.push({ start: currentLineStart, end: index })
+      currentLineStart = index + 1
+    }
+  }
+
+  lines.push({ start: currentLineStart, end: content.length })
+
+  const decorations: Array<{ from: number; to: number; decoration: Decoration }> = []
+
+  for (const block of importBlocks) {
+    const startMarkerLine = lines.find((line) => line.start <= block.startMarkerStart && line.end >= block.startMarkerStart)
+    const endMarkerLine = lines.find((line) => line.start <= block.endMarkerStart && line.end >= block.endMarkerStart)
+
+    if (startMarkerLine) {
+      decorations.push({
+        from: startMarkerLine.start,
+        to: startMarkerLine.start,
+        decoration: Decoration.line({
+          attributes: {
+            class: 'strategy-import-marker-line',
+          },
+        }),
+      })
+    }
+
+    if (endMarkerLine) {
+      decorations.push({
+        from: endMarkerLine.start,
+        to: endMarkerLine.start,
+        decoration: Decoration.line({
+          attributes: {
+            class: 'strategy-import-marker-line',
+          },
+        }),
+      })
+    }
+
+    const contentLines = lines.filter(
+      (line) => line.start < block.contentEnd && line.end > block.contentStart,
+    )
+
+    contentLines.forEach((line, index) => {
+      const classes = ['strategy-import-line']
+
+      if (index === 0) {
+        classes.push('strategy-import-line--first')
+      }
+
+      if (index === contentLines.length - 1) {
+        classes.push('strategy-import-line--last')
+      }
+
+      decorations.push({
+        from: line.start,
+        to: line.start,
+        decoration: Decoration.line({
+          attributes: {
+            class: classes.join(' '),
+            ...(index === 0 ? { 'data-import-title': block.title } : {}),
+          },
+        }),
+      })
+    })
+  }
+
+  for (const match of scanMarkdownPlaceholderMatches(content)) {
+    decorations.push({
+      from: match.start,
+      to: match.end,
+      decoration: Decoration.replace({
+        widget: new PlaceholderWidget(match),
+        inclusive: false,
+      }),
+    })
+  }
+
+  decorations
+    .sort((a, b) => a.from - b.from || a.to - b.to)
+    .forEach(({ from, to, decoration }) => {
+      builder.add(from, to, decoration)
+    })
+
+  return builder.finish()
+}
+
+function createEditorView() {
+  if (!editorHostRef.value) {
+    return
+  }
+
+  const decorationsField = StateField.define({
+    create(state) {
+      return createStrategyDecorations(state.doc.toString())
+    },
+    update(decorations, transaction) {
+      if (!transaction.docChanged) {
+        return decorations
+      }
+
+      return createStrategyDecorations(transaction.state.doc.toString())
+    },
+    provide: (field) => EditorView.decorations.from(field),
+  })
+
+  editorView = new EditorView({
+    parent: editorHostRef.value,
+    state: EditorState.create({
+      doc: form.markdown,
+      extensions: [
+        history(),
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        decorationsField,
+        EditorView.lineWrapping,
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged) {
+            return
+          }
+
+          isSyncingFromEditor = true
+          form.markdown = update.state.doc.toString()
+          isSyncingFromEditor = false
+        }),
+        EditorView.domEventHandlers({
+          mousedown: (event) => {
+            const target = (event.target as HTMLElement).closest<HTMLElement>('[data-placeholder-key]')
+
+            if (!target) {
+              return false
+            }
+
+            const key = target.dataset.placeholderKey
+
+            if (!key) {
+              return false
+            }
+
+            event.preventDefault()
+            openPlaceholderDialog(key)
+            return true
+          },
+        }),
+      ],
+    }),
+  })
 }
 
 function applyStrategy(detail: StrategyDetailRecord | null) {
   currentStrategy.value = detail
   form.name = detail?.name ?? ''
   form.summary = detail?.summary ?? ''
-  form.markdown = detail?.contentMarkdown ?? createDefaultMarkdown()
+  form.markdown = detail?.contentMarkdown?.length ? detail.contentMarkdown : createDefaultMarkdown()
   form.tagsText = detail?.tags.join(', ') ?? ''
+  tagDraft.value = ''
+  isTagInputVisible.value = false
+  activePlaceholderKey.value = detail?.placeholders[0]?.key ?? ''
+  isPlaceholderDialogOpen.value = false
+  placeholderDraftKey.value = ''
+  placeholderDraftValue.value = ''
+}
+
+function resizeSummaryTextarea() {
+  const textarea = summaryRef.value
+
+  if (!textarea) {
+    return
+  }
+
+  textarea.style.height = 'auto'
+  textarea.style.height = `${textarea.scrollHeight}px`
+}
+
+watch(() => form.summary, () => {
+  void nextTick(resizeSummaryTextarea)
+}, { flush: 'post' })
+
+watch(() => form.markdown, (value) => {
+  if (isSyncingFromEditor || !editorView) {
+    return
+  }
+
+  const currentValue = editorView.state.doc.toString()
+
+  if (currentValue === value) {
+    return
+  }
+
+  editorView.dispatch({
+    changes: {
+      from: 0,
+      to: currentValue.length,
+      insert: value,
+    },
+  })
+})
+
+onMounted(() => {
+  createEditorView()
+})
+
+onBeforeUnmount(() => {
+  editorView?.destroy()
+  editorView = null
+})
+
+function syncTags(tags: string[]) {
+  form.tagsText = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].join(', ')
+}
+
+function handleAddTag() {
+  const tags = tagDraft.value
+    .split(/[\n,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+
+  if (tags.length === 0) {
+    return
+  }
+
+  syncTags([...parsedTags.value, ...tags])
+  tagDraft.value = ''
+  isTagInputVisible.value = false
+}
+
+function handleRemoveTag(tagToRemove: string) {
+  syncTags(parsedTags.value.filter((tag) => tag !== tagToRemove))
+}
+
+function openPlaceholderDialog(key: string) {
+  const placeholder = placeholderPreview.value.find((item) => item.key === key)
+
+  if (!placeholder) {
+    return
+  }
+
+  activePlaceholderKey.value = key
+  placeholderDraftKey.value = placeholder.key
+  placeholderDraftValue.value = placeholder.displayDefaultValue
+  isPlaceholderDialogOpen.value = true
+}
+
+function normalizePlaceholderKey(value: string) {
+  const trimmed = value.trim().replace(/\s+/g, '_')
+  const normalized = trimmed.replace(/[^a-zA-Z0-9_.-]/g, '_')
+
+  if (!normalized) {
+    return 'field'
+  }
+
+  return /^[a-zA-Z_]/.test(normalized) ? normalized : `field_${normalized}`
+}
+
+function serializePlaceholderValue(type: StrategyPlaceholderRecord['type'], value: string) {
+  if (type === 'int') {
+    const parsed = Number(value.trim())
+    return Number.isInteger(parsed) ? String(parsed) : '0'
+  }
+
+  return JSON.stringify(value)
+}
+
+function updatePlaceholderRecord(placeholder: StrategyPlaceholderRecord, nextKey: string, nextValue: string) {
+  const normalizedKey = normalizePlaceholderKey(nextKey)
+  const nextDeclaration = `{{${placeholder.type}:${normalizedKey}=${serializePlaceholderValue(placeholder.type, nextValue)}}}`
+  const matcher = new RegExp(
+    String.raw`\{\{${placeholder.type}:${placeholder.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}=("(?:[^"\\]|\\.)*"|-?\d+)\}\}`,
+    'g',
+  )
+
+  form.markdown = form.markdown.replace(matcher, nextDeclaration)
+  activePlaceholderKey.value = normalizedKey
+}
+
+function closePlaceholderDialog() {
+  isPlaceholderDialogOpen.value = false
+}
+
+function submitPlaceholderDialog() {
+  if (!activePlaceholderRecord.value) {
+    return
+  }
+
+  updatePlaceholderRecord(activePlaceholderRecord.value, placeholderDraftKey.value, placeholderDraftValue.value)
+  isPlaceholderDialogOpen.value = false
+}
+
+async function handleTagAddButtonClick() {
+  if (isTagInputVisible.value) {
+    handleAddTag()
+    return
+  }
+
+  isTagInputVisible.value = true
+  await nextTick()
+  tagInputRef.value?.focus()
+}
+
+function handleTagInputBlur() {
+  if (!tagDraft.value.trim()) {
+    isTagInputVisible.value = false
+  }
+}
+
+function handleCancelTagInput() {
+  tagDraft.value = ''
+  isTagInputVisible.value = false
 }
 
 async function loadCatalog() {
@@ -162,34 +615,48 @@ function resolveModuleIcon(strategy: StrategyRecord) {
 }
 
 async function insertTextAtCursor(text: string) {
-  const editor = editorRef.value
+  const editor = editorView
 
   if (!editor) {
     form.markdown = [form.markdown.trimEnd(), text].filter(Boolean).join('\n\n')
     return
   }
 
-  const selectionStart = editor.selectionStart ?? form.markdown.length
-  const selectionEnd = editor.selectionEnd ?? selectionStart
-  const before = form.markdown.slice(0, selectionStart)
-  const after = form.markdown.slice(selectionEnd)
+  const { from, to } = editor.state.selection.main
+  const before = form.markdown.slice(0, from)
+  const after = form.markdown.slice(to)
   const prefix = before && !before.endsWith('\n') ? '\n\n' : ''
   const suffix = after && !after.startsWith('\n') ? '\n\n' : ''
   const insertion = `${prefix}${text}${suffix}`
 
-  form.markdown = `${before}${insertion}${after}`
-
-  await nextTick()
-  const cursor = before.length + insertion.length
+  editor.dispatch({
+    changes: { from, to, insert: insertion },
+    selection: { anchor: from + insertion.length },
+  })
   editor.focus()
-  editor.setSelectionRange(cursor, cursor)
+}
+
+async function insertInlineTextAtCursor(text: string) {
+  const editor = editorView
+
+  if (!editor) {
+    form.markdown = `${form.markdown}${text}`
+    return
+  }
+
+  const { from, to } = editor.state.selection.main
+  editor.dispatch({
+    changes: { from, to, insert: text },
+    selection: { anchor: from + text.length },
+  })
+  editor.focus()
 }
 
 function composeSnapshotBlock(strategy: StrategyDetailRecord) {
   return [
-    `<!-- cn-strategy-import:start source-id="${strategy.id}" -->`,
+    `<!-- s:${strategy.id} -->`,
     strategy.contentMarkdown.trim(),
-    '<!-- cn-strategy-import:end -->',
+    '<!-- /s -->',
   ].join('\n')
 }
 
@@ -253,7 +720,7 @@ async function handleInsertHeading() {
 }
 
 async function handleInsertStringPlaceholder() {
-  await insertTextAtCursor(buildPlaceholderDeclaration({
+  await insertInlineTextAtCursor(buildPlaceholderDeclaration({
     type: 'string',
     key: 'title',
     defaultValue: '默认标题',
@@ -261,7 +728,7 @@ async function handleInsertStringPlaceholder() {
 }
 
 async function handleInsertIntPlaceholder() {
-  await insertTextAtCursor(buildPlaceholderDeclaration({
+  await insertInlineTextAtCursor(buildPlaceholderDeclaration({
     type: 'int',
     key: 'max_retry',
     defaultValue: 3,
@@ -282,21 +749,35 @@ async function handleInsertIntPlaceholder() {
 
       <div class="strategy-editor-header__right">
         <div class="strategy-editor-header__tags">
-          <span v-for="tag in parsedTags" :key="tag">{{ tag }}</span>
-          <span v-if="parsedTags.length === 0">未分类</span>
+          <span v-for="tag in parsedTags" :key="tag" class="strategy-editor-header__tag">
+            <span class="material-symbols-outlined">sell</span>
+            {{ tag }}
+            <button type="button" class="strategy-editor-header__tag-remove" :aria-label="`删除标签 ${tag}`" @click="handleRemoveTag(tag)">
+              <span class="material-symbols-outlined">close</span>
+            </button>
+          </span>
+          <span v-if="parsedTags.length === 0" class="strategy-editor-header__tag strategy-editor-header__tag--empty">
+            <span class="material-symbols-outlined">sell</span>
+            未分类
+          </span>
           <input
-            v-model="form.tagsText"
+            v-if="isTagInputVisible"
+            ref="tagInputRef"
+            v-model="tagDraft"
             class="strategy-editor-header__tag-input"
             type="text"
-            placeholder="标签，逗号分隔"
+            placeholder="输入标签"
             data-testid="strategy-editor-tags"
+            @blur="handleTagInputBlur"
+            @keydown.enter.prevent="handleAddTag"
+            @keydown.esc.prevent="handleCancelTagInput"
           />
+          <button type="button" class="strategy-editor-header__tag-add" @click="handleTagAddButtonClick">
+            <span class="material-symbols-outlined">add</span>
+          </button>
         </div>
         <div class="strategy-editor-header__divider" />
         <div class="strategy-editor-header__actions">
-          <button type="button" class="strategy-editor-header__action" :disabled="isSaving" @click="handleReload">
-            {{ isLoading ? '加载中…' : '重新加载' }}
-          </button>
           <button
             type="button"
             class="strategy-editor-header__action strategy-editor-header__action--primary"
@@ -304,8 +785,8 @@ async function handleInsertIntPlaceholder() {
             :disabled="isSaving || !form.name.trim() || !form.markdown.trim()"
             @click="handleSave"
           >
-            <span class="material-symbols-outlined">save</span>
-            <span>{{ isSaving ? '保存中…' : '保存策略' }}</span>
+            <span class="material-symbols-outlined">rocket_launch</span>
+            <span>{{ isSaving ? '部署中…' : '部署策略' }}</span>
           </button>
         </div>
       </div>
@@ -315,13 +796,13 @@ async function handleInsertIntPlaceholder() {
       <aside class="strategy-modules">
         <div class="strategy-modules__header">
           <h2>
-            <span class="material-symbols-outlined">library_books</span>
-            <span>策略池</span>
+            <span class="material-symbols-outlined">extension</span>
+            <span>模块池</span>
           </h2>
-          <p>从左侧选择已有策略并整篇插入到当前正文，插入后仅保留快照内容。</p>
+          <p>点击添加已有策略至主编辑区，插入后仅保留快照内容。</p>
           <label class="strategy-modules__search">
             <span class="material-symbols-outlined">search</span>
-            <input v-model="moduleKeyword" type="text" placeholder="搜索策略..." />
+            <input v-model="moduleKeyword" type="text" placeholder="搜索模块..." />
           </label>
           <p v-if="catalogErrorMessage" class="strategy-modules__alert">{{ catalogErrorMessage }}</p>
         </div>
@@ -391,19 +872,23 @@ async function handleInsertIntPlaceholder() {
           <div class="strategy-canvas__toolbar-left">
             <button type="button" @click="handleInsertHeading">
               <span class="material-symbols-outlined">format_h1</span>
+              <span>插入标题</span>
             </button>
             <button type="button" @click="handleInsertStringPlaceholder">
-              <span class="material-symbols-outlined">format_bold</span>
+              <span class="material-symbols-outlined">match_case</span>
+              <span>文本引用</span>
             </button>
             <button type="button" @click="handleInsertIntPlaceholder">
-              <span class="material-symbols-outlined">code</span>
+              <span class="material-symbols-outlined">pin</span>
+              <span>数字引用</span>
             </button>
             <div class="strategy-canvas__toolbar-divider" />
             <button type="button" @click="handleReload">
               <span class="material-symbols-outlined">data_object</span>
+              <span>重置数据</span>
             </button>
           </div>
-          <span>{{ placeholderPreview.length }} placeholders | Markdown</span>
+          <span class="strategy-canvas__toolbar-status">{{ placeholderPreview.length }} 个对象引用 · Markdown</span>
         </div>
 
         <div class="strategy-canvas__content">
@@ -416,37 +901,22 @@ async function handleInsertIntPlaceholder() {
               <span class="strategy-canvas__key">tags:</span>
               <span class="strategy-canvas__value">[{{ parsedTags.join(', ') || '未分类' }}]</span>
             </div>
-            <div class="strategy-canvas__meta-row">
+            <div class="strategy-canvas__meta-row strategy-canvas__meta-row--summary">
               <span class="strategy-canvas__key">summary:</span>
-            </div>
-            <textarea
-              v-model="form.summary"
-              class="strategy-canvas__meta-textarea"
-              rows="3"
-              placeholder="摘要说明"
-              data-testid="strategy-editor-summary"
-            />
-          </div>
-
-          <textarea ref="editorRef" v-model="form.markdown" data-testid="strategy-editor-markdown" />
-
-          <div class="strategy-snippet">
-            <div class="strategy-snippet__rail" />
-            <div class="strategy-snippet__header">
-              <span class="material-symbols-outlined">library_add</span>
-              <span>整篇插入约定</span>
-            </div>
-            <div class="strategy-snippet__body">
-              <p>从左侧插入策略时，会把完整正文包裹在导入块标记中，后续仍然可以继续手工修改。</p>
-              <div class="strategy-snippet__code">{{ snapshotMarkerPreview }}</div>
-              <p class="strategy-snippet__hint">* 插入后的内容是静态快照，不会和来源策略保持实时引用关系。</p>
+              <textarea
+                ref="summaryRef"
+                v-model="form.summary"
+                class="strategy-canvas__meta-textarea"
+                rows="2"
+                placeholder="摘要说明"
+                data-testid="strategy-editor-summary"
+                @input="resizeSummaryTextarea"
+              />
             </div>
           </div>
 
-          <div class="strategy-canvas__cursor">
-            <span />
-            <p>{{ pageErrorMessage || '继续输入正文，或从左侧插入整篇策略...' }}</p>
-          </div>
+          <div ref="editorHostRef" class="strategy-canvas__editor-shell" data-testid="strategy-editor-markdown" />
+          <p v-if="pageErrorMessage" class="strategy-canvas__error">{{ pageErrorMessage }}</p>
         </div>
       </section>
 
@@ -454,22 +924,32 @@ async function handleInsertIntPlaceholder() {
         <div class="strategy-objects__header">
           <h2>
             <span class="material-symbols-outlined">data_object</span>
-            <span>参数占位符</span>
+            <span>对象引用</span>
           </h2>
-          <p>自动识别当前策略中的 `type / key / defaultValue` 声明。</p>
+          <p>自动检测当前策略中的对象引用契约。</p>
         </div>
 
         <div class="strategy-objects__list">
-          <div v-for="placeholder in placeholderPreview" :key="placeholder.key" class="strategy-object">
+          <button
+            v-for="placeholder in placeholderPreview"
+            :key="placeholder.key"
+            type="button"
+            class="strategy-object"
+            :class="[
+              `strategy-object--${placeholder.type}`,
+              { 'strategy-object--active': activePlaceholderKey === placeholder.key },
+            ]"
+            @click="openPlaceholderDialog(placeholder.key)"
+          >
             <div class="strategy-object__icon">
-              <span class="material-symbols-outlined">tune</span>
+              <span class="material-symbols-outlined">{{ placeholder.type === 'int' ? 'pin' : 'match_case' }}</span>
             </div>
             <div class="strategy-object__content">
               <h3>{{ placeholder.key }}</h3>
-              <span>{{ placeholder.type }} / {{ placeholder.displayDefaultValue || '空字符串' }}</span>
+              <span>{{ placeholder.displayDefaultValue || '空字符串' }}</span>
             </div>
-            <span class="material-symbols-outlined strategy-object__check">check_circle</span>
-          </div>
+            <span class="material-symbols-outlined strategy-object__check">chevron_right</span>
+          </button>
 
           <div v-if="placeholderPreview.length === 0" class="strategy-object strategy-object--asset">
             <div class="strategy-object__icon">
@@ -484,6 +964,47 @@ async function handleInsertIntPlaceholder() {
         </div>
       </aside>
     </main>
+
+    <div v-if="isPlaceholderDialogOpen && activePlaceholderRecord" class="strategy-dialog__backdrop" @click.self="closePlaceholderDialog">
+      <div class="strategy-dialog">
+        <div class="strategy-dialog__header">
+          <div>
+            <h3>{{ activePlaceholderRecord.key }}</h3>
+            <p>{{ activePlaceholderRecord.type === 'int' ? '数字引用' : '文本引用' }}</p>
+          </div>
+          <button type="button" class="strategy-dialog__close" @click="closePlaceholderDialog">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <label class="strategy-dialog__field">
+          <span>标题 / Key</span>
+          <input
+            type="text"
+            v-model="placeholderDraftKey"
+            @keydown.enter.prevent="submitPlaceholderDialog"
+          />
+        </label>
+
+        <label class="strategy-dialog__field">
+          <span>默认值</span>
+          <input
+            :type="activePlaceholderRecord.type === 'int' ? 'number' : 'text'"
+            v-model="placeholderDraftValue"
+            @keydown.enter.prevent="submitPlaceholderDialog"
+          />
+        </label>
+
+        <div class="strategy-dialog__footer">
+          <button type="button" class="strategy-dialog__button strategy-dialog__button--ghost" @click="closePlaceholderDialog">
+            取消
+          </button>
+          <button type="button" class="strategy-dialog__button strategy-dialog__button--primary" @click="submitPlaceholderDialog">
+            保存修改
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -497,11 +1018,10 @@ async function handleInsertIntPlaceholder() {
 }
 
 .strategy-editor-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(16rem, 34rem) minmax(22rem, 1fr) auto;
+  gap: 1.25rem;
   align-items: center;
-  justify-content: space-between;
   min-height: 4rem;
   padding: 0 1.5rem;
   background: #131313;
@@ -518,8 +1038,28 @@ async function handleInsertIntPlaceholder() {
 }
 
 .strategy-editor-header__left {
-  min-width: min(34rem, 100%);
-  flex: 1;
+  min-width: 0;
+}
+
+.strategy-editor-header__right {
+  min-width: 0;
+  display: contents;
+}
+
+.strategy-editor-header__right > .strategy-editor-header__divider {
+  display: none;
+}
+
+.strategy-editor-header__tags {
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.strategy-editor-header__actions {
+  justify-content: flex-end;
 }
 
 .strategy-editor-header__back {
@@ -543,52 +1083,127 @@ async function handleInsertIntPlaceholder() {
   background: rgb(72 72 71 / 0.3);
 }
 
-.strategy-editor-header input {
+.strategy-editor-header__left input {
   flex: 1;
+  min-width: 0;
   border: 0;
   color: #fff;
   background: transparent;
   font-family: var(--cn-font-display);
-  font-size: clamp(1.2rem, 2vw, 1.6rem);
+  font-size: 1.18rem;
   font-weight: 700;
   outline: 0;
+  padding: 0.25rem 0.5rem;
+  margin-left: -0.5rem;
+  border-radius: 0.25rem;
+  transition: background-color var(--cn-transition);
 }
 
-.strategy-editor-header__tags span,
+.strategy-editor-header__left input:hover,
+.strategy-editor-header__left input:focus {
+  background: #201f1f;
+}
+
+.strategy-editor-header__tags > span,
 .strategy-editor-header__tag-add {
   display: inline-flex;
   gap: 0.25rem;
   align-items: center;
-  min-height: 1.9rem;
-  padding: 0 0.75rem;
+  min-height: 1.55rem;
+  padding: 0 0.7rem;
   border: 1px solid rgb(72 72 71 / 0.2);
   border-radius: 999px;
   background: #262626;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
-.strategy-editor-header__tags span:first-of-type {
+.strategy-editor-header__tag {
+  max-width: 12rem;
+}
+
+.strategy-editor-header__tags .material-symbols-outlined {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.9rem;
+}
+
+.strategy-editor-header__tags > span:first-of-type {
   color: #4aa2f9;
 }
 
-.strategy-editor-header__tags span:nth-of-type(2) {
+.strategy-editor-header__tags > span:nth-of-type(2) {
   color: #b7e500;
 }
 
 .strategy-editor-header__tag-add {
-  width: 1.9rem;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
   padding: 0;
   justify-content: center;
+  border-radius: 999px;
+  background: #1a1919;
   color: #adaaaa;
+  cursor: pointer;
+}
+
+.strategy-editor-header__tag-add:hover:not(:disabled) {
+  color: #8ff5ff;
+  background: #262626;
+}
+
+.strategy-editor-header__tag-add .material-symbols-outlined {
+  font-size: 0.95rem;
+}
+
+.strategy-editor-header__tag-add:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.strategy-editor-header__tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  margin-left: 0.15rem;
+  border: 0;
+  border-radius: 999px;
+  color: currentcolor;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.strategy-editor-header__tag-remove:hover {
+  opacity: 1;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.strategy-editor-header__tag-remove .material-symbols-outlined {
+  font-size: 0.78rem;
 }
 
 .strategy-editor-header__tag-input {
-  min-width: 7rem;
-  max-width: 10rem;
-  border: 0;
+  width: 6.5rem;
+  min-width: 6.5rem;
+  max-width: 6.5rem;
+  flex: 0 0 6.5rem;
+  min-height: 1.9rem;
+  padding: 0.25rem 0.75rem;
+  margin: 0;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 999px;
   color: #fff;
-  background: transparent;
+  background: rgb(32 31 31 / 0.45);
+  font-family: var(--cn-font-body);
   font-size: 0.75rem;
+  font-weight: 400;
   outline: 0;
 }
 
@@ -598,10 +1213,12 @@ async function handleInsertIntPlaceholder() {
 
 .strategy-editor-header__action {
   border: 0;
-  padding: 0.7rem 1rem;
-  border-radius: 0.6rem;
+  padding: 0.55rem 1rem;
+  border-radius: 0.25rem;
   color: #adaaaa;
   background: transparent;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .strategy-editor-header__action:hover {
@@ -612,13 +1229,23 @@ async function handleInsertIntPlaceholder() {
   display: inline-flex;
   gap: 0.45rem;
   align-items: center;
+  min-width: 8.5rem;
+  min-height: 2.25rem;
+  padding: 0.45rem 1.1rem;
+  justify-content: center;
   color: #005d63;
   background: #8ff5ff;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 700;
+  box-shadow: 0 0 16px rgb(143 245 255 / 0.16);
 }
 
 .strategy-editor-header__action--primary:hover {
   background: #00eefc;
+}
+
+.strategy-editor-header__action--primary .material-symbols-outlined {
+  font-size: 1.15rem;
 }
 
 .strategy-editor-body {
@@ -651,15 +1278,29 @@ async function handleInsertIntPlaceholder() {
   margin: 0;
   color: #8ff5ff;
   font-family: var(--cn-font-display);
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 700;
+}
+
+.strategy-modules__header h2 .material-symbols-outlined {
+  font-size: 1.25rem;
+}
+
+.strategy-objects__header h2 {
+  color: #fff;
+  font-size: 1rem;
+}
+
+.strategy-objects__header h2 .material-symbols-outlined {
+  font-size: 1.25rem;
 }
 
 .strategy-modules__header p,
 .strategy-objects__header p {
-  margin: 0.4rem 0 0;
+  margin: 0.35rem 0 0;
   color: #adaaaa;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
+  line-height: 1.5;
 }
 
 .strategy-modules__alert {
@@ -670,12 +1311,18 @@ async function handleInsertIntPlaceholder() {
   display: flex;
   gap: 0.55rem;
   align-items: center;
-  padding: 0.75rem 0.85rem;
+  height: 2.5rem;
+  padding: 0 0.75rem;
   margin-top: 1rem;
-  border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.75rem;
+  border: 0;
+  border-bottom: 1px solid rgb(72 72 71 / 0.2);
+  border-radius: 0.25rem;
   background: #1a1919;
   color: #adaaaa;
+}
+
+.strategy-modules__search .material-symbols-outlined {
+  font-size: 1.125rem;
 }
 
 .strategy-modules__search input {
@@ -683,6 +1330,7 @@ async function handleInsertIntPlaceholder() {
   border: 0;
   color: #fff;
   background: transparent;
+  font-size: 0.875rem;
   outline: 0;
 }
 
@@ -692,16 +1340,17 @@ async function handleInsertIntPlaceholder() {
   gap: 1rem;
   padding: 1rem 1.5rem 1.5rem;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .strategy-module,
 .strategy-object {
   position: relative;
   display: grid;
-  gap: 0.75rem;
+  gap: 0.65rem;
   padding: 1rem;
   border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.75rem;
+  border-radius: 0.5rem;
   background: #1a1919;
 }
 
@@ -738,7 +1387,7 @@ async function handleInsertIntPlaceholder() {
   place-items: center;
   width: 2rem;
   height: 2rem;
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   background: rgb(74 162 249 / 0.12);
   flex-shrink: 0;
 }
@@ -764,6 +1413,7 @@ async function handleInsertIntPlaceholder() {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 500;
+  color: #fff;
 }
 
 .strategy-module__identity span,
@@ -817,21 +1467,28 @@ async function handleInsertIntPlaceholder() {
 
 .strategy-canvas__toolbar-left {
   display: flex;
-  gap: 0.2rem;
+  gap: 0.45rem;
   align-items: center;
   color: #adaaaa;
 }
 
+.strategy-canvas__toolbar-left .material-symbols-outlined {
+  font-size: 1.125rem;
+}
+
 .strategy-canvas__toolbar-left button {
   display: inline-flex;
+  gap: 0.35rem;
   align-items: center;
   justify-content: center;
-  width: 2rem;
   height: 2rem;
+  padding: 0 0.65rem;
   border: 0;
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   color: inherit;
   background: transparent;
+  font-size: 0.78rem;
+  font-weight: 500;
 }
 
 .strategy-canvas__toolbar-left button:hover {
@@ -846,7 +1503,7 @@ async function handleInsertIntPlaceholder() {
   background: rgb(72 72 71 / 0.3);
 }
 
-.strategy-canvas__toolbar span:last-child {
+.strategy-canvas__toolbar-status {
   color: #adaaaa;
   font-family: var(--cn-font-mono);
   font-size: 0.72rem;
@@ -855,34 +1512,47 @@ async function handleInsertIntPlaceholder() {
 .strategy-canvas__content {
   flex: 1;
   overflow-y: auto;
-  padding: 2rem 2.5rem;
+  padding: 2rem 3rem;
+}
+
+.strategy-canvas__content > * {
+  width: 100%;
 }
 
 .strategy-canvas__frontmatter {
   padding: 1rem;
   margin-bottom: 1.5rem;
   border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.75rem;
+  border-radius: 0.5rem;
   background: #0a0a0a;
   font-family: var(--cn-font-mono);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 
 .strategy-canvas__meta-row {
   margin-bottom: 0.5rem;
 }
 
-.strategy-canvas__meta-textarea {
-  width: 100%;
-  min-height: 4.5rem;
+.strategy-canvas__meta-row--summary {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  margin-bottom: 0;
+}
+
+.strategy-canvas textarea.strategy-canvas__meta-textarea {
+  flex: 1;
+  width: auto;
+  min-height: calc(0.75rem * 1.65 * 2);
   border: 0;
   color: #c5c9cb;
   background: transparent;
   font-family: var(--cn-font-mono);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   line-height: 1.65;
   outline: 0;
-  resize: vertical;
+  overflow: hidden;
+  resize: none;
 }
 
 .strategy-canvas__key {
@@ -893,88 +1563,174 @@ async function handleInsertIntPlaceholder() {
   color: #c3f400;
 }
 
-.strategy-canvas textarea {
-  width: 100%;
+.strategy-canvas__editor-shell {
   min-height: 18rem;
-  border: 0;
+}
+
+:deep(.strategy-reference-chip) {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  min-height: 1.25rem;
+  padding: 0 0.35rem;
+  border: 1px solid rgb(143 245 255 / 0.28);
+  border-radius: 0.3rem;
+  color: #8ff5ff;
+  background: rgb(143 245 255 / 0.09);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: normal;
+  line-height: 1.2;
+  vertical-align: -0.1em;
+}
+
+:deep(.strategy-reference-chip--string) {
+  border-color: rgb(143 245 255 / 0.28);
+  color: #8ff5ff;
+  background: rgb(143 245 255 / 0.09);
+}
+
+:deep(.strategy-reference-chip--int) {
+  border-color: rgb(195 244 0 / 0.28);
+  color: #c3f400;
+  background: rgb(195 244 0 / 0.08);
+}
+
+:deep(.strategy-reference-chip strong) {
+  color: currentcolor;
+  font-size: inherit;
+  font-weight: 700;
+  letter-spacing: normal;
+}
+
+:deep(.strategy-reference-chip small) {
+  color: rgb(143 245 255 / 0.7);
+  font-size: 0.7rem;
+}
+
+:deep(.strategy-reference-chip .material-symbols-outlined) {
+  color: currentcolor;
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+:deep(.strategy-reference-chip--active),
+:deep(.strategy-reference-chip:hover) {
+  box-shadow: 0 0 12px rgb(143 245 255 / 0.12);
+}
+
+:deep(.strategy-reference-chip--string.strategy-reference-chip--active),
+:deep(.strategy-reference-chip--string:hover) {
+  border-color: #8ff5ff;
+  background: rgb(143 245 255 / 0.16);
+}
+
+:deep(.strategy-reference-chip--int.strategy-reference-chip--active),
+:deep(.strategy-reference-chip--int:hover) {
+  border-color: #c3f400;
+  background: rgb(195 244 0 / 0.14);
+}
+
+:deep(.cm-editor) {
+  min-height: 18rem;
   color: #c5c9cb;
   background: transparent;
   font-family: var(--cn-font-mono);
-  font-size: 0.95rem;
-  line-height: 1.85;
-  outline: 0;
-  resize: vertical;
+  font-size: 0.875rem;
+  line-height: 1.75;
 }
 
-.strategy-snippet {
-  position: relative;
-  padding: 1.25rem 1.5rem 1.25rem 1.75rem;
-  margin-top: 1.5rem;
-  border: 1px solid rgb(143 245 255 / 0.2);
-  border-radius: 1rem;
+:deep(.cm-focused) {
+  outline: none;
+}
+
+:deep(.cm-scroller) {
+  font-family: inherit;
+  line-height: inherit;
+}
+
+:deep(.cm-content) {
+  min-height: 18rem;
+  padding: 0;
+  caret-color: #8ff5ff;
+}
+
+:deep(.cm-line) {
+  padding: 0;
+}
+
+:deep(.cm-selectionBackground),
+:deep(.cm-content ::selection) {
+  background: rgb(143 245 255 / 0.16) !important;
+}
+
+:deep(.cm-gutters) {
+  display: none;
+}
+
+:deep(.strategy-import-marker-line) {
+  height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  line-height: 0 !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+:deep(.strategy-import-marker-line .cm-line) {
+  height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+:deep(.strategy-import-line) {
+  padding-right: 1.2rem !important;
+  padding-left: 1.5rem !important;
+  border-right: 1px solid rgb(143 245 255 / 0.22);
+  border-left: 1px solid rgb(143 245 255 / 0.22);
   background: rgb(38 38 38 / 0.4);
 }
 
-.strategy-snippet__rail {
+:deep(.strategy-import-line--first) {
+  position: relative;
+  margin-top: 0.6rem;
+  padding-top: 2.9rem !important;
+  border-top: 1px solid rgb(143 245 255 / 0.22);
+  border-radius: 0.65rem 0.65rem 0 0;
+}
+
+:deep(.strategy-import-line--first)::before {
   position: absolute;
-  top: 1.5rem;
-  bottom: 1.5rem;
+  top: 0.95rem;
+  left: 1.5rem;
+  color: #8ff5ff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  content: attr(data-import-title);
+}
+
+:deep(.strategy-import-line--first)::after {
+  position: absolute;
+  top: 0.95rem;
   left: -1px;
+  bottom: 0;
   width: 2px;
+  content: '';
   background: linear-gradient(180deg, #8ff5ff, #00eefc);
 }
 
-.strategy-snippet__header {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 1rem;
-  color: #8ff5ff;
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+:deep(.strategy-import-line--last) {
+  padding-bottom: 0.9rem !important;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px solid rgb(143 245 255 / 0.22);
+  border-radius: 0 0 0.65rem 0.65rem;
 }
 
-.strategy-snippet__body p {
-  margin: 0 0 0.9rem;
-  color: #fff;
-}
-
-.strategy-snippet__code {
-  padding: 1rem;
-  border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.75rem;
-  background: #0a0a0a;
-  font-family: var(--cn-font-mono);
-  font-size: 0.8rem;
-  white-space: pre-wrap;
-}
-
-.strategy-snippet__hint {
-  margin-top: 0.75rem !important;
-  color: #d7383b !important;
-  font-size: 0.75rem;
-  font-style: italic;
-}
-
-.strategy-canvas__cursor {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-  margin-top: 1.75rem;
-}
-
-.strategy-canvas__cursor span {
-  width: 0.25rem;
-  height: 1.25rem;
-  background: #8ff5ff;
-  box-shadow: 0 0 8px rgb(143 245 255 / 0.5);
-}
-
-.strategy-canvas__cursor p {
+.strategy-canvas__error {
   margin: 0;
-  color: rgb(255 255 255 / 0.5);
+  color: #ff716c;
   font-style: italic;
 }
 
@@ -983,9 +1739,30 @@ async function handleInsertIntPlaceholder() {
   border-left: 1px solid rgb(72 72 71 / 0.1);
 }
 
+.strategy-objects__list {
+  gap: 0.75rem;
+  padding-top: 1rem;
+}
+
 .strategy-object {
   gap: 0.75rem;
   align-items: center;
+  padding: 0.75rem;
+  transition: background-color var(--cn-transition);
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.strategy-object:hover {
+  background: #262626;
+}
+
+.strategy-object--active {
+  border-color: rgb(143 245 255 / 0.3);
+  background: rgb(143 245 255 / 0.05);
 }
 
 .strategy-object--asset .strategy-object__icon {
@@ -993,23 +1770,158 @@ async function handleInsertIntPlaceholder() {
   background: rgb(195 244 0 / 0.12);
 }
 
+.strategy-object--string .strategy-object__icon {
+  color: #8ff5ff;
+  background: rgb(143 245 255 / 0.12);
+}
+
+.strategy-object--int .strategy-object__icon {
+  color: #c3f400;
+  background: rgb(195 244 0 / 0.12);
+}
+
 .strategy-object__content {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .strategy-object__content h3 {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.strategy-object__content span {
+  display: block;
+  margin-top: 0.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8d8d8d;
+  font-size: 0.74rem;
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.45;
+}
+
 .strategy-object__check {
   color: #8ff5ff;
+  font-size: 1rem;
 }
 
 .strategy-object__check--muted {
   color: #adaaaa;
+}
+
+.strategy-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(6px);
+  z-index: 40;
+}
+
+.strategy-dialog {
+  width: min(28rem, calc(100vw - 2rem));
+  padding: 1.25rem;
+  border: 1px solid rgb(72 72 71 / 0.2);
+  border-radius: 0.75rem;
+  background: #131313;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.4);
+}
+
+.strategy-dialog__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.strategy-dialog__header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #fff;
+}
+
+.strategy-dialog__header p {
+  margin: 0.3rem 0 0;
+  color: #adaaaa;
+  font-size: 0.78rem;
+}
+
+.strategy-dialog__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  color: #adaaaa;
+  background: transparent;
+}
+
+.strategy-dialog__close:hover {
+  color: #fff;
+  background: #201f1f;
+}
+
+.strategy-dialog__field {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.strategy-dialog__field span {
+  color: #adaaaa;
+  font-size: 0.78rem;
+}
+
+.strategy-dialog__field input {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 0.8rem;
+  border: 1px solid rgb(72 72 71 / 0.2);
+  border-radius: 0.5rem;
+  color: #fff;
+  background: #1a1919;
+  font-size: 0.9rem;
+  outline: 0;
+}
+
+.strategy-dialog__field input:focus {
+  border-color: rgb(143 245 255 / 0.34);
+}
+
+.strategy-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.strategy-dialog__button {
+  min-height: 2.4rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.strategy-dialog__button--ghost {
+  color: #adaaaa;
+  background: #201f1f;
+}
+
+.strategy-dialog__button--primary {
+  color: #005d63;
+  background: #8ff5ff;
 }
 
 @media (min-width: 1280px) {
@@ -1020,6 +1932,25 @@ async function handleInsertIntPlaceholder() {
   .strategy-objects {
     display: flex;
     flex-direction: column;
+  }
+
+  .strategy-canvas__content {
+    padding: 2.25rem 3.5rem;
+  }
+}
+
+@media (max-width: 1100px) {
+  .strategy-editor-header {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0.75rem 1rem;
+  }
+
+  .strategy-editor-header__right {
+    display: flex;
+  }
+
+  .strategy-editor-header__actions {
+    justify-content: flex-start;
   }
 }
 </style>

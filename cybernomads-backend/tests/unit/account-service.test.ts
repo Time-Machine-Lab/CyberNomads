@@ -1,23 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import { AccountConnectionAttemptService } from "../../src/modules/account-connection-attempts/service.js";
+import { AccountAccessSessionService } from "../../src/modules/account-access-sessions/service.js";
 import type {
-  AccountConnectionAttemptRecord,
-  ConnectionAttemptLogEntry,
-} from "../../src/modules/account-connection-attempts/types.js";
+  AccountAccessSessionRecord,
+  AccessSessionLogEntry,
+} from "../../src/modules/account-access-sessions/types.js";
 import { AccountService } from "../../src/modules/accounts/service.js";
-import type { AccountRecord, StoredTokenSecret } from "../../src/modules/accounts/types.js";
-import type { AccountConnectionAttemptStateStore } from "../../src/ports/account-connection-attempt-state-store-port.js";
+import type {
+  AccountRecord,
+  JsonObject,
+  StoredCredentialSecret,
+} from "../../src/modules/accounts/types.js";
+import type { AccountAccessSessionStateStore } from "../../src/ports/account-access-session-state-store-port.js";
 import type {
   AccountPlatformAvailabilityCheckInput,
   AccountPlatformAvailabilityCheckResult,
+  AccountPlatformPollQrSessionInput,
+  AccountPlatformPollQrSessionResult,
   AccountPlatformPort,
-  AccountPlatformResolveConnectionAttemptInput,
-  AccountPlatformResolveConnectionAttemptResult,
-  AccountPlatformStartConnectionAttemptInput,
-  AccountPlatformStartConnectionAttemptResult,
-  AccountPlatformValidateConnectionAttemptInput,
-  AccountPlatformValidateConnectionAttemptResult,
+  AccountPlatformStartQrSessionInput,
+  AccountPlatformStartQrSessionResult,
+  AccountPlatformVerifyCredentialInput,
+  AccountPlatformVerifyCredentialResult,
 } from "../../src/ports/account-platform-port.js";
 import type { AccountSecretStore } from "../../src/ports/account-secret-store-port.js";
 import type { AccountStateStore } from "../../src/ports/account-state-store-port.js";
@@ -25,12 +29,12 @@ import type { AccountStateStore } from "../../src/ports/account-state-store-port
 describe("account module services", () => {
   it("creates wrapper accounts before login", async () => {
     const stateStore = new InMemoryAccountStateStore();
-    const attemptStore = new InMemoryAttemptStateStore();
+    const sessionStore = new InMemoryAccessSessionStateStore();
     const secretStore = new InMemoryAccountSecretStore();
     const platform = new FakeAccountPlatform("bilibili");
     const accountService = new AccountService({
       stateStore,
-      connectionAttemptStateStore: attemptStore,
+      accessSessionStateStore: sessionStore,
       secretStore,
       platforms: [platform],
       createAccountId: () => "account-1",
@@ -47,34 +51,34 @@ describe("account module services", () => {
     });
 
     expect(created.accountId).toBe("account-1");
-    expect(created.loginStatus).toBe("not_logged_in");
+    expect(created.connectionStatus).toBe("not_logged_in");
     expect(created.platform).toBe("bilibili");
     expect(created.internalDisplayName).toBe("Bili 主号");
     expect(created.resolvedPlatformProfile.resolvedPlatformAccountUid).toBeNull();
-    expect(created.activeToken.hasToken).toBe(false);
+    expect(created.currentCredential.hasCredential).toBe(false);
   });
 
-  it("applies validated tokens and refreshes resolved profile", async () => {
+  it("applies verified credentials and refreshes resolved profile", async () => {
     const stateStore = new InMemoryAccountStateStore();
-    const attemptStore = new InMemoryAttemptStateStore();
+    const sessionStore = new InMemoryAccessSessionStateStore();
     const secretStore = new InMemoryAccountSecretStore();
     const platform = new FakeAccountPlatform("bilibili");
     const now = createSequentialNow();
     const accountService = new AccountService({
       stateStore,
-      connectionAttemptStateStore: attemptStore,
+      accessSessionStateStore: sessionStore,
       secretStore,
       platforms: [platform],
       now,
       createAccountId: () => "account-1",
     });
-    const attemptService = new AccountConnectionAttemptService({
+    const accessSessionService = new AccountAccessSessionService({
       accountStateStore: stateStore,
-      attemptStateStore: attemptStore,
+      sessionStateStore: sessionStore,
       secretStore,
       platforms: [platform],
       now,
-      createAttemptId: () => "attempt-1",
+      createSessionId: () => "session-1",
     });
 
     await accountService.createAccount({
@@ -82,8 +86,8 @@ describe("account module services", () => {
       internalDisplayName: "内部主号",
     });
 
-    platform.validateHandler = async (input) => ({
-      validationResult: "succeeded",
+    platform.verifyHandler = async (input) => ({
+      verificationResult: "succeeded",
       reason: "user info fetched",
       resolvedPlatformProfile: {
         resolvedPlatformAccountUid: "uid-verified",
@@ -93,78 +97,73 @@ describe("account module services", () => {
           fanLevel: 7,
         },
       },
-      token: {
-        token: input.candidateToken.token,
+      credential: {
+        token: input.candidateCredential.token,
         availabilityStatus: "healthy",
       },
-      tokenExpiresAt: "2026-04-25T08:00:00.000Z",
-      logs: [logEntry("info", "validation succeeded")],
+      credentialExpiresAt: "2026-04-25T08:00:00.000Z",
+      logs: [logEntry("info", "verification succeeded")],
     });
 
-    const attempt = await attemptService.startConnectionAttempt("account-1", {
-      connectionMethod: "manual_token",
-      tokenValue: "token-1",
+    const session = await accessSessionService.startManualAccessSession("account-1", {
+      token: "token-1",
     });
 
-    expect(attempt.attemptStatus).toBe("ready_for_validation");
-    expect(attempt.hasCandidateToken).toBe(true);
+    expect(session.sessionStatus).toBe("ready_for_verification");
+    expect(session.hasCandidateCredential).toBe(true);
 
-    const validation = await attemptService.validateConnectionAttempt(
+    const verification = await accessSessionService.verifyAccessSession(
       "account-1",
-      "attempt-1",
+      "session-1",
       {},
     );
 
-    expect(validation.validationResult).toBe("succeeded");
-    expect(validation.tokenApplied).toBe(true);
-    expect(validation.account.loginStatus).toBe("connected");
-    expect(validation.account.internalDisplayName).toBe("内部主号");
-    expect(validation.account.resolvedPlatformProfile.resolvedDisplayName).toBe(
-      "平台昵称",
-    );
-    expect(validation.account.activeToken.hasToken).toBe(true);
-    expect(validation.attempt.attemptStatus).toBe("validation_succeeded");
+    expect(verification.verificationResult).toBe("succeeded");
+    expect(verification.credentialApplied).toBe(true);
+    expect(verification.account.connectionStatus).toBe("connected");
+    expect(verification.account.internalDisplayName).toBe("内部主号");
+    expect(
+      verification.account.resolvedPlatformProfile.resolvedDisplayName,
+    ).toBe("平台昵称");
+    expect(verification.account.currentCredential.hasCredential).toBe(true);
+    expect(verification.session.sessionStatus).toBe("verified");
 
-    const logs = await attemptService.getConnectionAttemptLogs(
+    const logs = await accessSessionService.getAccessSessionLogs(
       "account-1",
-      "attempt-1",
+      "session-1",
     );
     expect(logs.entries).toEqual([
-      expect.objectContaining({ message: "attempt started" }),
-      expect.objectContaining({ message: "validation succeeded" }),
+      expect.objectContaining({ message: "manual token received" }),
+      expect.objectContaining({ message: "verification succeeded" }),
     ]);
 
-    const availability = await accountService.runAvailabilityCheck("account-1");
-    expect(availability.availabilityStatus).toBe("healthy");
-    expect(availability.isConsumable).toBe(true);
-
-    const resolved = await accountService.resolveActiveToken("account-1");
+    const resolved = await accountService.resolveActiveCredential("account-1");
     expect(resolved.payload).toMatchObject({
       token: "token-1",
     });
   });
 
-  it("preserves the previous active token when replacement validation fails", async () => {
+  it("preserves the previous active credential when replacement verification fails", async () => {
     const stateStore = new InMemoryAccountStateStore();
-    const attemptStore = new InMemoryAttemptStateStore();
+    const sessionStore = new InMemoryAccessSessionStateStore();
     const secretStore = new InMemoryAccountSecretStore();
     const platform = new FakeAccountPlatform("bilibili");
     const now = createSequentialNow();
     const accountService = new AccountService({
       stateStore,
-      connectionAttemptStateStore: attemptStore,
+      accessSessionStateStore: sessionStore,
       secretStore,
       platforms: [platform],
       now,
       createAccountId: () => "account-1",
     });
-    const attemptService = new AccountConnectionAttemptService({
+    const accessSessionService = new AccountAccessSessionService({
       accountStateStore: stateStore,
-      attemptStateStore: attemptStore,
+      sessionStateStore: sessionStore,
       secretStore,
       platforms: [platform],
       now,
-      createAttemptId: createSequentialIds("attempt"),
+      createSessionId: createSequentialIds("session"),
     });
 
     await accountService.createAccount({
@@ -172,43 +171,81 @@ describe("account module services", () => {
       internalDisplayName: "内部主号",
     });
 
-    await attemptService.startConnectionAttempt("account-1", {
-      connectionMethod: "manual_token",
-      tokenValue: "stable-token",
+    await accessSessionService.startManualAccessSession("account-1", {
+      token: "stable-token",
     });
-    await attemptService.validateConnectionAttempt("account-1", "attempt-1", {});
+    await accessSessionService.verifyAccessSession("account-1", "session-1", {});
 
-    platform.validateHandler = async () => ({
-      validationResult: "failed",
+    platform.verifyHandler = async () => ({
+      verificationResult: "failed",
       reason: "token expired",
       resolvedPlatformProfile: null,
-      token: null,
-      tokenExpiresAt: null,
-      logs: [logEntry("error", "validation failed")],
+      credential: null,
+      credentialExpiresAt: null,
+      logs: [logEntry("error", "verification failed")],
     });
 
-    await attemptService.startConnectionAttempt("account-1", {
-      connectionMethod: "manual_token",
-      tokenValue: "broken-token",
+    await accessSessionService.startManualAccessSession("account-1", {
+      token: "broken-token",
     });
 
-    const failed = await attemptService.validateConnectionAttempt(
+    const failed = await accessSessionService.verifyAccessSession(
       "account-1",
-      "attempt-2",
+      "session-2",
       {},
     );
 
-    expect(failed.validationResult).toBe("failed");
-    expect(failed.tokenApplied).toBe(false);
-    expect(failed.account.loginStatus).toBe("connected");
-    expect(failed.attempt.attemptStatus).toBe("validation_failed");
+    expect(failed.verificationResult).toBe("failed");
+    expect(failed.credentialApplied).toBe(false);
+    expect(failed.account.connectionStatus).toBe("connected");
+    expect(failed.session.sessionStatus).toBe("verify_failed");
 
-    await accountService.runAvailabilityCheck("account-1");
-
-    const resolved = await accountService.resolveActiveToken("account-1");
+    const resolved = await accountService.resolveActiveCredential("account-1");
     expect(resolved.payload).toMatchObject({
       token: "stable-token",
     });
+  });
+
+  it("expires an unscanned qr session after one minute and falls back to not_logged_in", async () => {
+    const stateStore = new InMemoryAccountStateStore();
+    const sessionStore = new InMemoryAccessSessionStateStore();
+    const secretStore = new InMemoryAccountSecretStore();
+    const platform = new FakeAccountPlatform("bilibili");
+    const now = createMutableNow("2026-04-24T08:00:00.000Z");
+    const accountService = new AccountService({
+      stateStore,
+      accessSessionStateStore: sessionStore,
+      secretStore,
+      platforms: [platform],
+      now: now.current,
+      createAccountId: () => "account-1",
+    });
+    const accessSessionService = new AccountAccessSessionService({
+      accountStateStore: stateStore,
+      sessionStateStore: sessionStore,
+      secretStore,
+      platforms: [platform],
+      now: now.current,
+      createSessionId: () => "session-qr-1",
+    });
+
+    await accountService.createAccount({
+      platform: "bilibili",
+      internalDisplayName: "二维码账号",
+    });
+
+    const session = await accessSessionService.startQrAccessSession("account-1", {});
+
+    expect(session.sessionStatus).toBe("waiting_for_scan");
+    expect(session.expiresAt).toBe("2026-04-24T08:01:00.000Z");
+
+    now.set("2026-04-24T08:01:01.000Z");
+
+    const detail = await accountService.getAccountDetail("account-1");
+
+    expect(detail.connectionStatus).toBe("not_logged_in");
+    expect(detail.connectionStatusReason).toContain("QR access session expired");
+    expect(detail.currentAccessSession?.sessionStatus).toBe("expired");
   });
 });
 
@@ -235,151 +272,143 @@ class InMemoryAccountStateStore implements AccountStateStore {
   close(): void {}
 }
 
-class InMemoryAttemptStateStore implements AccountConnectionAttemptStateStore {
-  private readonly records = new Map<string, AccountConnectionAttemptRecord>();
+class InMemoryAccessSessionStateStore implements AccountAccessSessionStateStore {
+  private readonly records = new Map<string, AccountAccessSessionRecord>();
 
-  async createAttempt(record: AccountConnectionAttemptRecord): Promise<void> {
-    this.records.set(record.attemptId, cloneAttemptRecord(record));
+  async createSession(record: AccountAccessSessionRecord): Promise<void> {
+    this.records.set(record.sessionId, cloneAccessSessionRecord(record));
   }
 
-  async saveAttempt(record: AccountConnectionAttemptRecord): Promise<void> {
-    this.records.set(record.attemptId, cloneAttemptRecord(record));
+  async saveSession(record: AccountAccessSessionRecord): Promise<void> {
+    this.records.set(record.sessionId, cloneAccessSessionRecord(record));
   }
 
-  async getAttemptById(
+  async getSessionById(
     accountId: string,
-    attemptId: string,
-  ): Promise<AccountConnectionAttemptRecord | undefined> {
-    const record = this.records.get(attemptId);
+    sessionId: string,
+  ): Promise<AccountAccessSessionRecord | undefined> {
+    const record = this.records.get(sessionId);
 
     if (!record || record.accountId !== accountId) {
       return undefined;
     }
 
-    return cloneAttemptRecord(record);
+    return cloneAccessSessionRecord(record);
   }
 
-  async getLatestAttemptForAccount(
+  async getLatestSessionForAccount(
     accountId: string,
-  ): Promise<AccountConnectionAttemptRecord | undefined> {
-    const records = [...this.records.values()]
+  ): Promise<AccountAccessSessionRecord | undefined> {
+    return [...this.records.values()]
       .filter((record) => record.accountId === accountId)
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  }
 
-    return records[0] ? cloneAttemptRecord(records[0]) : undefined;
+  async listSessionsForAccount(
+    accountId: string,
+  ): Promise<AccountAccessSessionRecord[]> {
+    return [...this.records.values()]
+      .filter((record) => record.accountId === accountId)
+      .map(cloneAccessSessionRecord);
   }
 
   close(): void {}
 }
 
 class InMemoryAccountSecretStore implements AccountSecretStore {
-  private readonly records = new Map<string, unknown>();
+  private readonly values = new Map<string, unknown>();
 
   async writeSecret(secretRef: string, payload: unknown): Promise<void> {
-    this.records.set(secretRef, structuredClone(payload));
+    this.values.set(secretRef, structuredClone(payload));
   }
 
   async readSecret<T>(secretRef: string): Promise<T> {
-    if (!this.records.has(secretRef)) {
+    if (!this.values.has(secretRef)) {
       throw new Error(`Secret "${secretRef}" not found.`);
     }
 
-    return structuredClone(this.records.get(secretRef)) as T;
+    return structuredClone(this.values.get(secretRef)) as T;
   }
 
   async deleteSecret(secretRef: string): Promise<void> {
-    this.records.delete(secretRef);
+    this.values.delete(secretRef);
   }
 }
 
 class FakeAccountPlatform implements AccountPlatformPort {
   readonly platformCode: string;
 
-  startHandler?: (
-    input: AccountPlatformStartConnectionAttemptInput,
-  ) => Promise<AccountPlatformStartConnectionAttemptResult>;
-  resolveHandler?: (
-    input: AccountPlatformResolveConnectionAttemptInput,
-  ) => Promise<AccountPlatformResolveConnectionAttemptResult>;
-  validateHandler?: (
-    input: AccountPlatformValidateConnectionAttemptInput,
-  ) => Promise<AccountPlatformValidateConnectionAttemptResult>;
-  availabilityHandler?: (
-    input: AccountPlatformAvailabilityCheckInput,
-  ) => Promise<AccountPlatformAvailabilityCheckResult>;
+  verifyHandler:
+    | ((input: AccountPlatformVerifyCredentialInput) => Promise<AccountPlatformVerifyCredentialResult>)
+    | null = null;
 
   constructor(platformCode: string) {
     this.platformCode = platformCode;
   }
 
-  async startConnectionAttempt(
-    input: AccountPlatformStartConnectionAttemptInput,
-  ): Promise<AccountPlatformStartConnectionAttemptResult> {
-    if (this.startHandler) {
-      return this.startHandler(input);
-    }
-
+  async startQrSession(
+    input: AccountPlatformStartQrSessionInput,
+  ): Promise<AccountPlatformStartQrSessionResult> {
     return {
-      challenge: null,
-      platformSession: { source: input.connectionMethod },
-      candidateToken: input.tokenValue ? { token: input.tokenValue } : null,
+      challenge: {
+        challengeType: "qr_image",
+        imageUrl: "data:image/png;base64,stub",
+      },
+      providerSession: {
+        qrcodeKey: "stub-key",
+      },
       expiresAt: input.requestedExpiresAt,
-      logs: [logEntry("info", "attempt started")],
+      logs: [logEntry("info", "qr session started")],
     };
   }
 
-  async resolveConnectionAttempt(
-    input: AccountPlatformResolveConnectionAttemptInput,
-  ): Promise<AccountPlatformResolveConnectionAttemptResult> {
-    if (this.resolveHandler) {
-      return this.resolveHandler(input);
-    }
-
+  async pollQrSession(
+    _input: AccountPlatformPollQrSessionInput,
+  ): Promise<AccountPlatformPollQrSessionResult> {
     return {
-      platformSession: input.platformSession,
-      candidateToken: { token: "resolved-token" },
-      reason: "resolved candidate token",
+      progressStatus: "ready_for_verification",
+      providerSession: {
+        qrcodeKey: "stub-key",
+      },
+      candidateCredential: {
+        token: "resolved-token",
+      },
+      reason: "credential resolved",
       expiresAt: null,
-      logs: [logEntry("info", "attempt resolved")],
+      logs: [logEntry("info", "qr session polled")],
     };
   }
 
-  async validateConnectionAttempt(
-    input: AccountPlatformValidateConnectionAttemptInput,
-  ): Promise<AccountPlatformValidateConnectionAttemptResult> {
-    if (this.validateHandler) {
-      return this.validateHandler(input);
+  async verifyCredential(
+    input: AccountPlatformVerifyCredentialInput,
+  ): Promise<AccountPlatformVerifyCredentialResult> {
+    if (this.verifyHandler) {
+      return this.verifyHandler(input);
     }
 
     return {
-      validationResult: "succeeded",
-      reason: "validated",
+      verificationResult: "succeeded",
+      reason: "verified",
       resolvedPlatformProfile: {
         resolvedPlatformAccountUid: "uid-default",
-        resolvedDisplayName: "默认平台昵称",
+        resolvedDisplayName: "平台账号",
         resolvedAvatarUrl: null,
         resolvedProfileMetadata: {},
       },
-      token: {
-        token: input.candidateToken.token,
-        availabilityStatus: "healthy",
+      credential: {
+        token: input.candidateCredential.token,
       },
-      tokenExpiresAt: null,
-      logs: [logEntry("info", "token validated")],
+      credentialExpiresAt: null,
+      logs: [logEntry("info", "verification succeeded")],
     };
   }
 
   async checkAvailability(
-    input: AccountPlatformAvailabilityCheckInput,
+    _input: AccountPlatformAvailabilityCheckInput,
   ): Promise<AccountPlatformAvailabilityCheckResult> {
-    if (this.availabilityHandler) {
-      return this.availabilityHandler(input);
-    }
-
     return {
-      availabilityStatus:
-        input.activeToken.availabilityStatus === "risk" ? "risk" : "healthy",
-      reason: "availability checked",
+      availabilityStatus: "healthy",
+      reason: "healthy",
     };
   }
 }
@@ -388,44 +417,54 @@ function cloneAccountRecord(record: AccountRecord): AccountRecord {
   return {
     ...record,
     tags: [...record.tags],
-    platformMetadata: structuredClone(record.platformMetadata),
-    resolvedProfileMetadata: structuredClone(record.resolvedProfileMetadata),
+    platformMetadata: { ...record.platformMetadata },
+    resolvedProfileMetadata: { ...record.resolvedProfileMetadata },
   };
 }
 
-function cloneAttemptRecord(
-  record: AccountConnectionAttemptRecord,
-): AccountConnectionAttemptRecord {
+function cloneAccessSessionRecord(
+  record: AccountAccessSessionRecord,
+): AccountAccessSessionRecord {
   return {
     ...record,
-    challenge: record.challenge ? structuredClone(record.challenge) : null,
-    resolvedProfileMetadata: structuredClone(record.resolvedProfileMetadata),
+    challenge: record.challenge ? { ...record.challenge } : null,
+    resolvedProfileMetadata: { ...record.resolvedProfileMetadata },
   };
 }
 
 function createSequentialNow(): () => Date {
-  let cursor = Date.parse("2026-04-23T08:00:00.000Z");
-
-  return () => {
-    const current = new Date(cursor);
-    cursor += 1_000;
-    return current;
-  };
+  let counter = 0;
+  return () => new Date(`2026-04-24T08:00:${String(counter++).padStart(2, "0")}.000Z`);
 }
 
 function createSequentialIds(prefix: string): () => string {
   let counter = 1;
-
   return () => `${prefix}-${counter++}`;
 }
 
-function logEntry(
-  level: ConnectionAttemptLogEntry["level"],
-  message: string,
-): ConnectionAttemptLogEntry {
+function createMutableNow(initialIso: string): {
+  current: () => Date;
+  set(nextIso: string): void;
+} {
+  let value = initialIso;
+
   return {
-    timestamp: "2026-04-23T08:00:00.000Z",
+    current: () => new Date(value),
+    set(nextIso: string) {
+      value = nextIso;
+    },
+  };
+}
+
+function logEntry(
+  level: AccessSessionLogEntry["level"],
+  message: string,
+  details?: JsonObject,
+): AccessSessionLogEntry {
+  return {
+    timestamp: "2026-04-24T08:00:00.000Z",
     level,
     message,
+    details,
   };
 }

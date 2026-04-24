@@ -27,7 +27,7 @@ describe("strategy service", () => {
       name: "首版策略",
       tags: ["growth", "growth", "mvp"],
       contentMarkdown: [
-        '<!-- cn-strategy-import:start source-id="seed-1" -->',
+        "<!-- s:seed-1 -->",
         '# {{string:title="默认标题"}}',
         "重试：{{int:max_retry=3}}",
       ].join("\n"),
@@ -39,7 +39,7 @@ describe("strategy service", () => {
       summary: "默认标题",
       tags: ["growth", "mvp"],
       contentMarkdown: [
-        '<!-- cn-strategy-import:start source-id="seed-1" -->',
+        "<!-- s:seed-1 -->",
         '# {{string:title="默认标题"}}',
         "重试：{{int:max_retry=3}}",
       ].join("\n"),
@@ -137,6 +137,70 @@ describe("strategy service", () => {
         contentMarkdown: '# {{string:title="A"}}',
       }),
     ).rejects.toBeInstanceOf(StrategyNotFoundError);
+  });
+
+  it("generates compact 8-character strategy ids by default", async () => {
+    const service = new StrategyService({
+      metadataStore: new InMemoryStrategyMetadataStore(),
+      contentStore: new InMemoryStrategyContentStore(),
+    });
+
+    const createdStrategy = await service.createStrategy({
+      name: "短 ID 策略",
+      contentMarkdown: "# 内容",
+    });
+
+    expect(createdStrategy.strategyId).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("retries when a generated short strategy id already exists", async () => {
+    const metadataStore = new InMemoryStrategyMetadataStore();
+    const contentStore = new InMemoryStrategyContentStore();
+    const service = new StrategyService({
+      metadataStore,
+      contentStore,
+      createStrategyId: (() => {
+        const ids = ["abcd1234", "abcd1234", "f0e1d2c3"];
+        let index = 0;
+        return () => ids[Math.min(index++, ids.length - 1)];
+      })(),
+    });
+
+    await service.createStrategy({
+      name: "已有策略",
+      contentMarkdown: "# 首条",
+    });
+
+    const createdStrategy = await service.createStrategy({
+      name: "重试策略",
+      contentMarkdown: "# 第二条",
+    });
+
+    expect(createdStrategy.strategyId).toBe("f0e1d2c3");
+  });
+
+  it("deletes strategy metadata and markdown content", async () => {
+    const metadataStore = new InMemoryStrategyMetadataStore();
+    const contentStore = new InMemoryStrategyContentStore();
+    const service = new StrategyService({
+      metadataStore,
+      contentStore,
+      createStrategyId: () => "deadbeef",
+    });
+
+    await service.createStrategy({
+      name: "待删除策略",
+      contentMarkdown: "# 待删除",
+    });
+
+    await service.deleteStrategy("deadbeef");
+
+    await expect(
+      service.getStrategyDetail("deadbeef"),
+    ).rejects.toBeInstanceOf(StrategyNotFoundError);
+    await expect(contentStore.readContent("deadbeef.md")).rejects.toThrow(
+      "Missing content for deadbeef.md",
+    );
   });
 });
 

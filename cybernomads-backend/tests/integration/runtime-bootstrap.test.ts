@@ -49,7 +49,7 @@ describe.sequential("runtime bootstrap", () => {
       "004-accounts.sql",
       "005-strategies.sql",
       "006-traffic-works.sql",
-      "007-account-onboarding-sessions.sql",
+      "007-account-access-sessions.sql",
       "008-tasks.sql",
     ]);
     expect(result.skippedScripts).toEqual([]);
@@ -73,11 +73,11 @@ describe.sequential("runtime bootstrap", () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
       .get("agent_service_connections") as { name: string } | undefined;
-    const platformAccountsTable = database
+    const accountsTable = database
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
-      .get("platform_accounts") as { name: string } | undefined;
+      .get("accounts") as { name: string } | undefined;
     const strategiesTable = database
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
@@ -88,11 +88,21 @@ describe.sequential("runtime bootstrap", () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
       .get("traffic_works") as { name: string } | undefined;
-    const onboardingSessionsTable = database
+    const accountAccessSessionsTable = database
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
-      .get("account_onboarding_sessions") as { name: string } | undefined;
+      .get("account_access_sessions") as { name: string } | undefined;
+    const legacyPlatformAccountsTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("platform_accounts") as { name: string } | undefined;
+    const legacyConnectionAttemptsTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("account_connection_attempts") as { name: string } | undefined;
     const tasksTable = database
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
@@ -109,10 +119,12 @@ describe.sequential("runtime bootstrap", () => {
     expect(recordedScripts?.count).toBe(8);
     expect(productsTable?.name).toBe("products");
     expect(agentServicesTable?.name).toBe("agent_service_connections");
-    expect(platformAccountsTable?.name).toBe("platform_accounts");
+    expect(accountsTable?.name).toBe("accounts");
     expect(strategiesTable?.name).toBe("strategies");
     expect(trafficWorksTable?.name).toBe("traffic_works");
-    expect(onboardingSessionsTable?.name).toBe("account_onboarding_sessions");
+    expect(accountAccessSessionsTable?.name).toBe("account_access_sessions");
+    expect(legacyPlatformAccountsTable).toBeUndefined();
+    expect(legacyConnectionAttemptsTable).toBeUndefined();
     expect(tasksTable?.name).toBe("tasks");
     expect(taskOutputRecordsTable?.name).toBe("task_output_records");
   });
@@ -133,7 +145,7 @@ describe.sequential("runtime bootstrap", () => {
       "004-accounts.sql",
       "005-strategies.sql",
       "006-traffic-works.sql",
-      "007-account-onboarding-sessions.sql",
+      "007-account-access-sessions.sql",
       "008-tasks.sql",
     ]);
 
