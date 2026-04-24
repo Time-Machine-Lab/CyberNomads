@@ -4,6 +4,10 @@ import {
   type RuntimePaths,
 } from "../adapters/storage/file-system/runtime-paths.js";
 import {
+  resolveBundledRuntimeAgentDirectory,
+  syncBundledRuntimeAgentAssets,
+} from "../adapters/skill/local/runtime-skill-assets.js";
+import {
   openRuntimeDatabase,
   type OpenRuntimeDatabase,
 } from "../adapters/storage/sqlite/runtime-database.js";
@@ -16,6 +20,7 @@ import { executeRuntimeSqlScripts } from "../adapters/storage/sqlite/runtime-sql
 export interface BootstrapRuntimeOptions {
   workingDirectory?: string;
   runtimeSqlDirectory?: string;
+  runtimeAgentAssetsDirectory?: string;
   openRuntimeDatabase?: OpenRuntimeDatabase;
   now?: () => Date;
 }
@@ -23,6 +28,7 @@ export interface BootstrapRuntimeOptions {
 export interface BootstrapRuntimeResult {
   paths: RuntimePaths;
   runtimeSqlDirectory: string;
+  runtimeAgentAssetsDirectory: string;
   appliedScripts: string[];
   skippedScripts: string[];
 }
@@ -32,6 +38,12 @@ export async function bootstrapRuntime(
 ): Promise<BootstrapRuntimeResult> {
   const runtimePaths = resolveRuntimePaths(options.workingDirectory);
   await ensureRuntimePaths(runtimePaths);
+  const runtimeAgentAssetsDirectory = await resolveBundledRuntimeAgentDirectory(
+    options.runtimeAgentAssetsDirectory,
+  );
+  await syncBundledRuntimeAgentAssets(runtimePaths, {
+    bundledAgentDirectory: runtimeAgentAssetsDirectory,
+  });
 
   const database = openRuntimeDatabase(
     runtimePaths,
@@ -52,6 +64,7 @@ export async function bootstrapRuntime(
     return {
       paths: runtimePaths,
       runtimeSqlDirectory,
+      runtimeAgentAssetsDirectory,
       ...executionResult,
     };
   } finally {

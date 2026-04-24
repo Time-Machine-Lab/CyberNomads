@@ -8,11 +8,21 @@ import {
 
 export const RUNTIME_ROOT_NAME = "cybernomads";
 export const SQLITE_DATABASE_FILENAME = "runtime.sqlite";
-export const FIXED_RUNTIME_DIRECTORIES = ["product", "strategy", "work"] as const;
+export const FIXED_RUNTIME_DIRECTORIES = [
+  "agent",
+  "agent/skills",
+  "agent/knowledge",
+  "product",
+  "strategy",
+  "work",
+] as const;
 
 export interface RuntimePaths {
   workingDirectory: string;
   runtimeRoot: string;
+  agentDirectory: string;
+  agentSkillsDirectory: string;
+  agentKnowledgeDirectory: string;
   productDirectory: string;
   strategyDirectory: string;
   workDirectory: string;
@@ -30,6 +40,9 @@ export function resolveRuntimePaths(workingDirectory = process.cwd()): RuntimePa
   return {
     workingDirectory: absoluteWorkingDirectory,
     runtimeRoot,
+    agentDirectory: join(runtimeRoot, "agent"),
+    agentSkillsDirectory: join(runtimeRoot, "agent", "skills"),
+    agentKnowledgeDirectory: join(runtimeRoot, "agent", "knowledge"),
     productDirectory: join(runtimeRoot, "product"),
     strategyDirectory: join(runtimeRoot, "strategy"),
     workDirectory: join(runtimeRoot, "work"),
@@ -48,6 +61,11 @@ export async function ensureRuntimePaths(
 
   try {
     await ensureDirectory(runtimePaths.runtimeRoot, { recursive: true });
+    await ensureDirectory(runtimePaths.agentDirectory, { recursive: true });
+    await ensureDirectory(runtimePaths.agentSkillsDirectory, { recursive: true });
+    await ensureDirectory(runtimePaths.agentKnowledgeDirectory, {
+      recursive: true,
+    });
     await ensureDirectory(runtimePaths.productDirectory, { recursive: true });
     await ensureDirectory(runtimePaths.strategyDirectory, { recursive: true });
     await ensureDirectory(runtimePaths.workDirectory, { recursive: true });

@@ -14,6 +14,7 @@ export interface PrepareTrafficWorkContextInput {
   strategy: StrategyBindingSummary;
   strategyContentMarkdown: string;
   objectBindings: ObjectBindingItem[];
+  contextMarkdown: string;
   context: TrafficWorkContextSnapshot;
 }
 

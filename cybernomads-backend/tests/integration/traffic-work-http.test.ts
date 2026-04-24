@@ -125,15 +125,20 @@ describe.sequential("traffic work module http api", () => {
       ],
     });
 
-    const taskFilePath = join(
+    const workDirectory = join(
       runtimePaths.workDirectory,
       created.trafficWorkId,
-      "task.md",
     );
-    await expect(access(taskFilePath)).resolves.toBeUndefined();
-    await expect(readFile(taskFilePath, "utf8")).resolves.toContain(
-      "Main Growth Work",
-    );
+    await expect(access(join(workDirectory, "skills"))).resolves.toBeUndefined();
+    await expect(access(join(workDirectory, "tools"))).resolves.toBeUndefined();
+    await expect(
+      access(join(workDirectory, "knowledge")),
+    ).resolves.toBeUndefined();
+    await expect(access(join(workDirectory, "data"))).resolves.toBeUndefined();
+    await expect(access(join(workDirectory, "task.md"))).rejects.toBeDefined();
+    await expect(
+      readFile(join(workDirectory, "collect-1.md"), "utf8"),
+    ).resolves.toContain("Collect candidates 1");
 
     const listResponse = await fetch(
       `${application.http.url}/api/traffic-works`,
@@ -236,6 +241,9 @@ describe.sequential("traffic work module http api", () => {
         },
       ],
     });
+    await expect(
+      readFile(join(workDirectory, "collect-2.md"), "utf8"),
+    ).resolves.toContain("Collect candidates 2");
 
     const endResponse = await fetch(
       `${application.http.url}/api/traffic-works/${created.trafficWorkId}/end`,

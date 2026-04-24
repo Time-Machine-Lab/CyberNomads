@@ -348,3 +348,42 @@ flowchart LR
 - **决策**：恢复沿用原任务上下文；如果在暂停状态下发生策略更新，则触发任务重新生成。
 - **理由**：同时满足“连续执行”和“策略迭代”两种需求，不会把恢复和重规划混为一谈。
 - **后果**：系统需要清晰区分“恢复”和“更新后重建”两条路径，但业务语义更稳定。
+
+## 6. 运行时目录补充（2026-04-25）
+
+为适配最新的 Agent 运行方式，运行时目录结构补充如下：
+
+```text
+cybernomads/
+├── agent/
+│   ├── skills/                    # 全局可复用 Skill 运行时副本
+│   └── knowledge/                 # 全局知识说明、索引、约束运行时副本
+├── product/                       # 产品 Markdown 原文
+├── strategy/                      # 策略 Markdown 原文
+└── work/                          # 引流工作运行上下文
+```
+
+上述目录的职责约束如下：
+- `runtime-assets/agent/` 是后端内置资源源目录，用于随代码交付。
+- `cybernomads/agent/` 是产品运行时暴露目录，用于被 Agent 和平台能力稳定引用。
+- 启动时需要把 `runtime-assets/agent/skills` 与 `runtime-assets/agent/knowledge` 非破坏性同步到 `cybernomads/agent/` 下。
+- 同步语义是“刷新内置资源，但不主动删除运行时目录中的额外文件”。
+
+引流工作目录结构补充如下：
+
+```text
+cybernomads/
+└── work/
+    └── <trafficWorkId>/
+        ├── skills/               # 工作级 Skill 资产
+        ├── tools/                # 工作级工具或脚本
+        ├── knowledge/            # 工作级上下文知识
+        ├── data/                 # 任务产出数据
+        └── task-*.md / *.md      # 由 Agent 在任务拆分阶段生成的任务文档
+```
+
+该补充对架构语义的影响如下：
+- 引流工作创建或更新时，后端只负责预创建 `skills/`、`tools/`、`knowledge/`、`data/` 四类骨架目录。
+- 后端不再预写统一的 `task.md` 占位文件。
+- 任务文档和补充上下文资产由 Agent 任务拆分流程在工作目录内生成。
+- 引流工作更新时沿用原有 `work/<trafficWorkId>/` 目录，不创建第二份工作上下文。

@@ -78,10 +78,22 @@ describe("traffic work service", () => {
     expect(contextPreparation.inputs[0]).toMatchObject({
       productContentMarkdown: expect.stringContaining("# CyberNomads Product"),
       strategyContentMarkdown: expect.stringContaining("# Growth Strategy"),
+      context: {
+        workDirectory: "/tmp/work-1",
+        skillsDirectory: "/tmp/work-1/skills",
+        toolsDirectory: "/tmp/work-1/tools",
+        knowledgeDirectory: "/tmp/work-1/knowledge",
+        dataDirectory: "/tmp/work-1/data",
+      },
+      contextMarkdown: expect.stringContaining("Main Growth Work"),
     });
-    expect(contextStore.snapshots.get("work-1")?.taskMarkdown).toContain(
-      "Main Growth Work",
-    );
+    expect(contextStore.snapshots.get("work-1")).toMatchObject({
+      workDirectory: "/tmp/work-1",
+      skillsDirectory: "/tmp/work-1/skills",
+      toolsDirectory: "/tmp/work-1/tools",
+      knowledgeDirectory: "/tmp/work-1/knowledge",
+      dataDirectory: "/tmp/work-1/data",
+    });
 
     const started = await service.startTrafficWork("work-1");
     expect(started.lifecycleStatus).toBe("running");
@@ -259,14 +271,15 @@ class InMemoryTrafficWorkStateStore implements TrafficWorkStateStore {
 class InMemoryTrafficWorkContextStore implements TrafficWorkContextStore {
   readonly snapshots = new Map<string, TrafficWorkContextSnapshot>();
 
-  async writeTaskContext(
+  async ensureWorkContext(
     trafficWorkId: string,
-    taskMarkdown: string,
   ): Promise<TrafficWorkContextSnapshot> {
     const snapshot: TrafficWorkContextSnapshot = {
       workDirectory: `/tmp/${trafficWorkId}`,
-      taskFilePath: `/tmp/${trafficWorkId}/task.md`,
-      taskMarkdown,
+      skillsDirectory: `/tmp/${trafficWorkId}/skills`,
+      toolsDirectory: `/tmp/${trafficWorkId}/tools`,
+      knowledgeDirectory: `/tmp/${trafficWorkId}/knowledge`,
+      dataDirectory: `/tmp/${trafficWorkId}/data`,
     };
     this.snapshots.set(trafficWorkId, snapshot);
     return structuredClone(snapshot);

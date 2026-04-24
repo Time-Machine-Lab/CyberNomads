@@ -99,6 +99,9 @@ export async function startApplication(
   const trafficWorkContextStore = new FileSystemTrafficWorkContextStore(
     runtime.paths.workDirectory,
   );
+  const bundledBilibiliPlatform = new BilibiliStubAccountPlatformAdapter({
+    runtimeSkillsRootDirectory: runtime.paths.agentSkillsDirectory,
+  });
   const productService = new ProductService({
     metadataStore: productRepository,
     contentStore: productContentStore,
@@ -112,7 +115,7 @@ export async function startApplication(
     accessSessionStateStore: accountAccessSessionRepository,
     secretStore: accountSecretStore,
     platforms: [
-      new BilibiliStubAccountPlatformAdapter(),
+      bundledBilibiliPlatform,
       ...(options.accountPlatforms ?? []),
     ],
     now: options.now,
@@ -122,7 +125,7 @@ export async function startApplication(
     sessionStateStore: accountAccessSessionRepository,
     secretStore: accountSecretStore,
     platforms: [
-      new BilibiliStubAccountPlatformAdapter(),
+      bundledBilibiliPlatform,
       ...(options.accountPlatforms ?? []),
     ],
     now: options.now,

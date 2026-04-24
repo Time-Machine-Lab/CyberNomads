@@ -104,6 +104,8 @@ export interface ListTrafficWorksResult {
 
 export interface TrafficWorkContextSnapshot {
   workDirectory: string;
-  taskFilePath: string;
-  taskMarkdown: string;
+  skillsDirectory: string;
+  toolsDirectory: string;
+  knowledgeDirectory: string;
+  dataDirectory: string;
 }

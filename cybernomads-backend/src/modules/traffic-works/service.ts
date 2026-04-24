@@ -320,7 +320,7 @@ export class TrafficWorkService {
     strategy: TrafficWorkStrategySnapshot,
     taskSetMode: "create" | "replace" = "create",
   ): Promise<TrafficWorkRecord> {
-    const contextMarkdown = renderTrafficWorkTaskMarkdown(
+    const contextMarkdown = renderTrafficWorkContextMarkdown(
       record,
       product.summary,
       strategy.summary,
@@ -329,9 +329,8 @@ export class TrafficWorkService {
     );
 
     try {
-      const context = await this.options.contextStore.writeTaskContext(
+      const context = await this.options.contextStore.ensureWorkContext(
         record.trafficWorkId,
-        contextMarkdown,
       );
       const taskSet = await this.options.contextPreparation.prepareContext({
         trafficWorkId: record.trafficWorkId,
@@ -341,6 +340,7 @@ export class TrafficWorkService {
         strategy: strategy.summary,
         strategyContentMarkdown: strategy.contentMarkdown,
         objectBindings: record.objectBindings,
+        contextMarkdown,
         context,
       });
 
@@ -713,7 +713,7 @@ function cloneObjectBinding(item: ObjectBindingItem): ObjectBindingItem {
   };
 }
 
-function renderTrafficWorkTaskMarkdown(
+function renderTrafficWorkContextMarkdown(
   record: TrafficWorkRecord,
   product: ProductBindingSummary,
   strategy: StrategyBindingSummary,
@@ -749,7 +749,7 @@ function renderTrafficWorkTaskMarkdown(
     strategyContentMarkdown,
     ``,
     `## Preparation Goal`,
-    `Prepare the stable work-level context and task decomposition input for this traffic work without expanding into task execution internals.`,
+    `Prepare the stable work-level context skeleton and task decomposition input for this traffic work without expanding into task execution internals.`,
     ``,
   ].join("\n");
 }

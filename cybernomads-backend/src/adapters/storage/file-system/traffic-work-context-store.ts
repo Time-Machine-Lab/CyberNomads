@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { TrafficWorkContextStore } from "../../../ports/traffic-work-context-store-port.js";
@@ -7,22 +7,27 @@ import type { TrafficWorkContextSnapshot } from "../../../modules/traffic-works/
 export class FileSystemTrafficWorkContextStore implements TrafficWorkContextStore {
   constructor(private readonly workRootDirectory: string) {}
 
-  async writeTaskContext(
+  async ensureWorkContext(
     trafficWorkId: string,
-    taskMarkdown: string,
   ): Promise<TrafficWorkContextSnapshot> {
     const workDirectory = join(this.workRootDirectory, trafficWorkId);
-    const scriptsDirectory = join(workDirectory, "scripts");
-    const taskFilePath = join(workDirectory, "task.md");
+    const skillsDirectory = join(workDirectory, "skills");
+    const toolsDirectory = join(workDirectory, "tools");
+    const knowledgeDirectory = join(workDirectory, "knowledge");
+    const dataDirectory = join(workDirectory, "data");
 
     await mkdir(workDirectory, { recursive: true });
-    await mkdir(scriptsDirectory, { recursive: true });
-    await writeFile(taskFilePath, taskMarkdown, "utf8");
+    await mkdir(skillsDirectory, { recursive: true });
+    await mkdir(toolsDirectory, { recursive: true });
+    await mkdir(knowledgeDirectory, { recursive: true });
+    await mkdir(dataDirectory, { recursive: true });
 
     return {
       workDirectory,
-      taskFilePath,
-      taskMarkdown,
+      skillsDirectory,
+      toolsDirectory,
+      knowledgeDirectory,
+      dataDirectory,
     };
   }
 }

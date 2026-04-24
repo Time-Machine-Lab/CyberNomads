@@ -1,0 +1,4 @@
+interface:
+  display_name: "B 站 Web 接口调用"
+  short_description: "执行 B 站 Web API 脚本调用。"
+  default_prompt: "使用 $bilibili-web-api 调用 B 站 Web 接口脚本。优先直接使用 SKILL.md 里的命令速查和参数辨析；如果需要更精确地选命令、补参数、区分易错点，再读取 references/command-map.md。"
