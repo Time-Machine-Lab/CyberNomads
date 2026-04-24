@@ -138,6 +138,7 @@ export async function handleTaskControllerError(
     sendJson(response, error.statusCode, {
       code: error.code,
       message: error.message,
+      ...(error.details ? { details: error.details } : {}),
     });
     return;
   }

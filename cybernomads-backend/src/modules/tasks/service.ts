@@ -6,6 +6,7 @@ import {
   TaskOperationConflictError,
   TaskTrafficWorkNotFoundError,
   TaskValidationError,
+  type TaskValidationIssue,
 } from "./errors.js";
 import type {
   CreateTaskOutputRecordInput,
@@ -67,6 +68,7 @@ export class TaskService {
     const normalizedTrafficWorkId = normalizeRequiredString(
       trafficWorkId,
       "Traffic work ID is required.",
+      "trafficWorkId",
     );
     await this.ensureTrafficWorkExists(normalizedTrafficWorkId);
 
@@ -93,6 +95,7 @@ export class TaskService {
     const normalizedTrafficWorkId = normalizeRequiredString(
       trafficWorkId,
       "Traffic work ID is required.",
+      "trafficWorkId",
     );
     const trafficWorkState = await this.ensureTrafficWorkExists(
       normalizedTrafficWorkId,
@@ -121,7 +124,7 @@ export class TaskService {
     const nextRecord: TaskRecord = {
       ...record,
       status: ensureTaskStatus(input.status),
-      statusReason: normalizeOptionalString(input.statusReason),
+      statusReason: normalizeOptionalString(input.statusReason, "statusReason"),
       updatedAt: timestamp,
     };
 
@@ -140,10 +143,12 @@ export class TaskService {
       description: normalizeRequiredString(
         input.description,
         "Output description is required.",
+        "description",
       ),
       dataLocation: normalizeRequiredString(
         input.dataLocation,
         "Output dataLocation is required.",
+        "dataLocation",
       ),
       createdAt: this.now().toISOString(),
     };
@@ -180,6 +185,7 @@ export class TaskService {
     const normalizedTaskId = normalizeRequiredString(
       taskId,
       "Task ID is required.",
+      "taskId",
     );
     const record = await this.options.taskStore.getTaskById(normalizedTaskId);
 
@@ -206,7 +212,7 @@ export class TaskService {
       const taskId = taskIdsByKey.get(draft.taskKey);
 
       if (!taskId) {
-        throw new TaskValidationError("Task key mapping failed.");
+        throw validationError("Task key mapping failed.", "tasks.taskKey");
       }
 
       return {
@@ -232,24 +238,28 @@ function normalizeTaskSetWriteInput(
   input: TaskSetWriteInput,
 ): TaskSetWriteInput {
   if (!input || typeof input !== "object") {
-    throw new TaskValidationError("Task set request body must be an object.");
+    throw validationError("Task set request body must be an object.", "$");
   }
 
   if (input.source?.kind !== "agent-decomposition") {
-    throw new TaskValidationError("Task set source kind is invalid.");
+    throw validationError(
+      'Task set source kind must be "agent-decomposition".',
+      "source.kind",
+    );
   }
 
   if (!Array.isArray(input.tasks) || input.tasks.length === 0) {
-    throw new TaskValidationError("Task set must include at least one task.");
+    throw validationError("Task set must include at least one task.", "tasks");
   }
 
   const taskKeys = new Set<string>();
-  const tasks = input.tasks.map((draft) => {
-    const normalizedDraft = normalizeTaskDraft(draft);
+  const tasks = input.tasks.map((draft, index) => {
+    const normalizedDraft = normalizeTaskDraft(draft, `tasks[${index}]`);
 
     if (taskKeys.has(normalizedDraft.taskKey)) {
-      throw new TaskValidationError(
+      throw validationError(
         `Task key "${normalizedDraft.taskKey}" is duplicated.`,
+        `tasks[${index}].taskKey`,
       );
     }
 
@@ -257,11 +267,15 @@ function normalizeTaskSetWriteInput(
     return normalizedDraft;
   });
 
-  for (const task of tasks) {
-    for (const relyOnTaskKey of task.condition.relyOnTaskKeys) {
+  for (const [taskIndex, task] of tasks.entries()) {
+    for (const [
+      relyIndex,
+      relyOnTaskKey,
+    ] of task.condition.relyOnTaskKeys.entries()) {
       if (!taskKeys.has(relyOnTaskKey)) {
-        throw new TaskValidationError(
+        throw validationError(
           `Task dependency "${relyOnTaskKey}" does not exist in the task set.`,
+          `tasks[${taskIndex}].condition.relyOnTaskKeys[${relyIndex}]`,
         );
       }
     }
@@ -270,75 +284,120 @@ function normalizeTaskSetWriteInput(
   return {
     source: {
       kind: "agent-decomposition",
-      requestId: normalizeOptionalString(input.source.requestId),
-      description: normalizeOptionalString(input.source.description),
+      requestId: normalizeOptionalString(
+        input.source.requestId,
+        "source.requestId",
+      ),
+      description: normalizeOptionalString(
+        input.source.description,
+        "source.description",
+      ),
     },
     tasks,
   };
 }
 
-function normalizeTaskDraft(draft: TaskDraft): TaskDraft {
+function normalizeTaskDraft(draft: TaskDraft, pathPrefix: string): TaskDraft {
   if (!draft || typeof draft !== "object" || Array.isArray(draft)) {
-    throw new TaskValidationError("Each task draft must be an object.");
+    throw validationError("Each task draft must be an object.", pathPrefix);
   }
 
   return {
-    taskKey: normalizeRequiredString(draft.taskKey, "Task key is required."),
-    name: normalizeRequiredString(draft.name, "Task name is required."),
+    taskKey: normalizeRequiredString(
+      draft.taskKey,
+      "Task key is required.",
+      `${pathPrefix}.taskKey`,
+    ),
+    name: normalizeRequiredString(
+      draft.name,
+      "Task name is required.",
+      `${pathPrefix}.name`,
+    ),
     instruction: normalizeRequiredString(
       draft.instruction,
       "Task instruction is required.",
+      `${pathPrefix}.instruction`,
     ),
-    documentRef: normalizeOptionalString(draft.documentRef),
+    documentRef: normalizeOptionalString(
+      draft.documentRef,
+      `${pathPrefix}.documentRef`,
+    ),
     contextRef: normalizeRequiredString(
       draft.contextRef,
       "Task contextRef is required.",
+      `${pathPrefix}.contextRef`,
     ),
-    condition: normalizeTaskDraftCondition(draft.condition),
-    inputNeeds: normalizeTaskInputNeeds(draft.inputNeeds),
+    condition: normalizeTaskDraftCondition(
+      draft.condition,
+      `${pathPrefix}.condition`,
+    ),
+    inputNeeds: normalizeTaskInputNeeds(
+      draft.inputNeeds,
+      `${pathPrefix}.inputNeeds`,
+    ),
   };
 }
 
 function normalizeTaskDraftCondition(
   condition: TaskDraftCondition,
+  pathPrefix: string,
 ): TaskDraftCondition {
   if (!condition || typeof condition !== "object" || Array.isArray(condition)) {
-    throw new TaskValidationError("Task condition must be an object.");
+    throw validationError("Task condition must be an object.", pathPrefix);
   }
 
   if (!Array.isArray(condition.relyOnTaskKeys)) {
-    throw new TaskValidationError(
+    throw validationError(
       "Task condition relyOnTaskKeys must be an array.",
+      `${pathPrefix}.relyOnTaskKeys`,
     );
   }
 
   return {
-    cron: normalizeOptionalString(condition.cron),
-    relyOnTaskKeys: condition.relyOnTaskKeys.map((taskKey) =>
-      normalizeRequiredString(taskKey, "Task dependency key is required."),
+    cron: normalizeOptionalString(condition.cron, `${pathPrefix}.cron`),
+    relyOnTaskKeys: condition.relyOnTaskKeys.map((taskKey, index) =>
+      normalizeRequiredString(
+        taskKey,
+        "Task dependency key is required.",
+        `${pathPrefix}.relyOnTaskKeys[${index}]`,
+      ),
     ),
   };
 }
 
-function normalizeTaskInputNeeds(inputNeeds: TaskInputNeed[]): TaskInputNeed[] {
+function normalizeTaskInputNeeds(
+  inputNeeds: TaskInputNeed[],
+  pathPrefix: string,
+): TaskInputNeed[] {
   if (!Array.isArray(inputNeeds)) {
-    throw new TaskValidationError("Task inputNeeds must be an array.");
+    throw validationError("Task inputNeeds must be an array.", pathPrefix);
   }
 
-  return inputNeeds.map((item) => {
+  return inputNeeds.map((item, index) => {
+    const itemPath = `${pathPrefix}[${index}]`;
+
     if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw new TaskValidationError("Each task input need must be an object.");
+      throw validationError(
+        "Each task input need must be an object.",
+        itemPath,
+      );
     }
 
     return {
-      name: normalizeRequiredString(item.name, "Input need name is required."),
+      name: normalizeRequiredString(
+        item.name,
+        "Input need name is required.",
+        `${itemPath}.name`,
+      ),
       description: normalizeRequiredString(
         item.description,
         "Input need description is required.",
+        `${itemPath}.description`,
       ),
       source: normalizeRequiredString(
         item.source,
         "Input need source is required.",
+        `${itemPath}.source`,
       ),
     };
   });
@@ -348,9 +407,11 @@ function normalizeListTasksFilters(
   filters: ListTasksFilters,
 ): ListTasksFilters {
   return {
-    trafficWorkId: normalizeOptionalString(filters.trafficWorkId) ?? undefined,
+    trafficWorkId:
+      normalizeOptionalString(filters.trafficWorkId, "trafficWorkId") ??
+      undefined,
     status: filters.status ? ensureTaskStatus(filters.status) : undefined,
-    keyword: normalizeOptionalString(filters.keyword) ?? undefined,
+    keyword: normalizeOptionalString(filters.keyword, "keyword") ?? undefined,
   };
 }
 
@@ -364,8 +425,9 @@ function mapDraftCondition(
       const taskId = taskIdsByKey.get(taskKey);
 
       if (!taskId) {
-        throw new TaskValidationError(
+        throw validationError(
           `Task dependency "${taskKey}" does not exist in the task set.`,
+          "tasks.condition.relyOnTaskKeys",
         );
       }
 
@@ -374,26 +436,30 @@ function mapDraftCondition(
   };
 }
 
-function normalizeRequiredString(value: unknown, message: string): string {
+function normalizeRequiredString(
+  value: unknown,
+  message: string,
+  path: string,
+): string {
   if (typeof value !== "string") {
-    throw new TaskValidationError(message);
+    throw validationError(message, path);
   }
 
   const normalizedValue = value.trim();
 
   if (normalizedValue.length === 0) {
-    throw new TaskValidationError(message);
+    throw validationError(message, path);
   }
 
   return normalizedValue;
 }
 
-function normalizeOptionalString(value: unknown): string | null {
+function normalizeOptionalString(value: unknown, path: string): string | null {
   if (value === null || value === undefined) {
     return null;
   }
 
-  return normalizeRequiredString(value, "Expected a non-empty string.");
+  return normalizeRequiredString(value, "Expected a non-empty string.", path);
 }
 
 function ensureTaskStatus(value: unknown): TaskStatus {
@@ -406,7 +472,7 @@ function ensureTaskStatus(value: unknown): TaskStatus {
     return value;
   }
 
-  throw new TaskValidationError("Task status is invalid.");
+  throw validationError("Task status is invalid.", "status");
 }
 
 function matchesKeyword(
@@ -493,4 +559,9 @@ function cloneTaskOutputRecord(record: TaskOutputRecord): TaskOutputRecord {
     dataLocation: record.dataLocation,
     createdAt: record.createdAt,
   };
+}
+
+function validationError(message: string, path: string): TaskValidationError {
+  const issues: TaskValidationIssue[] = [{ path, message }];
+  return new TaskValidationError(message, { issues });
 }

@@ -1,23 +1,36 @@
 export class TaskModuleError extends Error {
   readonly code: string;
   readonly statusCode: number;
+  readonly details?: Record<string, unknown>;
 
   constructor(
     code: string,
     statusCode: number,
     message: string,
-    options: { cause?: unknown } = {},
+    options: { cause?: unknown; details?: Record<string, unknown> } = {},
   ) {
     super(message, { cause: options.cause });
     this.name = "TaskModuleError";
     this.code = code;
     this.statusCode = statusCode;
+    this.details = options.details;
   }
 }
 
+export interface TaskValidationIssue {
+  path: string;
+  message: string;
+}
+
 export class TaskValidationError extends TaskModuleError {
-  constructor(message: string, options: { cause?: unknown } = {}) {
-    super("TASK_VALIDATION_FAILED", 400, message, options);
+  constructor(
+    message: string,
+    options: { cause?: unknown; issues?: TaskValidationIssue[] } = {},
+  ) {
+    super("TASK_VALIDATION_FAILED", 400, message, {
+      cause: options.cause,
+      details: options.issues ? { issues: options.issues } : undefined,
+    });
   }
 }
 

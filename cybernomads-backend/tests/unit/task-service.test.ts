@@ -175,6 +175,15 @@ describe("task service", () => {
       }),
     ).rejects.toMatchObject({
       code: "TASK_VALIDATION_FAILED",
+      details: {
+        issues: [
+          {
+            path: "tasks[0].condition.relyOnTaskKeys[0]",
+            message:
+              'Task dependency "collect" does not exist in the task set.',
+          },
+        ],
+      },
     });
   });
 

@@ -175,9 +175,10 @@ describe.sequential("task module http api", () => {
     const runtimePaths = resolveRuntimePaths(workingDirectory);
     await seedTrafficWork(runtimePaths.databaseFile, "work-1", "ready");
     await seedTrafficWork(runtimePaths.databaseFile, "work-2", "running");
+    await seedTrafficWork(runtimePaths.databaseFile, "work-3", "ready");
 
     const createTaskSetResponse = await fetch(
-      `${application.http.url}/api/traffic-works/work-1/task-set`,
+      `${application.http.url}/api/traffic-works/work-3/task-set`,
       {
         method: "POST",
         headers: {
@@ -210,6 +211,47 @@ describe.sequential("task module http api", () => {
       },
     );
     expect(invalidStatusResponse.status).toBe(400);
+
+    const invalidTaskSetResponse = await fetch(
+      `${application.http.url}/api/traffic-works/work-1/task-set`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          source: {
+            kind: "agent-decomposition",
+          },
+          tasks: [
+            {
+              taskKey: "broken",
+              name: "Broken task",
+              instruction: "Broken instruction.",
+              documentRef: "broken.md",
+              contextRef: "",
+              condition: {
+                cron: null,
+                relyOnTaskKeys: [],
+              },
+              inputNeeds: [],
+            },
+          ],
+        }),
+      },
+    );
+    expect(invalidTaskSetResponse.status).toBe(400);
+    await expect(invalidTaskSetResponse.json()).resolves.toMatchObject({
+      code: "TASK_VALIDATION_FAILED",
+      details: {
+        issues: [
+          {
+            path: "tasks[0].contextRef",
+            message: "Task contextRef is required.",
+          },
+        ],
+      },
+    });
 
     const replaceRunningResponse = await fetch(
       `${application.http.url}/api/traffic-works/work-2/task-set`,
