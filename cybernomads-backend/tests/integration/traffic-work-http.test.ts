@@ -83,17 +83,17 @@ describe.sequential("traffic work module http api", () => {
               resourceId: "account-1",
               resourceLabel: "Main Account",
             },
-          ],
-          parameterBindings: [
             {
-              type: "产品",
-              key: "product_name",
-              value: "CyberNomads",
+              objectType: "产品",
+              objectKey: "product_name",
+              resourceId: "CyberNomads",
+              resourceLabel: "CyberNomads",
             },
             {
-              type: "账号",
-              key: "max_retry",
-              value: "3",
+              objectType: "账号",
+              objectKey: "max_retry",
+              resourceId: "3",
+              resourceLabel: "3",
             },
           ],
         }),
@@ -107,7 +107,6 @@ describe.sequential("traffic work module http api", () => {
       product: { productId: string; name: string };
       strategy: { strategyId: string; name: string };
       objectBindings: Array<Record<string, unknown>>;
-      parameterBindings: Array<Record<string, unknown>>;
       lifecycleStatus: string;
       contextPreparationStatus: string;
     };
@@ -118,16 +117,24 @@ describe.sequential("traffic work module http api", () => {
       strategyId: "strategy-1",
       name: "Growth Strategy",
     });
-    expect(created.parameterBindings).toEqual([
+    expect(created.objectBindings).toEqual([
       {
-        type: "产品",
-        key: "product_name",
-        value: "CyberNomads",
+        objectType: "account",
+        objectKey: "primary-account",
+        resourceId: "account-1",
+        resourceLabel: "Main Account",
       },
       {
-        type: "账号",
-        key: "max_retry",
-        value: "3",
+        objectType: "产品",
+        objectKey: "product_name",
+        resourceId: "CyberNomads",
+        resourceLabel: "CyberNomads",
+      },
+      {
+        objectType: "账号",
+        objectKey: "max_retry",
+        resourceId: "3",
+        resourceLabel: "3",
       },
     ]);
     expect(created.lifecycleStatus).toBe("ready");
@@ -173,7 +180,7 @@ describe.sequential("traffic work module http api", () => {
       displayName: "Main Growth Work",
       lifecycleStatus: "ready",
       contextPreparationStatus: "prepared",
-      objectBindingCount: 1,
+      objectBindingCount: 3,
     });
 
     const detailResponse = await fetch(
@@ -193,17 +200,17 @@ describe.sequential("traffic work module http api", () => {
           resourceId: "account-1",
           resourceLabel: "Main Account",
         },
-      ],
-      parameterBindings: [
         {
-          type: "产品",
-          key: "product_name",
-          value: "CyberNomads",
+          objectType: "产品",
+          objectKey: "product_name",
+          resourceId: "CyberNomads",
+          resourceLabel: "CyberNomads",
         },
         {
-          type: "账号",
-          key: "max_retry",
-          value: "3",
+          objectType: "账号",
+          objectKey: "max_retry",
+          resourceId: "3",
+          resourceLabel: "3",
         },
       ],
     });
@@ -245,12 +252,11 @@ describe.sequential("traffic work module http api", () => {
               resourceId: "account-2",
               resourceLabel: "Backup Account",
             },
-          ],
-          parameterBindings: [
             {
-              type: "产品",
-              key: "product_name",
-              value: "CyberNomads v2",
+              objectType: "产品",
+              objectKey: "product_name",
+              resourceId: "CyberNomads v2",
+              resourceLabel: "CyberNomads v2",
             },
           ],
         }),
@@ -264,11 +270,18 @@ describe.sequential("traffic work module http api", () => {
         strategyId: "strategy-2",
         name: "Retention Strategy",
       },
-      parameterBindings: [
+      objectBindings: [
         {
-          type: "产品",
-          key: "product_name",
-          value: "CyberNomads v2",
+          objectType: "account",
+          objectKey: "primary-account",
+          resourceId: "account-2",
+          resourceLabel: "Backup Account",
+        },
+        {
+          objectType: "产品",
+          objectKey: "product_name",
+          resourceId: "CyberNomads v2",
+          resourceLabel: "CyberNomads v2",
         },
       ],
       contextPreparationStatus: "prepared",
@@ -354,7 +367,6 @@ describe.sequential("traffic work module http api", () => {
               resourceLabel: null,
             },
           ],
-          parameterBindings: [],
         }),
       },
     );
@@ -408,12 +420,12 @@ describe.sequential("traffic work module http api", () => {
           displayName: "Unbound Work",
           productId,
           strategyId: "strategy-1",
-          objectBindings: [],
-          parameterBindings: [
+          objectBindings: [
             {
-              type: "产品",
-              key: "product_name",
-              value: "CyberNomads",
+              objectType: "产品",
+              objectKey: "product_name",
+              resourceId: "CyberNomads",
+              resourceLabel: "CyberNomads",
             },
           ],
         }),
@@ -431,22 +443,19 @@ describe.sequential("traffic work module http api", () => {
         strategyId: "strategy-1",
         name: "Growth Strategy",
       },
-      objectBindings: [],
-      parameterBindings: [
+      objectBindings: [
         {
-          type: "产品",
-          key: "product_name",
-          value: "CyberNomads",
+          objectType: "产品",
+          objectKey: "product_name",
+          resourceId: "CyberNomads",
+          resourceLabel: "CyberNomads",
         },
       ],
       contextPreparationStatus: "prepared",
     });
 
     expect(provider.sentMessages.at(-1)?.message).toContain(
-      "Object bindings:\n- none",
-    );
-    expect(provider.sentMessages.at(-1)?.message).toContain(
-      "Strategy parameter bindings:\n- product_name (产品) = CyberNomads",
+      "Object bindings:",
     );
   });
 });

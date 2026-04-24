@@ -17,14 +17,6 @@ export interface ObjectBindingItem {
   resourceLabel: string | null;
 }
 
-export type StrategyParameterBindingType = string;
-
-export interface StrategyParameterBinding {
-  type: StrategyParameterBindingType;
-  key: string;
-  value: string;
-}
-
 export interface ProductBindingSummary {
   productId: string;
   name: string;
@@ -41,7 +33,6 @@ export interface TrafficWorkRecord {
   productId: string;
   strategyId: string;
   objectBindings: ObjectBindingItem[];
-  parameterBindings: StrategyParameterBinding[];
   lifecycleStatus: TrafficWorkLifecycleStatus;
   lifecycleStatusReason: string | null;
   contextPreparationStatus: TrafficWorkContextPreparationStatus;
@@ -72,7 +63,6 @@ export interface TrafficWorkDetail {
   product: ProductBindingSummary;
   strategy: StrategyBindingSummary;
   objectBindings: ObjectBindingItem[];
-  parameterBindings: StrategyParameterBinding[];
   lifecycleStatus: TrafficWorkLifecycleStatus;
   lifecycleStatusReason: string | null;
   contextPreparationStatus: TrafficWorkContextPreparationStatus;
@@ -91,7 +81,6 @@ export interface CreateTrafficWorkInput {
   productId: string;
   strategyId: string;
   objectBindings: ObjectBindingItem[];
-  parameterBindings: StrategyParameterBinding[];
 }
 
 export interface UpdateTrafficWorkInput {
@@ -99,7 +88,6 @@ export interface UpdateTrafficWorkInput {
   productId: string;
   strategyId: string;
   objectBindings: ObjectBindingItem[];
-  parameterBindings: StrategyParameterBinding[];
 }
 
 export interface ListTrafficWorksFilters {

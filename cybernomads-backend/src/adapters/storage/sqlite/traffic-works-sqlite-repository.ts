@@ -3,7 +3,6 @@ import { DatabaseSync } from "node:sqlite";
 import type { TrafficWorkStateStore } from "../../../ports/traffic-work-state-store-port.js";
 import type {
   ObjectBindingItem,
-  StrategyParameterBinding,
   TrafficWorkRecord,
 } from "../../../modules/traffic-works/types.js";
 
@@ -13,7 +12,6 @@ interface TrafficWorkRow {
   product_id: string;
   strategy_id: string;
   object_bindings_json: string;
-  parameter_bindings_json: string;
   lifecycle_status: TrafficWorkRecord["lifecycleStatus"];
   lifecycle_status_reason: string | null;
   context_preparation_status: TrafficWorkRecord["contextPreparationStatus"];
@@ -45,7 +43,6 @@ export class SqliteTrafficWorkRepository implements TrafficWorkStateStore {
             product_id,
             strategy_id,
             object_bindings_json,
-            parameter_bindings_json,
             lifecycle_status,
             lifecycle_status_reason,
             context_preparation_status,
@@ -57,7 +54,7 @@ export class SqliteTrafficWorkRepository implements TrafficWorkStateStore {
             deleted_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -66,7 +63,6 @@ export class SqliteTrafficWorkRepository implements TrafficWorkStateStore {
         record.productId,
         record.strategyId,
         serializeObjectBindings(record.objectBindings),
-        serializeParameterBindings(record.parameterBindings),
         record.lifecycleStatus,
         record.lifecycleStatusReason,
         record.contextPreparationStatus,
@@ -91,7 +87,6 @@ export class SqliteTrafficWorkRepository implements TrafficWorkStateStore {
             product_id = ?,
             strategy_id = ?,
             object_bindings_json = ?,
-            parameter_bindings_json = ?,
             lifecycle_status = ?,
             lifecycle_status_reason = ?,
             context_preparation_status = ?,
@@ -110,7 +105,6 @@ export class SqliteTrafficWorkRepository implements TrafficWorkStateStore {
         record.productId,
         record.strategyId,
         serializeObjectBindings(record.objectBindings),
-        serializeParameterBindings(record.parameterBindings),
         record.lifecycleStatus,
         record.lifecycleStatusReason,
         record.contextPreparationStatus,
@@ -137,7 +131,6 @@ export class SqliteTrafficWorkRepository implements TrafficWorkStateStore {
             product_id,
             strategy_id,
             object_bindings_json,
-            parameter_bindings_json,
             lifecycle_status,
             lifecycle_status_reason,
             context_preparation_status,
@@ -168,7 +161,6 @@ export class SqliteTrafficWorkRepository implements TrafficWorkStateStore {
             product_id,
             strategy_id,
             object_bindings_json,
-            parameter_bindings_json,
             lifecycle_status,
             lifecycle_status_reason,
             context_preparation_status,
@@ -201,7 +193,6 @@ function mapTrafficWorkRow(row: TrafficWorkRow): TrafficWorkRecord {
     productId: row.product_id,
     strategyId: row.strategy_id,
     objectBindings: parseObjectBindings(row.object_bindings_json),
-    parameterBindings: parseParameterBindings(row.parameter_bindings_json),
     lifecycleStatus: row.lifecycle_status,
     lifecycleStatusReason: row.lifecycle_status_reason,
     contextPreparationStatus: row.context_preparation_status,
@@ -218,12 +209,6 @@ function mapTrafficWorkRow(row: TrafficWorkRow): TrafficWorkRecord {
 
 function serializeObjectBindings(objectBindings: ObjectBindingItem[]): string {
   return JSON.stringify(objectBindings);
-}
-
-function serializeParameterBindings(
-  parameterBindings: StrategyParameterBinding[],
-): string {
-  return JSON.stringify(parameterBindings);
 }
 
 function parseObjectBindings(serializedValue: string): ObjectBindingItem[] {
@@ -244,37 +229,4 @@ function parseObjectBindings(serializedValue: string): ObjectBindingItem[] {
       resourceLabel:
         typeof item.resourceLabel === "string" ? item.resourceLabel : null,
     }));
-}
-
-function parseParameterBindings(
-  serializedValue: string,
-): StrategyParameterBinding[] {
-  const parsedValue = JSON.parse(serializedValue) as unknown;
-
-  if (!Array.isArray(parsedValue)) {
-    return [];
-  }
-
-  return parsedValue.flatMap((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      return [];
-    }
-
-    if (
-      typeof item.type === "string" &&
-      typeof item.key === "string" &&
-      (typeof item.value === "string" ||
-        (typeof item.value === "number" && Number.isFinite(item.value)))
-    ) {
-      return [
-        {
-          type: item.type,
-          key: item.key,
-          value: String(item.value),
-        },
-      ];
-    }
-
-    return [];
-  });
 }

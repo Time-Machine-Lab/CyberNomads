@@ -52,6 +52,7 @@ describe.sequential("runtime bootstrap", () => {
       "007-account-access-sessions.sql",
       "008-tasks.sql",
       "009-traffic-work-parameter-bindings.sql",
+      "010-traffic-work-object-bindings-only.sql",
     ]);
     expect(result.skippedScripts).toEqual([]);
 
@@ -89,6 +90,11 @@ describe.sequential("runtime bootstrap", () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
       .get("traffic_works") as { name: string } | undefined;
+    const trafficWorkParameterBindingsColumn = database
+      .prepare(
+        "SELECT name FROM pragma_table_info('traffic_works') WHERE name = ?",
+      )
+      .get("parameter_bindings_json") as { name: string } | undefined;
     const accountAccessSessionsTable = database
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
@@ -117,12 +123,13 @@ describe.sequential("runtime bootstrap", () => {
     database.close();
 
     expect(bootstrapTable?.name).toBe("runtime_sql_scripts");
-    expect(recordedScripts?.count).toBe(9);
+    expect(recordedScripts?.count).toBe(10);
     expect(productsTable?.name).toBe("products");
     expect(agentServicesTable?.name).toBe("agent_service_connections");
     expect(accountsTable?.name).toBe("accounts");
     expect(strategiesTable?.name).toBe("strategies");
     expect(trafficWorksTable?.name).toBe("traffic_works");
+    expect(trafficWorkParameterBindingsColumn).toBeUndefined();
     expect(accountAccessSessionsTable?.name).toBe("account_access_sessions");
     expect(legacyPlatformAccountsTable).toBeUndefined();
     expect(legacyConnectionAttemptsTable).toBeUndefined();
@@ -149,6 +156,7 @@ describe.sequential("runtime bootstrap", () => {
       "007-account-access-sessions.sql",
       "008-tasks.sql",
       "009-traffic-work-parameter-bindings.sql",
+      "010-traffic-work-object-bindings-only.sql",
     ]);
 
     const database = new DatabaseSync(runtimePaths.databaseFile);
@@ -157,7 +165,7 @@ describe.sequential("runtime bootstrap", () => {
       .get() as { count: number } | undefined;
     database.close();
 
-    expect(recordedScripts?.count).toBe(9);
+    expect(recordedScripts?.count).toBe(10);
   });
 
   it("fails startup explicitly when the SQLite runtime database cannot be opened", async () => {

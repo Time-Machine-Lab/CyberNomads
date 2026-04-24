@@ -26,7 +26,6 @@ import type {
   ListTrafficWorksResult,
   ObjectBindingItem,
   ProductBindingSummary,
-  StrategyParameterBinding,
   StrategyBindingSummary,
   TrafficWorkDetail,
   TrafficWorkLifecycleStatus,
@@ -96,7 +95,6 @@ export class TrafficWorkService {
       productId: normalizedInput.productId,
       strategyId: normalizedInput.strategyId,
       objectBindings: normalizedInput.objectBindings,
-      parameterBindings: normalizedInput.parameterBindings,
       lifecycleStatus: "ready",
       lifecycleStatusReason: null,
       contextPreparationStatus: "pending",
@@ -176,7 +174,6 @@ export class TrafficWorkService {
       productId: normalizedInput.productId,
       strategyId: normalizedInput.strategyId,
       objectBindings: normalizedInput.objectBindings,
-      parameterBindings: normalizedInput.parameterBindings,
       contextPreparationStatus: "pending",
       contextPreparationStatusReason: null,
       contextPreparedAt: null,
@@ -344,7 +341,6 @@ export class TrafficWorkService {
         strategy: strategy.summary,
         strategyContentMarkdown: strategy.contentMarkdown,
         objectBindings: record.objectBindings,
-        parameterBindings: record.parameterBindings,
         context,
       });
 
@@ -493,7 +489,6 @@ function normalizeTrafficWorkInput(
       "Strategy ID is required.",
     ),
     objectBindings: normalizeObjectBindings(input.objectBindings),
-    parameterBindings: normalizeParameterBindings(input.parameterBindings),
   };
 }
 
@@ -534,55 +529,13 @@ function normalizeObjectBindings(value: unknown): ObjectBindingItem[] {
         (item as ObjectBindingItem).objectKey,
         "Object binding objectKey is required.",
       ),
-      resourceId: normalizeRequiredString(
+      resourceId: normalizeBindingValue(
         (item as ObjectBindingItem).resourceId,
-        "Object binding resourceId is required.",
+        "Object binding resourceId must be a string-compatible value.",
       ),
-      resourceLabel: normalizeOptionalString(
+      resourceLabel: normalizeOptionalBindingValue(
         (item as ObjectBindingItem).resourceLabel,
       ),
-    };
-  });
-}
-
-function normalizeParameterBindings(value: unknown): StrategyParameterBinding[] {
-  if (value === undefined || value === null) {
-    return [];
-  }
-
-  if (!Array.isArray(value)) {
-    throw new TrafficWorkValidationError(
-      "Parameter bindings must be an array.",
-    );
-  }
-
-  return value.map((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw new TrafficWorkValidationError(
-        "Each parameter binding must be an object.",
-      );
-    }
-
-    const key = normalizeRequiredString(
-      (item as StrategyParameterBinding).key,
-      "Parameter binding key is required.",
-    );
-    const type = normalizeRequiredString(
-      (item as StrategyParameterBinding).type,
-      "Parameter binding type is required.",
-    );
-    const rawValue = (item as StrategyParameterBinding).value;
-
-    if (typeof rawValue !== "string" && typeof rawValue !== "number") {
-      throw new TrafficWorkValidationError(
-        "Parameter binding value must be a string-compatible value.",
-      );
-    }
-
-    return {
-      type,
-      key,
-      value: String(rawValue),
     };
   });
 }
@@ -607,6 +560,22 @@ function normalizeOptionalString(value: unknown): string | null {
   }
 
   return normalizeRequiredString(value, "Expected a non-empty string.");
+}
+
+function normalizeBindingValue(value: unknown, message: string): string {
+  if (typeof value !== "string" && typeof value !== "number") {
+    throw new TrafficWorkValidationError(message);
+  }
+
+  return String(value).trim();
+}
+
+function normalizeOptionalBindingValue(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return normalizeBindingValue(value, "Expected a string-compatible value.");
 }
 
 function ensureLifecycleStatus(value: unknown): TrafficWorkLifecycleStatus {
@@ -731,7 +700,6 @@ function toTrafficWorkDetail(
     product,
     strategy,
     objectBindings: record.objectBindings.map(cloneObjectBinding),
-    parameterBindings: record.parameterBindings.map(cloneParameterBinding),
     lifecycleStatus: record.lifecycleStatus,
     lifecycleStatusReason: record.lifecycleStatusReason,
     contextPreparationStatus: record.contextPreparationStatus,
@@ -755,16 +723,6 @@ function cloneObjectBinding(item: ObjectBindingItem): ObjectBindingItem {
   };
 }
 
-function cloneParameterBinding(
-  item: StrategyParameterBinding,
-): StrategyParameterBinding {
-  return {
-    type: item.type,
-    key: item.key,
-    value: item.value,
-  };
-}
-
 function renderTrafficWorkTaskMarkdown(
   record: TrafficWorkRecord,
   product: ProductBindingSummary,
@@ -783,12 +741,6 @@ function renderTrafficWorkTaskMarkdown(
             )
           .join("\n")
       : "- none";
-  const parameterBindings =
-    record.parameterBindings.length > 0
-      ? record.parameterBindings
-          .map((item) => `- ${item.key} (${item.type}) = ${String(item.value)}`)
-          .join("\n")
-      : "- none";
 
   return [
     `# Traffic Work Context`,
@@ -802,9 +754,6 @@ function renderTrafficWorkTaskMarkdown(
     ``,
     `## Object Bindings`,
     objectBindings,
-    ``,
-    `## Strategy Parameter Bindings`,
-    parameterBindings,
     ``,
     `## Product Content Snapshot`,
     productContentMarkdown,

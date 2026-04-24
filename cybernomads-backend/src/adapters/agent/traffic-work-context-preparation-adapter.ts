@@ -21,12 +21,6 @@ export class AgentAccessTrafficWorkContextPreparationAdapter implements TrafficW
             )
             .join("\n")
         : "- none";
-    const parameterBindings =
-      input.parameterBindings.length > 0
-        ? input.parameterBindings
-            .map((item) => `- ${item.key} (${item.type}) = ${String(item.value)}`)
-            .join("\n")
-        : "- none";
 
     const result = await this.agentAccessService.submitTaskDecompositionRequest(
       {
@@ -46,8 +40,6 @@ export class AgentAccessTrafficWorkContextPreparationAdapter implements TrafficW
           `Task file: ${input.context.taskFilePath}`,
           `Object bindings:`,
           objectBindings,
-          `Strategy parameter bindings:`,
-          parameterBindings,
           `Use $cybernomads-task-decomposition when decomposing this traffic work into tasks.`,
           `Return a task set with source.kind = "agent-decomposition" and task drafts that include taskKey, name, instruction, documentRef, contextRef, condition, and inputNeeds.`,
           `Stay within work-level context preparation. Do not design task scheduling, task execution, log structures, or platform script internals.`,

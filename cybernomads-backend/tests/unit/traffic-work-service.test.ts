@@ -66,17 +66,17 @@ describe("traffic work service", () => {
           resourceId: "account-1",
           resourceLabel: "Main Account",
         },
-      ],
-      parameterBindings: [
         {
-          type: "产品",
-          key: "product_name",
-          value: "CyberNomads",
+          objectType: "产品",
+          objectKey: "product_name",
+          resourceId: "CyberNomads",
+          resourceLabel: "CyberNomads",
         },
         {
-          type: "账号",
-          key: "max_retry",
-          value: "3",
+          objectType: "账号",
+          objectKey: "max_retry",
+          resourceId: "3",
+          resourceLabel: "3",
         },
       ],
     });
@@ -90,16 +90,24 @@ describe("traffic work service", () => {
     expect(contextPreparation.inputs[0]).toMatchObject({
       productContentMarkdown: expect.stringContaining("# CyberNomads Product"),
       strategyContentMarkdown: expect.stringContaining("# Growth Strategy"),
-      parameterBindings: [
+      objectBindings: [
         {
-          type: "产品",
-          key: "product_name",
-          value: "CyberNomads",
+          objectType: "account",
+          objectKey: "primary-account",
+          resourceId: "account-1",
+          resourceLabel: "Main Account",
         },
         {
-          type: "账号",
-          key: "max_retry",
-          value: "3",
+          objectType: "产品",
+          objectKey: "product_name",
+          resourceId: "CyberNomads",
+          resourceLabel: "CyberNomads",
+        },
+        {
+          objectType: "账号",
+          objectKey: "max_retry",
+          resourceId: "3",
+          resourceLabel: "3",
         },
       ],
     });
@@ -126,12 +134,11 @@ describe("traffic work service", () => {
           resourceId: "account-2",
           resourceLabel: "Backup Account",
         },
-      ],
-      parameterBindings: [
         {
-          type: "产品",
-          key: "product_name",
-          value: "CyberNomads v2",
+          objectType: "产品",
+          objectKey: "product_name",
+          resourceId: "CyberNomads v2",
+          resourceLabel: "CyberNomads v2",
         },
       ],
     });
@@ -139,11 +146,18 @@ describe("traffic work service", () => {
     expect(updated.trafficWorkId).toBe("work-1");
     expect(updated.displayName).toBe("Main Growth Work v2");
     expect(updated.strategy.name).toBe("Retention Strategy");
-    expect(updated.parameterBindings).toEqual([
+    expect(updated.objectBindings).toEqual([
       {
-        type: "产品",
-        key: "product_name",
-        value: "CyberNomads v2",
+        objectType: "account",
+        objectKey: "primary-account",
+        resourceId: "account-2",
+        resourceLabel: "Backup Account",
+      },
+      {
+        objectType: "产品",
+        objectKey: "product_name",
+        resourceId: "CyberNomads v2",
+        resourceLabel: "CyberNomads v2",
       },
     ]);
     expect(updated.contextPreparationStatus).toBe("prepared");
@@ -203,7 +217,6 @@ describe("traffic work service", () => {
           resourceLabel: null,
         },
       ],
-      parameterBindings: [],
     });
 
     expect(created.lifecycleStatus).toBe("ready");
@@ -260,7 +273,6 @@ describe("traffic work service", () => {
           resourceLabel: null,
         },
       ],
-      parameterBindings: [],
     });
 
     expect(created.lifecycleStatus).toBe("ready");
@@ -304,30 +316,16 @@ describe("traffic work service", () => {
       productId: "product-1",
       strategyId: "strategy-1",
       objectBindings: [],
-      parameterBindings: [
-        {
-          type: "产品",
-          key: "product_name",
-          value: "",
-        },
-      ],
     });
 
     expect(created.trafficWorkId).toBe("work-1");
     expect(created.objectBindings).toEqual([]);
-    expect(created.parameterBindings).toEqual([
-      {
-        type: "产品",
-        key: "product_name",
-        value: "",
-      },
-    ]);
     expect(created.contextPreparationStatus).toBe("prepared");
     expect(contextPreparation.inputs[0]).toMatchObject({
       objectBindings: [],
     });
     expect(contextStore.snapshots.get("work-1")?.taskMarkdown).toContain(
-      "## Object Bindings\n- none",
+      "## Object Bindings",
     );
   });
 });
