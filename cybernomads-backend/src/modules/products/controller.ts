@@ -56,7 +56,14 @@ export function createProductsController(productService: ProductService) {
       return true;
     }
 
-    sendMethodNotAllowed(response, ["GET", "PUT"]);
+    if (method === "DELETE") {
+      await productService.deleteProduct(productId);
+      response.statusCode = 204;
+      response.end();
+      return true;
+    }
+
+    sendMethodNotAllowed(response, ["GET", "PUT", "DELETE"]);
     return true;
   };
 }

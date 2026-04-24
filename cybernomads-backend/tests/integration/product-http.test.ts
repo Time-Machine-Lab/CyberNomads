@@ -165,9 +165,33 @@ describe.sequential("product module http api", () => {
       updatedAt: string;
     };
     expect(updatedDetailPayload).toEqual(updatedProduct);
+
+    const deleteResponse = await fetch(
+      `${application.http.url}/api/products/${createdProduct.productId}`,
+      {
+        method: "DELETE",
+      },
+    );
+
+    expect(deleteResponse.status).toBe(204);
+    expect(await deleteResponse.text()).toBe("");
+
+    const deletedListResponse = await fetch(`${application.http.url}/api/products`);
+    expect(deletedListResponse.status).toBe(200);
+
+    const deletedListPayload = (await deletedListResponse.json()) as {
+      items: Array<Record<string, unknown>>;
+    };
+    expect(deletedListPayload.items).toEqual([]);
+
+    const deletedDetailResponse = await fetch(
+      `${application.http.url}/api/products/${createdProduct.productId}`,
+    );
+    expect(deletedDetailResponse.status).toBe(404);
+    await expect(access(contentPath)).rejects.toThrow();
   });
 
-  it("does not expose product deletion, status machines, or version fields in mvp", async () => {
+  it("keeps product detail free of status and version fields in mvp", async () => {
     const { application } = await startTemporaryApplication(
       temporaryDirectories,
       applications,
@@ -187,16 +211,6 @@ describe.sequential("product module http api", () => {
       productId: string;
     };
 
-    const deleteResponse = await fetch(
-      `${application.http.url}/api/products/${createdProduct.productId}`,
-      {
-        method: "DELETE",
-      },
-    );
-
-    expect(deleteResponse.status).toBe(405);
-    expect(deleteResponse.headers.get("allow")).toBe("GET, PUT");
-
     const detailResponse = await fetch(
       `${application.http.url}/api/products/${createdProduct.productId}`,
     );
@@ -210,6 +224,26 @@ describe.sequential("product module http api", () => {
     expect(detailPayload).not.toHaveProperty("deletedAt");
     expect(detailPayload).not.toHaveProperty("publishedAt");
     expect(detailPayload).not.toHaveProperty("archivedAt");
+  });
+
+  it("returns 404 when deleting a missing product", async () => {
+    const { application } = await startTemporaryApplication(
+      temporaryDirectories,
+      applications,
+    );
+
+    const deleteResponse = await fetch(
+      `${application.http.url}/api/products/missing-product`,
+      {
+        method: "DELETE",
+      },
+    );
+
+    expect(deleteResponse.status).toBe(404);
+    await expect(deleteResponse.json()).resolves.toEqual({
+      code: "PRODUCT_NOT_FOUND",
+      message: 'Product "missing-product" was not found.',
+    });
   });
 });
 

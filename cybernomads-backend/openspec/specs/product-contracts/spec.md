@@ -31,13 +31,23 @@ The system SHALL define product list behavior as a summary view and product deta
 - **THEN** the contracts SHALL require the detail response to return the complete product markdown content
 - **AND** the detail response SHALL be sufficient for downstream consumers that need full product context
 
-### Requirement: Product contracts SHALL not expose deletion in MVP
-The system SHALL exclude product deletion behavior from the first product module contracts.
+### Requirement: Product contracts SHALL define deletion behavior
+The system SHALL define product deletion behavior as part of the top-level API and SQL contracts.
 
-#### Scenario: No delete contract is published
-- **WHEN** top-level product contracts are created for MVP
-- **THEN** the published API contracts SHALL include create, update, list, and detail behavior
-- **AND** the published API contracts SHALL NOT include product deletion behavior
+#### Scenario: Delete contract is published
+- **WHEN** top-level product contracts are updated
+- **THEN** the published API contracts SHALL include create, update, list, detail, and delete behavior
+- **AND** deletion SHALL target one product by stable product identifier
+
+#### Scenario: Delete contract removes product-owned data
+- **WHEN** product deletion contracts are defined
+- **THEN** the contracts SHALL require product metadata to be removed
+- **AND** the contracts SHALL require the associated product content file to be removed
+
+#### Scenario: Delete contract does not require reference checks
+- **WHEN** a product deletion contract is defined
+- **THEN** it SHALL NOT require checking whether the product is referenced by traffic works, tasks, strategies, or historical contexts
+- **AND** deletion SHALL remain scoped to product-owned metadata and content artifacts
 
 ### Requirement: Product contracts SHALL align with product domain semantics
 The system SHALL ensure product top-level contracts reflect the current product domain design, where product exists to define and provide product semantics for later strategy and traffic work consumption.

@@ -4,7 +4,7 @@
 --   1. 产品以稳定主键 `product_id` 作为唯一标识。
 --   2. 产品名称 `name` 仅承担可读展示语义，不承担唯一性约束。
 --   3. 产品完整 Markdown 正文存放于非结构化存储，`content_ref` 负责关联正文引用。
---   4. 当前阶段不引入删除、草稿、发布、归档、版本链等复杂语义。
+--   4. 当前阶段支持删除产品，但删除仅清理产品元数据与正文文件，不引入软删、归档或版本链。
 --   5. 当前阶段只定义一个薄领域所需的最小结构化表，不把策略、任务、平台执行语义混入产品表。
 
 CREATE TABLE products (
@@ -46,10 +46,15 @@ CREATE INDEX idx_products_updated_at ON products(updated_at DESC);
 -- created_at / updated_at:
 --   - 使用 ISO 8601 UTC 时间字符串。
 --   - 支撑列表展示与更新追踪。
+--
+-- 删除语义：
+--   - 删除产品时，必须同时删除 `products` 表中的元数据记录和 `content_ref` 指向的 Markdown 正文文件。
+--   - 删除不存在的 `product_id` 应返回 not found，而不是静默成功。
+--   - 删除过程不要求检查该产品是否仍被策略、任务、引流工作或历史上下文引用。
 
 -- MVP 语义边界
--- 1. 当前阶段不提供删除语义，因此本表不定义 `deleted_at`、`is_deleted`
---    或任何软删/硬删相关字段。
+-- 1. 当前阶段允许硬删除，但本表不定义 `deleted_at`、`is_deleted`
+--    或任何软删/归档相关字段。
 -- 2. 当前阶段不定义 `status`、`published_at`、`archived_at`、`version`
 --    等状态或版本字段。
 -- 3. 当前阶段每个产品仅关联一份有效正文，不引入正文版本链或多正文并存。

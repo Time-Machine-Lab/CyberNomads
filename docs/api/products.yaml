@@ -3,8 +3,8 @@ info:
   title: Cybernomads Product API
   version: 1.0.0
   description: >
-    产品模块首版 API 契约。当前阶段只提供创建、更新、列表、详情能力；
-    产品详情同时承担“完整产品上下文”提供能力，不提供删除接口。
+    产品模块首版 API 契约。当前阶段提供创建、更新、列表、详情与删除能力；
+    产品详情同时承担“完整产品上下文”提供能力，删除接口负责清理产品自有元数据与正文文件。
   summary: 产品模块 MVP 对外契约
 
 tags:
@@ -98,6 +98,19 @@ paths:
                 $ref: '#/components/schemas/ProductDetail'
         '400':
           description: 请求参数不合法
+        '404':
+          description: 产品不存在
+    delete:
+      tags:
+        - Products
+      summary: 删除产品
+      description: >
+        删除一个已有产品，并同步清理该产品对应的 Markdown 正文文件。
+        删除行为仅作用于产品模块自有数据，不检查其他领域是否仍引用该产品。
+      operationId: deleteProduct
+      responses:
+        '204':
+          description: 删除成功
         '404':
           description: 产品不存在
 

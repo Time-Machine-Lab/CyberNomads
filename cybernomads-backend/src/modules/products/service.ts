@@ -121,6 +121,17 @@ export class ProductService {
     return toProductDetail(record, contentMarkdown);
   }
 
+  async deleteProduct(productId: string): Promise<void> {
+    const existingRecord = await this.metadataStore.getProductById(productId);
+
+    if (!existingRecord) {
+      throw new ProductNotFoundError(productId);
+    }
+
+    await this.contentStore.deleteContent(existingRecord.contentRef);
+    await this.metadataStore.deleteProduct(productId);
+  }
+
   close(): void {
     this.metadataStore.close();
   }
