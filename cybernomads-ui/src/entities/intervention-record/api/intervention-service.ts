@@ -48,15 +48,17 @@ export async function getInterventionContext(
   }
 }
 
-export async function sendInterventionCommand(
+export async function createTaskOutputNote(
   workspaceId: string,
   taskId: string,
-  command: string,
+  description: string,
 ): Promise<InterventionRecord> {
   const output = await createTaskOutputRecord(taskId, {
-    description: command,
+    description,
     dataLocation: `task-output://${taskId}/${Date.now()}`,
   })
 
   return mapOutputRecordToIntervention(workspaceId, output)
 }
+
+export const sendInterventionCommand = createTaskOutputNote

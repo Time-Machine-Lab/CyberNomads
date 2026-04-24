@@ -13,6 +13,7 @@ import {
   outputRecord,
   productDetail,
   productSummary,
+  strategyDetail,
   strategySummary,
   taskDetail,
   taskSummary,
@@ -37,6 +38,7 @@ async function mountWithRouter(
       { path: '/accounts', component: { template: '<div>accounts list</div>' } },
       { path: '/workspaces', component: { template: '<div>workspaces list</div>' } },
       { path: '/workspaces/new', component: { template: '<div>workspace create</div>' } },
+      { path: '/workspaces/:workspaceId/edit', component: { template: '<div>workspace edit</div>' } },
       { path: '/workspaces/:workspaceId/runtime', component: { template: '<div>runtime route</div>' } },
       {
         path: '/workspaces/:workspaceId/tasks/:taskId/intervention',
@@ -70,6 +72,8 @@ function jsonResponse(payload: unknown, status = 200) {
 }
 
 function installProductDomainFetchStub() {
+  let currentTrafficWork = { ...trafficWorkDetail }
+
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = new URL(String(input))
     const path = url.pathname.replace(/^\/api/, '')
@@ -123,15 +127,71 @@ function installProductDomainFetchStub() {
       return jsonResponse({ items: [strategySummary] })
     }
 
+    if (path === `/strategies/${strategySummary.strategyId}`) {
+      return jsonResponse(strategyDetail)
+    }
+
     if (path === '/traffic-works') {
       return jsonResponse(
-        method === 'POST' ? trafficWorkDetail : { items: [trafficWorkSummary] },
+        method === 'POST'
+          ? currentTrafficWork
+          : {
+              items: [
+                {
+                  ...trafficWorkSummary,
+                  displayName: currentTrafficWork.displayName,
+                  product: currentTrafficWork.product,
+                  strategy: currentTrafficWork.strategy,
+                  objectBindingCount: currentTrafficWork.objectBindings.length,
+                  lifecycleStatus: currentTrafficWork.lifecycleStatus,
+                  contextPreparationStatus: currentTrafficWork.contextPreparationStatus,
+                  updatedAt: currentTrafficWork.updatedAt,
+                },
+              ],
+            },
         method === 'POST' ? 201 : 200,
       )
     }
 
     if (path === `/traffic-works/${trafficWorkDetail.trafficWorkId}`) {
-      return jsonResponse(trafficWorkDetail)
+      if (method === 'PUT') {
+        const body = JSON.parse(String(init?.body ?? '{}'))
+        currentTrafficWork = {
+          ...currentTrafficWork,
+          displayName: body.displayName,
+          product: {
+            productId: body.productId,
+            name: productSummary.name,
+          },
+          strategy: {
+            strategyId: body.strategyId,
+            name: strategySummary.name,
+          },
+          objectBindings: body.objectBindings ?? [],
+          contextPreparationStatus: 'pending',
+        }
+        return jsonResponse(currentTrafficWork)
+      }
+
+      return jsonResponse(currentTrafficWork)
+    }
+
+    if (path === `/traffic-works/${trafficWorkDetail.trafficWorkId}/start` && method === 'POST') {
+      currentTrafficWork = {
+        ...currentTrafficWork,
+        lifecycleStatus: 'running',
+        lifecycleStatusReason: 'Traffic work started.',
+      }
+      return jsonResponse(currentTrafficWork)
+    }
+
+    if (path === `/traffic-works/${trafficWorkDetail.trafficWorkId}/pause` && method === 'POST') {
+      currentTrafficWork = {
+        ...currentTrafficWork,
+        lifecycleStatus: 'ready',
+        lifecycleStatusReason: 'Traffic work paused.',
+      }
+      return jsonResponse(currentTrafficWork)
     }
 
     if (path === '/tasks') {
@@ -176,25 +236,79 @@ describe('frontend product-domain workflows', () => {
     expect(wrapper.text()).toContain(trafficWorkSummary.displayName)
     expect(wrapper.text()).toContain(productSummary.name)
     expect(wrapper.text()).toContain(strategySummary.name)
+    expect(wrapper.text()).toContain('TrafficWork')
   })
 
-  it('creates a TrafficWork from product, strategy, and consumable account bindings', async () => {
-    const { wrapper, router } = await mountWithRouter('/workspaces/new', WorkspaceCreatePage, '/workspaces/new')
+  it('opens runtime from the card body and edit mode from the top-right action', async () => {
+    const { wrapper, router } = await mountWithRouter('/workspaces', WorkspacesListPage, '/workspaces')
 
-    const submitButton = wrapper.findAll('button').find((button) => !button.attributes('disabled'))
+    await wrapper.get('.workspace-card__body').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe(`/workspaces/${trafficWorkDetail.trafficWorkId}/runtime`)
 
-    expect(submitButton).toBeTruthy()
-    await submitButton!.trigger('click')
+    await router.push('/workspaces')
     await flushPromises()
 
-    expect(router.currentRoute.value.fullPath).toBe(`/workspaces/${trafficWorkDetail.trafficWorkId}/runtime`)
-    expect(fetch).toHaveBeenCalledWith(
-      expect.objectContaining({ pathname: expect.stringContaining('/api/traffic-works') }),
-      expect.objectContaining({ method: 'POST' }),
-    )
+    const editButton = wrapper.get('button[aria-label="编辑工作区"]')
+    await editButton.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe(`/workspaces/${trafficWorkDetail.trafficWorkId}/edit`)
   })
 
-  it('renders runtime task state from the Tasks API without fake log records', async () => {
+  it('creates a workspace from product and strategy without requiring execution accounts', async () => {
+    const { wrapper, router } = await mountWithRouter('/workspaces/new', WorkspaceCreatePage, '/workspaces/new')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('创建工作区')
+    expect(wrapper.findAll('.account-card')).toHaveLength(0)
+    expect(wrapper.findAll('.create-step--accounts')).toHaveLength(0)
+
+    const submitButton = wrapper.get('.create-main__submit--header')
+    expect(submitButton.attributes('disabled')).toBeUndefined()
+    await submitButton.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe(`/workspaces/${trafficWorkDetail.trafficWorkId}/runtime?created=1`)
+
+    const lastFetchCall = vi.mocked(fetch).mock.calls.at(-1)
+    expect(lastFetchCall).toBeTruthy()
+    expect(String(lastFetchCall?.[0])).toContain('/api/traffic-works')
+    expect(lastFetchCall?.[1]).toMatchObject({ method: 'POST' })
+    expect(JSON.parse(String(lastFetchCall?.[1]?.body ?? '{}'))).toMatchObject({
+      displayName: 'Product · Growth Strategy',
+      productId: productSummary.productId,
+      strategyId: strategySummary.strategyId,
+      objectBindings: [],
+    })
+  })
+
+  it('updates a workspace from the edit page using the Traffic Works update endpoint', async () => {
+    const { wrapper, router } = await mountWithRouter(
+      `/workspaces/${trafficWorkDetail.trafficWorkId}/edit`,
+      WorkspaceCreatePage,
+      '/workspaces/:workspaceId/edit',
+    )
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('编辑工作区')
+
+    const submitButton = wrapper.get('.create-main__submit--header')
+    expect(submitButton.attributes('disabled')).toBeUndefined()
+    await submitButton.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/workspaces')
+
+    const lastFetchCall = vi.mocked(fetch).mock.calls.at(-1)
+    expect(lastFetchCall).toBeTruthy()
+    expect(String(lastFetchCall?.[0])).toContain(`/api/traffic-works/${trafficWorkDetail.trafficWorkId}`)
+    expect(lastFetchCall?.[1]).toMatchObject({
+      method: 'PUT',
+    })
+  })
+
+  it('renders runtime work and task state from backend contracts without fake log panels', async () => {
     const { wrapper } = await mountWithRouter(
       `/workspaces/${trafficWorkDetail.trafficWorkId}/runtime`,
       WorkspaceExecutionPage,
@@ -202,10 +316,43 @@ describe('frontend product-domain workflows', () => {
     )
 
     expect(wrapper.text()).toContain(taskSummary.name)
+    expect(wrapper.text()).toContain('工作状态概览')
+    expect(wrapper.text()).toContain('prepared')
     expect(wrapper.text()).not.toContain('CAPTCHA detected')
+    expect(wrapper.text()).not.toContain('实时执行日志')
   })
 
-  it('submits task output records from the intervention page', async () => {
+  it('starts and pauses a traffic work from the runtime page using Traffic Works lifecycle endpoints', async () => {
+    const { wrapper } = await mountWithRouter(
+      `/workspaces/${trafficWorkDetail.trafficWorkId}/runtime`,
+      WorkspaceExecutionPage,
+      '/workspaces/:workspaceId/runtime',
+    )
+
+    const buttons = wrapper.findAll('button')
+    const startButton = buttons.find((button) => button.attributes('title') === '启动工作')
+
+    expect(startButton).toBeTruthy()
+    await startButton!.trigger('click')
+    await flushPromises()
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: expect.stringContaining('/api/traffic-works/traffic-work-launch/start') }),
+      expect.objectContaining({ method: 'POST' }),
+    )
+
+    const pauseButton = wrapper.findAll('button').find((button) => button.attributes('title') === '暂停工作')
+    expect(pauseButton).toBeTruthy()
+    await pauseButton!.trigger('click')
+    await flushPromises()
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: expect.stringContaining('/api/traffic-works/traffic-work-launch/pause') }),
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('submits task output records from the task detail page', async () => {
     const { wrapper, router } = await mountWithRouter(
       `/workspaces/${trafficWorkDetail.trafficWorkId}/tasks/${taskSummary.taskId}/intervention`,
       TaskInterventionPage,
@@ -214,7 +361,7 @@ describe('frontend product-domain workflows', () => {
     )
 
     await wrapper.get('textarea').setValue('operator note')
-    const submitButton = wrapper.findAll('button').find((button) => button.text().includes('提交输出记录'))
+    const submitButton = wrapper.findAll('button').find((button) => button.text().includes('保存输出记录'))
 
     expect(submitButton).toBeTruthy()
     await submitButton!.trigger('click')

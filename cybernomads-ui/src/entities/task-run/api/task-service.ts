@@ -51,8 +51,6 @@ function mapTaskSummaryToRunRecord(dto: TaskSummaryDto, index = 0): TaskRunRecor
     lastRunAt: dto.updatedAt,
     nextRunAt: dto.condition.cron ?? dto.updatedAt,
     code: `TASK-${String(index + 1).padStart(2, '0')}`,
-    x: 120 + (index % 3) * 380,
-    y: 140 + Math.floor(index / 3) * 260,
     accent: dto.status === 'failed' ? 'red' : dto.status === 'completed' ? 'lime' : 'cyan',
     note: dto.condition.cron ?? 'No schedule declared',
     condition: dto.condition,
@@ -79,13 +77,13 @@ export async function listTasks(options: ListTasksOptions = {}): Promise<TaskRun
     },
   })
 
-  return result.items.map(mapTaskSummaryToRunRecord)
+  return applyTaskGraphLayout(result.items.map(mapTaskSummaryToRunRecord))
 }
 
 export async function getTaskById(taskId: string): Promise<TaskRunRecord | null> {
   try {
     const dto = await requestJson<TaskDetailDto>(`${TASK_API_ROOT}/${encodeURIComponent(taskId)}`)
-    return mapTaskDetailToRunRecord(dto)
+    return applyTaskGraphLayout([mapTaskDetailToRunRecord(dto)])[0] ?? null
   } catch (error) {
     if (error instanceof HttpClientError && error.status === 404) {
       return null
@@ -93,6 +91,68 @@ export async function getTaskById(taskId: string): Promise<TaskRunRecord | null>
 
     throw error
   }
+}
+
+function applyTaskGraphLayout(tasks: TaskRunRecord[]): TaskRunRecord[] {
+  if (tasks.length === 0) {
+    return tasks
+  }
+
+  const tasksById = new Map(tasks.map((task) => [task.id, task]))
+  const depthCache = new Map<string, number>()
+
+  const resolveDepth = (taskId: string, stack = new Set<string>()): number => {
+    if (depthCache.has(taskId)) {
+      return depthCache.get(taskId) ?? 0
+    }
+
+    if (stack.has(taskId)) {
+      return 0
+    }
+
+    const task = tasksById.get(taskId)
+
+    if (!task?.condition?.relyOnTaskIds.length) {
+      depthCache.set(taskId, 0)
+      return 0
+    }
+
+    stack.add(taskId)
+    const depth =
+      Math.max(
+        ...task.condition.relyOnTaskIds.map((dependencyId) =>
+          tasksById.has(dependencyId) ? resolveDepth(dependencyId, stack) + 1 : 0,
+        ),
+      ) ?? 0
+    stack.delete(taskId)
+    depthCache.set(taskId, depth)
+    return depth
+  }
+
+  const lanes = new Map<number, TaskRunRecord[]>()
+
+  for (const task of tasks) {
+    const depth = resolveDepth(task.id)
+    const lane = lanes.get(depth) ?? []
+    lane.push(task)
+    lanes.set(depth, lane)
+  }
+
+  for (const lane of lanes.values()) {
+    lane.sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'))
+  }
+
+  return tasks.map((task) => {
+    const depth = resolveDepth(task.id)
+    const lane = lanes.get(depth) ?? []
+    const rowIndex = lane.findIndex((candidate) => candidate.id === task.id)
+
+    return {
+      ...task,
+      x: 120 + depth * 380,
+      y: 140 + Math.max(rowIndex, 0) * 240,
+    }
+  })
 }
 
 export async function updateTaskStatus(

@@ -1,39 +1,58 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { listAccounts } from '@/entities/account/api/account-service'
-import { listAgentNodes } from '@/entities/agent/api/agent-service'
 import { listAssets } from '@/entities/asset/api/asset-service'
-import { listStrategies } from '@/entities/strategy/api/strategy-service'
-import { createWorkspace } from '@/entities/workspace/api/workspace-service'
-import type { AccountRecord } from '@/entities/account/model/types'
-import type { AgentNodeRecord } from '@/entities/agent/model/types'
+import { getStrategyById, listStrategies } from '@/entities/strategy/api/strategy-service'
+import { createWorkspace, getWorkspaceById, updateTrafficWork } from '@/entities/workspace/api/workspace-service'
 import type { AssetAttachmentRecord, AssetRecord } from '@/entities/asset/model/types'
-import type { StrategyRecord } from '@/entities/strategy/model/types'
+import type { StrategyDetailRecord, StrategyPlaceholderRecord, StrategyRecord } from '@/entities/strategy/model/types'
+import type { StrategyParameterBinding, WorkspaceRecord } from '@/entities/workspace/model/types'
 
 const route = useRoute()
 const router = useRouter()
 
 const assets = ref<AssetRecord[]>([])
 const strategies = ref<StrategyRecord[]>([])
-const accounts = ref<AccountRecord[]>([])
-const agentNodes = ref<AgentNodeRecord[]>([])
+const workspace = ref<WorkspaceRecord | null>(null)
+const strategyDetail = ref<StrategyDetailRecord | null>(null)
 const selectedAssetId = ref('')
 const selectedStrategyId = ref('')
-const selectedAccountIds = ref<string[]>([])
+const parameterFormValues = ref<Record<string, string>>({})
 const isSubmitting = ref(false)
+const isStrategyDetailLoading = ref(false)
+const strategyDetailErrorMessage = ref('')
 
-const hasActiveAgent = computed(() => agentNodes.value.some((node) => node.status === 'active'))
+const workspaceId = computed(() => String(route.params.workspaceId ?? ''))
+const isEditMode = computed(() => !!workspaceId.value)
 const backTo = computed(() => String(route.meta.backTo ?? '/workspaces'))
 const backLabel = computed(() => String(route.meta.backLabel ?? '返回工作区列表'))
+const pageTitle = computed(() => (isEditMode.value ? '编辑工作区' : '创建工作区'))
+const pageDescription = computed(() =>
+  isEditMode.value
+    ? '调整当前工作区的引流资产、引流策略和策略参数。保存后会重新准备工作区上下文。'
+    : '当前先选择引流资产和引流策略，再填写策略模板里要求的参数。',
+)
+const submitLabel = computed(() => {
+  if (isSubmitting.value) {
+    return isEditMode.value ? '保存中…' : '创建中…'
+  }
+
+  return isEditMode.value ? '保存工作区' : '创建工作区'
+})
 
 const selectedAsset = computed(() => assets.value.find((asset) => asset.id === selectedAssetId.value) ?? null)
 const selectedStrategy = computed(() => strategies.value.find((strategy) => strategy.id === selectedStrategyId.value) ?? null)
-
-function isConnectedAccount(account: AccountRecord) {
-  return account.lifecycleStatus === 'active' && account.connectionStatus === 'connected' && account.hasCurrentCredential
-}
+const strategyPlaceholders = computed(() => strategyDetail.value?.placeholders ?? [])
+const canSubmitWorkspace = computed(
+  () =>
+    !!selectedAssetId.value &&
+    !!selectedStrategyId.value &&
+    !isSubmitting.value &&
+    !isStrategyDetailLoading.value &&
+    !strategyDetailErrorMessage.value &&
+    strategyPlaceholders.value.every((placeholder) => !resolveParameterFieldError(placeholder)),
+)
 
 const workspaceName = computed(() => {
   if (!selectedAsset.value || !selectedStrategy.value) {
@@ -45,28 +64,86 @@ const workspaceName = computed(() => {
 
 const workspaceSummary = computed(() => {
   if (!selectedAsset.value || !selectedStrategy.value) {
-    return '绑定一套资产、策略和执行账号，直接进入执行视图。'
+    return '选择一套引流资产和一条引流策略，再补齐策略模板要求的参数。'
   }
 
-  return `以「${selectedAsset.value.name}」作为内容资产，结合「${selectedStrategy.value.name}」策略进行自动化执行。`
+  return `以「${selectedAsset.value.name}」作为引流资产，结合「${selectedStrategy.value.name}」策略和其参数配置创建一个新的工作区。`
 })
 
 async function loadPage() {
-  ;[assets.value, strategies.value, accounts.value, agentNodes.value] = await Promise.all([
+  const [loadedAssets, loadedStrategies, loadedWorkspace] = await Promise.all([
     listAssets(),
     listStrategies(),
-    listAccounts({ onlyConnected: true }),
-    listAgentNodes(),
+    isEditMode.value ? getWorkspaceById(workspaceId.value) : Promise.resolve(null),
   ])
+
+  assets.value = loadedAssets
+  strategies.value = loadedStrategies
+  workspace.value = loadedWorkspace
+
+  if (workspace.value) {
+    selectedAssetId.value = workspace.value.assetId
+    selectedStrategyId.value = workspace.value.strategyId
+    return
+  }
 
   selectedAssetId.value ||= assets.value[0]?.id ?? ''
   selectedStrategyId.value ||= strategies.value[1]?.id ?? strategies.value[0]?.id ?? ''
-  if (!selectedAccountIds.value.length) {
-    selectedAccountIds.value = accounts.value.filter(isConnectedAccount).slice(0, 1).map((account) => account.id)
-  }
 }
 
 onMounted(loadPage)
+
+watch(selectedStrategyId, (next, previous) => {
+  if (!next || next === previous) {
+    return
+  }
+
+  void loadStrategyDetail(next)
+})
+
+function buildInitialParameterFormValues(detail: StrategyDetailRecord) {
+  const savedBindings =
+    isEditMode.value && workspace.value?.strategyId === detail.id
+      ? new Map((workspace.value.parameterBindings ?? []).map((binding) => [binding.key, binding]))
+      : new Map<string, StrategyParameterBinding>()
+
+  return Object.fromEntries(
+    detail.placeholders.map((placeholder) => {
+      const savedBinding = savedBindings.get(placeholder.key)
+
+      if (savedBinding?.type === placeholder.type) {
+        return [placeholder.key, String(savedBinding.value)]
+      }
+
+      return [placeholder.key, String(placeholder.defaultValue)]
+    }),
+  )
+}
+
+async function loadStrategyDetail(strategyId: string) {
+  isStrategyDetailLoading.value = true
+  strategyDetailErrorMessage.value = ''
+
+  try {
+    const detail = await getStrategyById(strategyId)
+
+    if (!detail) {
+      strategyDetail.value = null
+      parameterFormValues.value = {}
+      strategyDetailErrorMessage.value = '未找到该策略的完整模板内容，请重新选择。'
+      return
+    }
+
+    strategyDetail.value = detail
+    parameterFormValues.value = buildInitialParameterFormValues(detail)
+  } catch (error) {
+    strategyDetail.value = null
+    parameterFormValues.value = {}
+    strategyDetailErrorMessage.value = error instanceof Error ? error.message : '策略模板加载失败。'
+  } finally {
+    isStrategyDetailLoading.value = false
+  }
+}
 
 function resolveAttachmentIcon(kind: AssetAttachmentRecord['kind']) {
   if (kind === 'video') return 'video_file'
@@ -94,56 +171,78 @@ function resolveStrategyTag(strategy: StrategyRecord) {
   return strategy.tags[0] ?? '未分类'
 }
 
-function resolveAccountVisualState(account: AccountRecord) {
-  if (account.availabilityStatus === 'risk' || account.availabilityStatus === 'restricted' || account.availabilityStatus === 'offline') return 'risk'
-  if (account.connectionStatus === 'expired' || account.connectionStatus === 'connect_failed') return 'expired'
-  if (account.connectionStatus === 'connecting') return 'standby'
-  return 'healthy'
+function resolveParameterInputType(placeholder: StrategyPlaceholderRecord) {
+  void placeholder
+  return 'text'
 }
 
-function isSelectableAccount(account: AccountRecord) {
-  return isConnectedAccount(account)
+function resolveParameterFieldValue(key: string) {
+  return parameterFormValues.value[key] ?? ''
 }
 
-function toggleAccount(accountId: string) {
-  const account = accounts.value.find((item) => item.id === accountId)
-  if (!account || !isSelectableAccount(account)) {
+function updateParameterFieldValue(key: string, value: string) {
+  parameterFormValues.value = {
+    ...parameterFormValues.value,
+    [key]: value,
+  }
+}
+
+function handleParameterFieldInput(key: string, event: Event) {
+  const target = event.target
+
+  if (!(target instanceof HTMLInputElement)) {
     return
   }
 
-  if (selectedAccountIds.value.includes(accountId)) {
-    selectedAccountIds.value = selectedAccountIds.value.filter((item) => item !== accountId)
-    return
-  }
-
-  selectedAccountIds.value = [...selectedAccountIds.value, accountId]
+  updateParameterFieldValue(key, target.value)
 }
 
-function resolveAccountStatus(account: AccountRecord) {
-  return account.state.label.replace(/\s+/g, '')
+function resolveParameterFieldError(placeholder: StrategyPlaceholderRecord) {
+  void placeholder
+  return ''
 }
 
-function resolveAccountStatusClass(account: AccountRecord) {
-  return resolveAccountVisualState(account)
+function buildParameterBindings(): StrategyParameterBinding[] {
+  return strategyPlaceholders.value.map((placeholder) => ({
+    type: placeholder.type,
+    key: placeholder.key,
+    value: resolveParameterFieldValue(placeholder.key),
+  }))
 }
 
 async function handleSubmit() {
-  if (!hasActiveAgent.value || !selectedAssetId.value || !selectedStrategyId.value || !selectedAccountIds.value.length) {
+  if (!canSubmitWorkspace.value) {
     return
   }
 
   isSubmitting.value = true
 
   try {
-    const workspace = await createWorkspace({
+    if (isEditMode.value && workspace.value) {
+      await updateTrafficWork(workspace.value.id, {
+        displayName: workspaceName.value,
+        productId: selectedAssetId.value,
+        strategyId: selectedStrategyId.value,
+        objectBindings: workspace.value.objectBindings ?? [],
+        parameterBindings: buildParameterBindings(),
+      })
+      await router.push('/workspaces')
+      return
+    }
+
+    const createdWorkspace = await createWorkspace({
       name: workspaceName.value,
       summary: workspaceSummary.value,
       assetId: selectedAssetId.value,
       strategyId: selectedStrategyId.value,
-      accountIds: selectedAccountIds.value,
+      accountIds: [],
+      parameterBindings: buildParameterBindings(),
     })
 
-    await router.push(`/workspaces/${workspace.id}/runtime`)
+    await router.push({
+      path: `/workspaces/${createdWorkspace.id}/runtime`,
+      query: { created: '1' },
+    })
   } finally {
     isSubmitting.value = false
   }
@@ -161,29 +260,25 @@ async function handleSubmit() {
             <span class="material-symbols-outlined">arrow_back</span>
             <span>{{ backLabel }}</span>
           </RouterLink>
-          <span class="create-context__crumb">/ 推广工作区 / 创建引流团队</span>
+          <span class="create-context__crumb">/ 推广工作区 / {{ pageTitle }}</span>
         </div>
 
         <header class="create-main__header">
           <div>
-            <h2>创建引流团队</h2>
-            <p>配置并启动自动化流量获取矩阵</p>
+            <h2>{{ pageTitle }}</h2>
+            <p>{{ pageDescription }}</p>
           </div>
-          <button
-            class="create-main__submit create-main__submit--header"
-            type="button"
-            :disabled="!hasActiveAgent || !selectedAccountIds.length || isSubmitting"
-            @click="handleSubmit"
-          >
-            <span class="material-symbols-outlined fill">play_arrow</span>
-            <span>{{ isSubmitting ? '创建中…' : '确认并启动团队' }}</span>
-          </button>
         </header>
 
-        <section v-if="!hasActiveAgent" class="create-warning">
-          <strong>当前无法创建工作区</strong>
-          <p>因为没有可用执行节点。请先完成 OpenClaw 初始化。</p>
-          <RouterLink to="/console/openclaw">初始化节点</RouterLink>
+        <section class="create-warning create-warning--info">
+          <strong>{{ isEditMode ? '保存后会重新准备工作区' : '当前阶段先完成基础创建' }}</strong>
+          <p>
+            {{
+              isEditMode
+                ? '更新产品、策略或策略参数后，后端会重新准备工作区上下文。执行账号等运行配置后续再补充。'
+                : '创建工作区不会自动启动。当前先完成产品、策略和策略参数配置，后续再进入执行流程。'
+            }}
+          </p>
         </section>
 
         <div class="create-timeline">
@@ -229,7 +324,10 @@ async function handleSubmit() {
 
           <section class="create-step">
             <div class="create-step__node">2</div>
-            <h3>选择引流策略</h3>
+            <h3>
+              选择引流策略
+              <span>必选</span>
+            </h3>
 
             <div class="create-carousel">
               <article
@@ -261,61 +359,70 @@ async function handleSubmit() {
             </div>
           </section>
 
-          <section class="create-step create-step--accounts">
+          <section class="create-step">
             <div class="create-step__node">3</div>
-            <div class="create-step__header">
-              <h3>分配执行账号</h3>
-              <button type="button">
-                <span class="material-symbols-outlined">add_circle</span>
-                <span>批量添加</span>
-              </button>
-            </div>
+            <h3>
+              填写策略参数
+              <span>动态生成</span>
+            </h3>
 
-            <div class="create-carousel create-carousel--accounts">
-              <article
-                v-for="account in accounts"
-                :key="account.id"
-                class="account-card"
-                :class="[
-                    `account-card--${resolveAccountStatusClass(account)}`,
-                  {
-                    'account-card--active': selectedAccountIds.includes(account.id),
-                    'account-card--disabled': !isSelectableAccount(account),
-                  },
-                ]"
-                @click="toggleAccount(account.id)"
-              >
-                <div v-if="resolveAccountVisualState(account) === 'risk'" class="account-card__tag">待确认</div>
+            <div class="parameter-panel">
+              <div v-if="isStrategyDetailLoading" class="parameter-panel__state">
+                <span class="material-symbols-outlined">hourglass_top</span>
+                <strong>正在读取策略模板</strong>
+                <p>正在从后端加载完整策略正文并解析参数占位符。</p>
+              </div>
 
-                <div class="account-card__top">
-                  <div class="account-card__avatar">
-                    <img
-                      v-if="account.resolvedPlatformProfile.resolvedAvatarUrl"
-                      :src="account.resolvedPlatformProfile.resolvedAvatarUrl"
-                      :alt="account.internalDisplayName"
-                      referrerpolicy="no-referrer"
+              <div v-else-if="strategyDetailErrorMessage" class="parameter-panel__state parameter-panel__state--error">
+                <span class="material-symbols-outlined">error</span>
+                <strong>策略模板加载失败</strong>
+                <p>{{ strategyDetailErrorMessage }}</p>
+              </div>
+
+              <div v-else-if="!strategyDetail" class="parameter-panel__state">
+                <span class="material-symbols-outlined">data_object</span>
+                <strong>等待选择策略</strong>
+                <p>选中一条策略后，这里会根据策略正文里的占位符自动生成表单。</p>
+              </div>
+
+              <div v-else-if="!strategyPlaceholders.length" class="parameter-panel__state">
+                <span class="material-symbols-outlined">check_circle</span>
+                <strong>当前策略没有参数占位符</strong>
+                <p>这条策略的正文里没有声明需要填写的模板参数，可以直接创建工作区。</p>
+              </div>
+
+              <template v-else>
+                <div class="parameter-panel__header">
+                  <div>
+                    <strong>{{ strategyDetail.name }}</strong>
+                    <p>已从策略模板中解析出 {{ strategyPlaceholders.length }} 个参数字段。</p>
+                  </div>
+                  <span class="parameter-panel__badge">Markdown Template</span>
+                </div>
+
+                <div class="parameter-grid">
+                  <label v-for="placeholder in strategyPlaceholders" :key="placeholder.key" class="parameter-field">
+                    <span class="parameter-field__label">
+                      {{ placeholder.key }}
+                      <small>{{ placeholder.type }}</small>
+                    </span>
+                    <input
+                      :type="resolveParameterInputType(placeholder)"
+                      :value="resolveParameterFieldValue(placeholder.key)"
+                      :placeholder="placeholder.displayDefaultValue || '空字符串'"
+                      :class="{ 'parameter-field__input--error': resolveParameterFieldError(placeholder) }"
+                      @input="handleParameterFieldInput(placeholder.key, $event)"
                     />
-                    <span v-else class="material-symbols-outlined">robot_2</span>
-                  </div>
-                  <div v-if="selectedAccountIds.includes(account.id)" class="create-card__check">
-                    <span class="material-symbols-outlined">check</span>
-                  </div>
-                  <div v-else class="create-card__radio" />
+                    <code>{{ placeholder.declaration }}</code>
+                    <p v-if="resolveParameterFieldError(placeholder)" class="parameter-field__error">
+                      {{ resolveParameterFieldError(placeholder) }}
+                    </p>
+                  </label>
                 </div>
-
-                <div>
-                  <h5>{{ account.internalDisplayName }}</h5>
-                  <div class="account-card__meta">
-                    <p>{{ account.platform }}</p>
-                    <div class="account-card__status" :class="`account-card__status--${resolveAccountStatusClass(account)}`">
-                      <span class="account-card__dot" />
-                      <span>{{ resolveAccountStatus(account) }}</span>
-                    </div>
-                  </div>
-                </div>
-              </article>
+              </template>
             </div>
           </section>
+
         </div>
       </div>
 
@@ -323,11 +430,11 @@ async function handleSubmit() {
         <button
           class="create-main__submit"
           type="button"
-          :disabled="!hasActiveAgent || !selectedAccountIds.length || isSubmitting"
+          :disabled="!canSubmitWorkspace"
           @click="handleSubmit"
         >
-          <span class="material-symbols-outlined fill">rocket_launch</span>
-          <span>{{ isSubmitting ? '创建中…' : '确认并启动团队' }}</span>
+          <span class="material-symbols-outlined fill">add_circle</span>
+          <span>{{ submitLabel }}</span>
         </button>
       </div>
     </main>
@@ -870,118 +977,122 @@ async function handleSubmit() {
   color: var(--cn-error);
 }
 
-.account-card {
-  min-width: 17.5rem;
-  padding: 1.25rem;
+.parameter-panel {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
   background: #131313;
   border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.5rem;
+  border-radius: 0.85rem;
 }
 
-.account-card--active {
+.parameter-panel__header,
+.parameter-panel__state {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.parameter-panel__header {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.parameter-panel__header strong,
+.parameter-panel__header p,
+.parameter-panel__state strong,
+.parameter-panel__state p {
+  margin: 0;
+}
+
+.parameter-panel__header p,
+.parameter-panel__state p {
+  margin-top: 0.35rem;
+  color: var(--cn-on-surface-muted);
+}
+
+.parameter-panel__state .material-symbols-outlined {
+  color: var(--cn-primary);
+}
+
+.parameter-panel__state--error .material-symbols-outlined,
+.parameter-field__error {
+  color: var(--cn-error);
+}
+
+.parameter-panel__badge {
+  padding: 0.35rem 0.65rem;
+  color: var(--cn-primary);
+  background: rgb(143 245 255 / 0.08);
+  border: 1px solid rgb(143 245 255 / 0.18);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.parameter-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.parameter-field {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
   background: #1a1919;
-  border-color: rgb(143 245 255 / 0.4);
-  box-shadow: 0 8px 32px rgb(143 245 255 / 0.05);
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 0.75rem;
 }
 
-.account-card--disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.account-card__tag {
-  position: absolute;
-  top: -0.5rem;
-  right: -0.5rem;
-  padding: 0.15rem 0.5rem;
-  color: #000;
-  background: #ff9800;
-  border-radius: 0.25rem;
-  font-size: 0.625rem;
+.parameter-field__label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
   font-weight: 700;
 }
 
-.account-card__top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1rem;
+.parameter-field__label small {
+  color: var(--cn-on-surface-muted);
+  font-size: 0.74rem;
+  font-weight: 500;
 }
 
-.account-card__avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 3rem;
-  height: 3rem;
-  overflow: hidden;
-  background: #262626;
-  border: 1px solid rgb(72 72 71 / 0.3);
-  border-radius: 999px;
-}
-
-.account-card__avatar img {
+.parameter-field input,
+.parameter-field code {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
-.account-card__meta,
-.account-card__status {
-  display: flex;
-  align-items: center;
+.parameter-field input {
+  min-height: 2.9rem;
+  padding: 0 0.9rem;
+  color: #fff;
+  background: #101010;
+  border: 1px solid rgb(72 72 71 / 0.24);
+  border-radius: 0.6rem;
+  outline: 0;
 }
 
-.account-card__meta {
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-top: 0.25rem;
+.parameter-field input:focus {
+  border-color: rgb(143 245 255 / 0.45);
+  box-shadow: 0 0 0 3px rgb(143 245 255 / 0.08);
 }
 
-.account-card__meta p {
-  color: var(--cn-on-surface-muted);
-  font-size: 0.88rem;
+.parameter-field__input--error {
+  border-color: rgb(255 113 108 / 0.45) !important;
 }
 
-.account-card__status {
-  gap: 0.35rem;
-  font-size: 0.75rem;
+.parameter-field code {
+  overflow-wrap: anywhere;
+  color: var(--cn-tertiary);
+  font-size: 0.74rem;
 }
 
-.account-card__dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 999px;
-}
-
-.account-card--healthy .account-card__dot {
-  background: var(--cn-secondary);
-  box-shadow: 0 0 8px rgb(195 244 0 / 0.5);
-}
-
-.account-card--risk .account-card__dot {
-  background: #ff9800;
-  box-shadow: 0 0 8px rgb(255 152 0 / 0.5);
-}
-
-.account-card--expired .account-card__dot {
-  background: var(--cn-error);
-  box-shadow: 0 0 8px rgb(255 113 108 / 0.5);
-}
-
-.account-card--standby .account-card__dot {
-  background: #262626;
-  border: 1px solid rgb(118 117 117 / 0.5);
-}
-
-.account-card__status--healthy,
-.account-card__status--risk,
-.account-card__status--standby {
-  color: var(--cn-on-surface-muted);
-}
-
-.account-card__status--expired {
-  color: var(--cn-error);
+.parameter-field__error {
+  margin: 0;
+  font-size: 0.78rem;
 }
 
 .create-bottom-bar {

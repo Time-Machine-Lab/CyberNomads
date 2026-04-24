@@ -3,8 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
+  createTaskOutputNote,
   getInterventionContext,
-  sendInterventionCommand,
   type InterventionContext,
 } from '@/entities/intervention-record/api/intervention-service'
 
@@ -73,7 +73,7 @@ async function handleSubmit() {
   errorMessage.value = ''
 
   try {
-    await sendInterventionCommand(workspaceId.value, taskId.value, draft.value.trim())
+    await createTaskOutputNote(workspaceId.value, taskId.value, draft.value.trim())
     await router.push(runtimePath.value)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '任务输出记录提交失败，请稍后重试。'
@@ -98,14 +98,14 @@ function discardChanges() {
         <span class="material-symbols-outlined">chevron_right</span>
         <span>{{ context?.task.name ?? taskId }}</span>
         <span class="material-symbols-outlined">chevron_right</span>
-        <span class="intervention-header__crumbs-active">任务输出记录</span>
+        <span class="intervention-header__crumbs-active">任务详情与输出记录</span>
       </div>
     </header>
 
     <main class="intervention-main">
       <section v-if="isLoading" class="intervention-state">
         <span class="material-symbols-outlined">sync</span>
-        <h1>正在加载任务上下文</h1>
+        <h1>正在加载任务详情</h1>
         <p>正在读取 Task detail 与 output records。</p>
       </section>
 
@@ -125,8 +125,8 @@ function discardChanges() {
       <template v-else>
         <section class="intervention-editor">
           <div class="intervention-editor__intro">
-            <h1>任务输出与人工备注</h1>
-            <p>这里仅写入 Tasks API 支持的 output record，不再展示未契约化的执行日志。</p>
+            <h1>任务详情与输出记录</h1>
+            <p>这里仅写入 Tasks API 支持的 output record，用于补充执行观察、产物位置或人工备注。</p>
           </div>
 
           <div class="intervention-editor__panel">
@@ -154,6 +154,21 @@ function discardChanges() {
               <strong>{{ context.task.statusLabel ?? context.task.status }}</strong>
             </div>
             <p>{{ context.task.instruction ?? context.task.summary }}</p>
+          </section>
+
+          <section class="intervention-sidebar__section">
+            <div class="intervention-sidebar__label">输入需求</div>
+            <div v-if="context.task.inputNeeds?.length" class="intervention-logs__body">
+              <div
+                v-for="need in context.task.inputNeeds"
+                :key="`${context.task.id}-${need.name}`"
+                class="intervention-logs__line intervention-logs__line--info"
+              >
+                <span>{{ need.name }}</span>
+                <span>{{ need.description }} ({{ need.source }})</span>
+              </div>
+            </div>
+            <div v-else class="intervention-logs__empty">当前任务没有声明额外输入需求。</div>
           </section>
 
           <section class="intervention-sidebar__section">
@@ -194,7 +209,7 @@ function discardChanges() {
 
     <footer v-if="context" class="intervention-footer">
       <button type="button" class="intervention-footer__button" @click="router.push(runtimePath)">
-        返回工作环境
+        返回运行概览
       </button>
       <button type="button" class="intervention-footer__button intervention-footer__button--danger" @click="discardChanges">
         放弃修改
@@ -206,7 +221,7 @@ function discardChanges() {
         @click="handleSubmit"
       >
         <span class="material-symbols-outlined fill">save</span>
-        <span>{{ isSubmitting ? '保存中' : '提交输出记录' }}</span>
+        <span>{{ isSubmitting ? '保存中' : '保存输出记录' }}</span>
       </button>
     </footer>
   </section>
@@ -484,10 +499,6 @@ function discardChanges() {
   color: #65afff;
 }
 
-.intervention-logs__line--warning span:last-child {
-  color: #c3f400;
-}
-
 .intervention-logs__empty {
   color: #767575;
 }
@@ -520,12 +531,7 @@ function discardChanges() {
   font-weight: 600;
 }
 
-.intervention-footer__button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-@media (min-width: 1280px) {
+@media (min-width: 1100px) {
   .intervention-sidebar {
     display: flex;
   }

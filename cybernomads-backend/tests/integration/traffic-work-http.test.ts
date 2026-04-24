@@ -84,6 +84,18 @@ describe.sequential("traffic work module http api", () => {
               resourceLabel: "Main Account",
             },
           ],
+          parameterBindings: [
+            {
+              type: "产品",
+              key: "product_name",
+              value: "CyberNomads",
+            },
+            {
+              type: "账号",
+              key: "max_retry",
+              value: "3",
+            },
+          ],
         }),
       },
     );
@@ -95,6 +107,7 @@ describe.sequential("traffic work module http api", () => {
       product: { productId: string; name: string };
       strategy: { strategyId: string; name: string };
       objectBindings: Array<Record<string, unknown>>;
+      parameterBindings: Array<Record<string, unknown>>;
       lifecycleStatus: string;
       contextPreparationStatus: string;
     };
@@ -105,6 +118,18 @@ describe.sequential("traffic work module http api", () => {
       strategyId: "strategy-1",
       name: "Growth Strategy",
     });
+    expect(created.parameterBindings).toEqual([
+      {
+        type: "产品",
+        key: "product_name",
+        value: "CyberNomads",
+      },
+      {
+        type: "账号",
+        key: "max_retry",
+        value: "3",
+      },
+    ]);
     expect(created.lifecycleStatus).toBe("ready");
     expect(created.contextPreparationStatus).toBe("prepared");
     expect(provider.sentMessages.at(-1)?.message).toContain(
@@ -169,6 +194,18 @@ describe.sequential("traffic work module http api", () => {
           resourceLabel: "Main Account",
         },
       ],
+      parameterBindings: [
+        {
+          type: "产品",
+          key: "product_name",
+          value: "CyberNomads",
+        },
+        {
+          type: "账号",
+          key: "max_retry",
+          value: "3",
+        },
+      ],
     });
 
     const startResponse = await fetch(
@@ -209,6 +246,13 @@ describe.sequential("traffic work module http api", () => {
               resourceLabel: "Backup Account",
             },
           ],
+          parameterBindings: [
+            {
+              type: "产品",
+              key: "product_name",
+              value: "CyberNomads v2",
+            },
+          ],
         }),
       },
     );
@@ -220,6 +264,13 @@ describe.sequential("traffic work module http api", () => {
         strategyId: "strategy-2",
         name: "Retention Strategy",
       },
+      parameterBindings: [
+        {
+          type: "产品",
+          key: "product_name",
+          value: "CyberNomads v2",
+        },
+      ],
       contextPreparationStatus: "prepared",
     });
 
@@ -303,6 +354,7 @@ describe.sequential("traffic work module http api", () => {
               resourceLabel: null,
             },
           ],
+          parameterBindings: [],
         }),
       },
     );
@@ -322,6 +374,80 @@ describe.sequential("traffic work module http api", () => {
       { method: "POST" },
     );
     expect(startResponse.status).toBe(409);
+  });
+
+  it("allows creating a traffic work without object bindings", async () => {
+    const provider = new FakeAgentProvider("openclaw");
+    const { application, workingDirectory } = await startTemporaryApplication(
+      temporaryDirectories,
+      applications,
+      [provider],
+    );
+    const runtimePaths = resolveRuntimePaths(workingDirectory);
+
+    await configureConnectedAgentService(application);
+
+    const productId = await createProduct(application, "CyberNomads Product");
+    await seedStrategy(
+      runtimePaths.databaseFile,
+      runtimePaths.strategyDirectory,
+      {
+        strategyId: "strategy-1",
+        name: "Growth Strategy",
+      },
+    );
+
+    const createResponse = await fetch(
+      `${application.http.url}/api/traffic-works`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          displayName: "Unbound Work",
+          productId,
+          strategyId: "strategy-1",
+          objectBindings: [],
+          parameterBindings: [
+            {
+              type: "产品",
+              key: "product_name",
+              value: "CyberNomads",
+            },
+          ],
+        }),
+      },
+    );
+
+    expect(createResponse.status).toBe(201);
+    await expect(createResponse.json()).resolves.toMatchObject({
+      displayName: "Unbound Work",
+      product: {
+        productId,
+        name: "CyberNomads Product",
+      },
+      strategy: {
+        strategyId: "strategy-1",
+        name: "Growth Strategy",
+      },
+      objectBindings: [],
+      parameterBindings: [
+        {
+          type: "产品",
+          key: "product_name",
+          value: "CyberNomads",
+        },
+      ],
+      contextPreparationStatus: "prepared",
+    });
+
+    expect(provider.sentMessages.at(-1)?.message).toContain(
+      "Object bindings:\n- none",
+    );
+    expect(provider.sentMessages.at(-1)?.message).toContain(
+      "Strategy parameter bindings:\n- product_name (产品) = CyberNomads",
+    );
   });
 });
 

@@ -4,10 +4,16 @@ import { useRoute } from 'vue-router'
 
 import {
   getInterventionContext,
-  sendInterventionCommand,
   type InterventionContext,
 } from '@/entities/intervention-record/api/intervention-service'
-import { getWorkspaceExecution, tickWorkspaceExecution } from '@/entities/workspace/api/workspace-service'
+import {
+  archiveTrafficWork,
+  endTrafficWork,
+  getWorkspaceExecution,
+  pauseTrafficWork,
+  startTrafficWork,
+  tickWorkspaceExecution,
+} from '@/entities/workspace/api/workspace-service'
 import type { TaskRunRecord } from '@/entities/task-run/model/types'
 import type { WorkspaceExecutionView } from '@/entities/workspace/model/types'
 import { env } from '@/shared/config/env'
@@ -17,11 +23,11 @@ import { formatTime } from '@/shared/lib/format'
 const route = useRoute()
 
 const execution = ref<WorkspaceExecutionView | null>(null)
-const intervention = ref<InterventionContext | null>(null)
+const taskContext = ref<InterventionContext | null>(null)
 const selectedTaskId = ref('')
 const zoom = ref(1)
-const interventionCommand = ref('')
-const isSubmitting = ref(false)
+const isActing = ref(false)
+const actionError = ref('')
 const canvasViewport = ref<HTMLElement | null>(null)
 const dragState = reactive({
   active: false,
@@ -36,19 +42,59 @@ const backTo = computed(() => '/workspaces')
 const selectedTask = computed(() =>
   execution.value?.tasks.find((task) => task.id === selectedTaskId.value) ?? execution.value?.tasks[0] ?? null,
 )
+const workspaceRecord = computed(() => execution.value?.workspace ?? null)
+const createdFromFlow = computed(() => route.query.created === '1')
 const workspaceStatusText = computed(() => {
-  if (!execution.value) return ''
+  if (!workspaceRecord.value) return ''
 
-  const baseName =
-    execution.value.workspace.id === 'workspace-nova-launch'
-      ? '推广执行环境 (工作环境)'
-      : execution.value.workspace.name
-
-  return `${baseName} - ${execution.value.workspace.statusLabel ?? execution.value.workspace.status}`
+  return `${workspaceRecord.value.name} - ${workspaceRecord.value.statusLabel ?? workspaceRecord.value.status}`
 })
+const preparationHint = computed(() => {
+  if (!workspaceRecord.value) return ''
+
+  if (workspaceRecord.value.contextPreparationStatus === 'prepared') {
+    return '上下文已准备完成，可以根据当前生命周期状态决定是否启动工作。'
+  }
+
+  if (workspaceRecord.value.contextPreparationStatus === 'failed') {
+    return workspaceRecord.value.contextPreparationStatusReason ?? '上下文准备失败，请检查后端准备结果。'
+  }
+
+  return workspaceRecord.value.contextPreparationStatusReason ?? '上下文仍在准备中，当前不建议启动工作。'
+})
+const canStart = computed(
+  () =>
+    workspaceRecord.value?.lifecycleStatus === 'ready' &&
+    workspaceRecord.value?.contextPreparationStatus === 'prepared' &&
+    !isActing.value,
+)
+const canPause = computed(() => workspaceRecord.value?.lifecycleStatus === 'running' && !isActing.value)
+const canEnd = computed(
+  () =>
+    (workspaceRecord.value?.lifecycleStatus === 'ready' || workspaceRecord.value?.lifecycleStatus === 'running') &&
+    !isActing.value,
+)
+const canArchive = computed(
+  () =>
+    (workspaceRecord.value?.lifecycleStatus === 'ready' || workspaceRecord.value?.lifecycleStatus === 'ended') &&
+    !isActing.value,
+)
+const taskEdges = computed(() => {
+  if (!execution.value) return []
+
+  return execution.value.tasks.flatMap((task) =>
+    (task.condition?.relyOnTaskIds ?? []).map((dependencyId) => ({
+      fromId: dependencyId,
+      toId: task.id,
+      isActive: task.status === 'running',
+    })),
+  )
+})
+const taskOutputRecords = computed(() => taskContext.value?.records ?? [])
 
 async function loadView() {
   execution.value = await getWorkspaceExecution(workspaceId.value)
+  actionError.value = ''
 
   if (!selectedTaskId.value && execution.value?.tasks.length) {
     selectedTaskId.value =
@@ -57,7 +103,7 @@ async function loadView() {
   }
 
   if (selectedTaskId.value) {
-    intervention.value = await getInterventionContext(workspaceId.value, selectedTaskId.value)
+    taskContext.value = await getInterventionContext(workspaceId.value, selectedTaskId.value)
   }
 }
 
@@ -65,7 +111,7 @@ const polling = usePolling(
   async () => {
     execution.value = await tickWorkspaceExecution(workspaceId.value)
     if (selectedTaskId.value) {
-      intervention.value = await getInterventionContext(workspaceId.value, selectedTaskId.value)
+      taskContext.value = await getInterventionContext(workspaceId.value, selectedTaskId.value)
     }
   },
   { intervalMs: env.pollingIntervalMs, immediate: false },
@@ -86,7 +132,7 @@ watch(
 
 watch(selectedTaskId, async (next) => {
   if (!next) return
-  intervention.value = await getInterventionContext(workspaceId.value, next)
+  taskContext.value = await getInterventionContext(workspaceId.value, next)
 })
 
 function resolveTaskColor(task: TaskRunRecord) {
@@ -94,12 +140,6 @@ function resolveTaskColor(task: TaskRunRecord) {
   if (task.status === 'completed') return 'secondary'
   if (task.status === 'attention') return 'error'
   return 'outline'
-}
-
-function resolveLogClass(level: WorkspaceExecutionView['logs'][number]['level']) {
-  if (level === 'warning') return 'execution-log__line--warning'
-  if (level === 'agent') return 'execution-log__line--agent'
-  return 'execution-log__line--system'
 }
 
 function startPan(event: PointerEvent) {
@@ -149,19 +189,35 @@ function buildPath(fromId: string, toId: string) {
   return `M ${startX} ${startY} C ${startX + 90} ${startY}, ${endX - 90} ${endY}, ${endX} ${endY}`
 }
 
-async function handleInterventionSubmit() {
-  if (!interventionCommand.value.trim() || !selectedTask.value) {
+async function runLifecycleAction(action: 'start' | 'pause' | 'end' | 'archive') {
+  if (!workspaceRecord.value) {
     return
   }
 
-  isSubmitting.value = true
+  isActing.value = true
+  actionError.value = ''
 
   try {
-    await sendInterventionCommand(workspaceId.value, selectedTask.value.id, interventionCommand.value.trim())
-    interventionCommand.value = ''
+    switch (action) {
+      case 'start':
+        await startTrafficWork(workspaceRecord.value.id)
+        break
+      case 'pause':
+        await pauseTrafficWork(workspaceRecord.value.id)
+        break
+      case 'end':
+        await endTrafficWork(workspaceRecord.value.id)
+        break
+      case 'archive':
+        await archiveTrafficWork(workspaceRecord.value.id)
+        break
+    }
+
     await loadView()
+  } catch (error) {
+    actionError.value = error instanceof Error ? error.message : '工作状态更新失败，请稍后重试。'
   } finally {
-    isSubmitting.value = false
+    isActing.value = false
   }
 }
 </script>
@@ -180,11 +236,17 @@ async function handleInterventionSubmit() {
         <span class="execution-topbar__context">{{ workspaceStatusText }}</span>
 
         <div class="execution-topbar__actions">
-          <button type="button" title="继续执行">
+          <button type="button" title="启动工作" :disabled="!canStart" @click="runLifecycleAction('start')">
             <span class="material-symbols-outlined">play_arrow</span>
           </button>
-          <button type="button" title="暂停执行">
+          <button type="button" title="暂停工作" :disabled="!canPause" @click="runLifecycleAction('pause')">
             <span class="material-symbols-outlined">pause</span>
+          </button>
+          <button type="button" title="结束工作" :disabled="!canEnd" @click="runLifecycleAction('end')">
+            <span class="material-symbols-outlined">stop</span>
+          </button>
+          <button type="button" title="归档工作" :disabled="!canArchive" @click="runLifecycleAction('archive')">
+            <span class="material-symbols-outlined">inventory_2</span>
           </button>
           <button type="button" title="重置视图" @click="resetView">
             <span class="material-symbols-outlined">restart_alt</span>
@@ -195,6 +257,55 @@ async function handleInterventionSubmit() {
 
     <div class="execution-body">
       <main class="execution-canvas-shell">
+        <section class="execution-summary">
+          <div class="execution-summary__intro">
+            <span class="execution-summary__eyebrow">TrafficWork Runtime</span>
+            <h1>{{ execution.workspace.name }}</h1>
+            <p>{{ execution.workspace.summary }}</p>
+          </div>
+
+          <div class="execution-summary__metrics">
+            <div class="execution-summary__metric">
+              <span>生命周期</span>
+              <strong>{{ execution.workspace.lifecycleStatus ?? execution.workspace.status }}</strong>
+            </div>
+            <div class="execution-summary__metric">
+              <span>准备状态</span>
+              <strong>{{ execution.workspace.contextPreparationStatus ?? 'unknown' }}</strong>
+            </div>
+            <div class="execution-summary__metric">
+              <span>产品 / 策略</span>
+              <strong>{{ execution.workspace.assetName }} / {{ execution.workspace.strategyName }}</strong>
+            </div>
+            <div class="execution-summary__metric">
+              <span>任务数</span>
+              <strong>{{ execution.tasks.length }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section
+          v-if="createdFromFlow || execution.workspace.highlightBanner || execution.workspace.contextPreparationStatus !== 'prepared' || actionError"
+          class="execution-alerts"
+        >
+          <div v-if="createdFromFlow" class="execution-alert execution-alert--info">
+            <strong>工作区已创建</strong>
+            <p>当前只是完成了工作区创建与上下文准备，不代表已经开始运行。请先确认准备状态，再决定是否启动。</p>
+          </div>
+          <div
+            v-if="execution.workspace.contextPreparationStatus !== 'prepared' || execution.workspace.highlightBanner"
+            class="execution-alert"
+            :class="execution.workspace.contextPreparationStatus === 'failed' ? 'execution-alert--danger' : 'execution-alert--warning'"
+          >
+            <strong>准备状态提示</strong>
+            <p>{{ preparationHint }}</p>
+          </div>
+          <div v-if="actionError" class="execution-alert execution-alert--danger">
+            <strong>操作失败</strong>
+            <p>{{ actionError }}</p>
+          </div>
+        </section>
+
         <div
           ref="canvasViewport"
           class="execution-canvas"
@@ -219,12 +330,12 @@ async function handleInterventionSubmit() {
             </defs>
 
             <path
-              v-for="(task, index) in execution.tasks.slice(0, -1)"
-              :key="`${task.id}-${execution.tasks[index + 1]?.id}`"
-              :class="{ 'execution-wires__active': task.status === 'running' }"
-              :d="buildPath(task.id, execution.tasks[index + 1].id)"
+              v-for="edge in taskEdges"
+              :key="`${edge.fromId}-${edge.toId}`"
+              :class="{ 'execution-wires__active': edge.isActive }"
+              :d="buildPath(edge.fromId, edge.toId)"
               fill="none"
-              :stroke="task.status === 'running' ? 'url(#active-flow)' : '#484847'"
+              :stroke="edge.isActive ? 'url(#active-flow)' : '#484847'"
               stroke-width="2"
               filter="url(#glow)"
             />
@@ -234,53 +345,85 @@ async function handleInterventionSubmit() {
             <section class="execution-panel">
               <header class="execution-panel__header">
                 <div>
-                  <span class="material-symbols-outlined">terminal</span>
-                  <strong>实时执行日志</strong>
+                  <span class="material-symbols-outlined">deployed_code</span>
+                  <strong>工作状态概览</strong>
                 </div>
                 <span class="execution-panel__pulse" />
               </header>
 
-              <div class="execution-log">
-                <div
-                  v-for="entry in execution.logs"
-                  :key="entry.id"
-                  class="execution-log__line"
-                  :class="resolveLogClass(entry.level)"
-                >
-                  <span>[{{ formatTime(entry.createdAt) }}]</span>
-                  <strong>[{{ entry.sourceLabel ?? '系统' }}]</strong>
-                  <span>{{ entry.message }}</span>
+              <div class="execution-inspector">
+                <div class="execution-inspector__row">
+                  <span>工作标识</span>
+                  <strong>{{ execution.workspace.id }}</strong>
                 </div>
+                <div class="execution-inspector__row">
+                  <span>状态标签</span>
+                  <strong>{{ execution.workspace.statusLabel ?? execution.workspace.status }}</strong>
+                </div>
+                <div class="execution-inspector__row">
+                  <span>上次启动</span>
+                  <strong>{{ formatTime(execution.workspace.lastRunAt) }}</strong>
+                </div>
+                <div class="execution-inspector__row">
+                  <span>准备完成</span>
+                  <strong>{{ formatTime(execution.workspace.nextRunAt) }}</strong>
+                </div>
+                <div class="execution-inspector__row">
+                  <span>状态说明</span>
+                  <strong>{{ execution.workspace.lifecycleStatusReason ?? '无' }}</strong>
+                </div>
+                <p class="execution-inspector__note">{{ preparationHint }}</p>
               </div>
             </section>
 
             <section class="execution-panel">
               <header class="execution-panel__header">
                 <div>
-                  <span class="material-symbols-outlined">forum</span>
-                  <strong>Agent 干预指令</strong>
+                  <span class="material-symbols-outlined">assignment</span>
+                  <strong>当前任务详情</strong>
                 </div>
               </header>
 
-              <div class="execution-chat">
-                <div
-                  v-for="record in intervention?.records ?? []"
-                  :key="record.id"
-                  class="execution-chat__group"
-                  :class="{ 'execution-chat__group--user': record.actor !== 'Agent 02 (NLU)' }"
-                >
-                  <span>{{ record.actor }}</span>
-                  <div class="execution-chat__bubble">{{ record.command }}</div>
+              <div v-if="selectedTask" class="execution-task-detail">
+                <div class="execution-task-detail__row">
+                  <span>任务</span>
+                  <strong>{{ selectedTask.name }}</strong>
                 </div>
-              </div>
+                <div class="execution-task-detail__row">
+                  <span>状态</span>
+                  <strong>{{ selectedTask.statusLabel ?? selectedTask.status }}</strong>
+                </div>
+                <p class="execution-task-detail__instruction">{{ selectedTask.instruction ?? selectedTask.summary }}</p>
 
-              <form class="execution-composer" @submit.prevent="handleInterventionSubmit">
-                <span class="material-symbols-outlined">code</span>
-                <input v-model="interventionCommand" type="text" placeholder="输入干预指令..." />
-                <button type="submit" :disabled="!interventionCommand.trim() || isSubmitting">
-                  <span class="material-symbols-outlined">send</span>
-                </button>
-              </form>
+                <div class="execution-task-detail__section">
+                  <small>输入需求</small>
+                  <ul>
+                    <li v-for="need in selectedTask.inputNeeds ?? []" :key="`${selectedTask.id}-${need.name}`">
+                      {{ need.name }}: {{ need.description }}
+                    </li>
+                  </ul>
+                  <p v-if="!(selectedTask.inputNeeds ?? []).length">当前任务没有声明额外输入需求。</p>
+                </div>
+
+                <div class="execution-task-detail__section">
+                  <small>状态说明</small>
+                  <p>{{ selectedTask.statusReason ?? '当前任务没有额外状态说明。' }}</p>
+                </div>
+
+                <div class="execution-task-detail__section">
+                  <small>输出记录</small>
+                  <ul>
+                    <li v-for="record in taskOutputRecords" :key="record.id">
+                      {{ record.command }} -> {{ record.response }}
+                    </li>
+                  </ul>
+                  <p v-if="!taskOutputRecords.length">当前任务还没有 output records。</p>
+                </div>
+
+                <RouterLink :to="`/workspaces/${execution.workspace.id}/tasks/${selectedTask.id}/intervention`" class="task-node__link">
+                  打开任务详情页
+                </RouterLink>
+              </div>
             </section>
           </div>
 
@@ -338,7 +481,7 @@ async function handleInterventionSubmit() {
               <div class="task-node__footer">
                 <span>进度 {{ task.progress }}%</span>
                 <RouterLink :to="`/workspaces/${execution.workspace.id}/tasks/${task.id}/intervention`" class="task-node__link">
-                  任务干预
+                  任务详情
                 </RouterLink>
               </div>
 
@@ -359,6 +502,102 @@ async function handleInterventionSubmit() {
   color: #fff;
   background: #0e0e0e;
   overflow: hidden;
+}
+
+.execution-summary,
+.execution-alerts {
+  width: min(100%, 1400px);
+  margin: 1rem auto 0;
+}
+
+.execution-summary {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  padding: 1.25rem 1.5rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 1rem;
+  background: rgb(19 19 19 / 0.88);
+}
+
+.execution-summary__eyebrow {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  color: #8ff5ff;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.execution-summary__intro h1,
+.execution-summary__intro p {
+  margin: 0;
+}
+
+.execution-summary__intro h1 {
+  font-family: var(--cn-font-display);
+  font-size: clamp(1.5rem, 2vw, 2.2rem);
+}
+
+.execution-summary__intro p {
+  margin-top: 0.55rem;
+  color: #adaaaa;
+  line-height: 1.65;
+}
+
+.execution-summary__metrics {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.execution-summary__metric,
+.execution-alert {
+  padding: 0.95rem 1rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 0.85rem;
+  background: rgb(14 14 14 / 0.9);
+}
+
+.execution-summary__metric span,
+.execution-task-detail__section small {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: #8b8a8a;
+  font-size: 0.8rem;
+}
+
+.execution-summary__metric strong {
+  color: #fff;
+  line-height: 1.4;
+}
+
+.execution-alerts {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.execution-alert strong,
+.execution-alert p {
+  margin: 0;
+}
+
+.execution-alert p {
+  margin-top: 0.45rem;
+  color: #d0cece;
+  line-height: 1.6;
+}
+
+.execution-alert--info {
+  border-color: rgb(143 245 255 / 0.3);
+}
+
+.execution-alert--warning {
+  border-color: rgb(255 203 92 / 0.3);
+}
+
+.execution-alert--danger {
+  border-color: rgb(255 113 108 / 0.35);
 }
 
 .execution-topbar {
@@ -557,120 +796,45 @@ async function handleInterventionSubmit() {
   box-shadow: 0 0 8px #8ff5ff;
 }
 
-.execution-log,
-.execution-chat {
-  flex: 1;
-  overflow-y: auto;
+.execution-inspector,
+.execution-task-detail {
+  display: grid;
+  gap: 0.8rem;
   padding: 1rem;
 }
 
-.execution-log {
-  display: grid;
-  gap: 0.55rem;
-  font-family: var(--cn-font-mono);
-  font-size: 0.7rem;
-  line-height: 1.55;
-}
-
-.execution-log__line {
-  color: #767575;
-}
-
-.execution-log__line strong {
-  margin: 0 0.3rem;
-}
-
-.execution-log__line--system strong,
-.execution-log__line--system span:last-child {
-  color: #8ff5ff;
-}
-
-.execution-log__line--agent strong {
-  color: #c3f400;
-}
-
-.execution-log__line--warning strong,
-.execution-log__line--warning span:last-child {
-  color: #ffb800;
-}
-
-.execution-chat {
-  display: grid;
-  gap: 0.75rem;
-  color: #adaaaa;
-  font-family: var(--cn-font-mono);
-  font-size: 0.72rem;
-}
-
-.execution-chat__group {
+.execution-inspector__row,
+.execution-task-detail__row {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
 }
 
-.execution-chat__group > span {
-  color: #8ff5ff;
-  opacity: 0.8;
+.execution-inspector__row span,
+.execution-task-detail__row span {
+  color: #8b8a8a;
+  font-size: 0.84rem;
 }
 
-.execution-chat__group--user {
-  align-items: flex-end;
-}
-
-.execution-chat__group--user > span {
-  color: #767575;
-}
-
-.execution-chat__bubble {
-  max-width: 100%;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid rgb(72 72 71 / 0.3);
-  border-radius: 0.5rem;
-  background: #201f1f;
-}
-
-.execution-chat__group--user .execution-chat__bubble {
-  color: #8ff5ff;
-  border-color: rgb(143 245 255 / 0.2);
-  background: rgb(143 245 255 / 0.1);
-}
-
-.execution-composer {
-  position: relative;
-  display: flex;
-  align-items: center;
-  padding: 0.75rem;
-  border-top: 1px solid rgb(143 245 255 / 0.2);
-  background: #000;
-}
-
-.execution-composer > .material-symbols-outlined {
-  position: absolute;
-  left: 1.35rem;
-  color: rgb(143 245 255 / 0.5);
-  font-size: 1rem;
-}
-
-.execution-composer input {
-  width: 100%;
-  border: 1px solid rgb(72 72 71 / 0.3);
-  padding: 0.65rem 2.5rem 0.65rem 2rem;
-  border-radius: 0.5rem;
+.execution-inspector__row strong,
+.execution-task-detail__row strong {
   color: #fff;
-  background: transparent;
-  font-size: 0.78rem;
-  outline: 0;
+  text-align: right;
 }
 
-.execution-composer button {
-  position: absolute;
-  right: 1.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  color: #8ff5ff;
-  background: transparent;
+.execution-inspector__note,
+.execution-task-detail__instruction,
+.execution-task-detail__section p,
+.execution-task-detail__section li {
+  margin: 0;
+  color: #d0cece;
+  line-height: 1.65;
+}
+
+.execution-task-detail__section ul {
+  padding-left: 1rem;
+  margin: 0;
 }
 
 .execution-zoom {
@@ -866,6 +1030,10 @@ async function handleInterventionSubmit() {
   .execution-topbar__brand,
   .execution-topbar__context {
     display: none;
+  }
+
+  .execution-summary {
+    grid-template-columns: 1fr;
   }
 }
 </style>

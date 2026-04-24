@@ -51,6 +51,7 @@ describe.sequential("runtime bootstrap", () => {
       "006-traffic-works.sql",
       "007-account-access-sessions.sql",
       "008-tasks.sql",
+      "009-traffic-work-parameter-bindings.sql",
     ]);
     expect(result.skippedScripts).toEqual([]);
 
@@ -116,7 +117,7 @@ describe.sequential("runtime bootstrap", () => {
     database.close();
 
     expect(bootstrapTable?.name).toBe("runtime_sql_scripts");
-    expect(recordedScripts?.count).toBe(8);
+    expect(recordedScripts?.count).toBe(9);
     expect(productsTable?.name).toBe("products");
     expect(agentServicesTable?.name).toBe("agent_service_connections");
     expect(accountsTable?.name).toBe("accounts");
@@ -147,6 +148,7 @@ describe.sequential("runtime bootstrap", () => {
       "006-traffic-works.sql",
       "007-account-access-sessions.sql",
       "008-tasks.sql",
+      "009-traffic-work-parameter-bindings.sql",
     ]);
 
     const database = new DatabaseSync(runtimePaths.databaseFile);
@@ -155,7 +157,7 @@ describe.sequential("runtime bootstrap", () => {
       .get() as { count: number } | undefined;
     database.close();
 
-    expect(recordedScripts?.count).toBe(8);
+    expect(recordedScripts?.count).toBe(9);
   });
 
   it("fails startup explicitly when the SQLite runtime database cannot be opened", async () => {

@@ -129,11 +129,11 @@ function createBaseStrategies(): StrategyDetailDto[] {
       name: '高频评论截流',
       summary: '在目标竞品账号下高频发布带有诱饵的专业评论。',
       contentMarkdown:
-        '# 高频评论截流\n\n## 系统提示词配置\n- 搜索竞品热视频\n- 分析评论区用户意图\n- 按节奏发布诱饵评论\n- 输出标题使用 {{string:title="默认标题"}}\n',
+        '# 高频评论截流\n\n## 系统提示词配置\n- 搜索竞品热视频\n- 分析评论区用户意图\n- 按节奏发布诱饵评论\n- 输出标题使用 {{产品:标题="默认标题"}}\n',
       placeholders: [
         {
-          type: 'string',
-          key: 'title',
+          type: '产品',
+          key: '标题',
           defaultValue: '默认标题',
         },
       ],
@@ -146,12 +146,12 @@ function createBaseStrategies(): StrategyDetailDto[] {
       name: '深度内容私信',
       summary: '通过自然语义匹配，向潜在目标用户发送深度定制化私信。',
       contentMarkdown:
-        '# 深度内容私信\n\n## 互动执行配置\n1. 抽取高潜评论\n2. 生成价值评论\n3. 发送深度私信\n4. 单次跟进间隔不低于 {{int:followup_interval_hours=6}} 小时\n',
+        '# 深度内容私信\n\n## 互动执行配置\n1. 抽取高潜评论\n2. 生成价值评论\n3. 发送深度私信\n4. 主账号使用 {{账号:主账号="账号A"}} 执行首轮私信\n',
       placeholders: [
         {
-          type: 'int',
-          key: 'followup_interval_hours',
-          defaultValue: 6,
+          type: '账号',
+          key: '主账号',
+          defaultValue: '账号A',
         },
       ],
       createdAt: '2026-04-17T12:20:00.000Z',
@@ -173,12 +173,12 @@ function createBaseStrategies(): StrategyDetailDto[] {
       name: '闪电战 T1',
       summary: '高风险高回报的快节奏趋势植入策略，适合活动型短视频流量争夺。',
       contentMarkdown:
-        '# 闪电战 T1\n\n## 风险约束\n- 控制发布频率\n- 预热素材准备\n- 异常即暂停\n- 单日最高触达量 {{int:max_daily_reach=30}}\n',
+        '# 闪电战 T1\n\n## 风险约束\n- 控制发布频率\n- 预热素材准备\n- 异常即暂停\n- 活动时间 {{时间:发布时间="18:30"}}\n',
       placeholders: [
         {
-          type: 'int',
-          key: 'max_daily_reach',
-          defaultValue: 30,
+          type: '时间',
+          key: '发布时间',
+          defaultValue: '18:30',
         },
       ],
       createdAt: '2026-04-14T09:30:00.000Z',
@@ -190,11 +190,11 @@ function createBaseStrategies(): StrategyDetailDto[] {
       name: '精准转化追击',
       summary: '利用跟进消息和意向评分做多轮转化承接，聚焦强意图线索。',
       contentMarkdown:
-        '# 精准转化追击\n\n## 执行结构\n- 元数据清理\n- 关键词密度控制\n- 标签回写\n- CTA 文案使用 {{string:cta_text="立即预约"}}\n',
+        '# 精准转化追击\n\n## 执行结构\n- 元数据清理\n- 关键词密度控制\n- 标签回写\n- CTA 文案使用 {{动作:按钮文案="立即预约"}}\n',
       placeholders: [
         {
-          type: 'string',
-          key: 'cta_text',
+          type: '动作',
+          key: '按钮文案',
           defaultValue: '立即预约',
         },
       ],
@@ -1137,6 +1137,7 @@ export function createWorkspaceData(input: CreateWorkspaceInput) {
     assignedAgentLabels: ['N', 'A', 'V'],
     themeColor: 'cyan',
     highlightBanner: `${asset?.name ?? '新资产'} · ${strategy?.name ?? '新策略'}`,
+    parameterBindings: input.parameterBindings,
   }
 
   database.workspaces.unshift(workspace)

@@ -42,10 +42,10 @@ describe.sequential("strategy module http api", () => {
           tags: ["growth", "mvp", "growth"],
           contentMarkdown: [
             "<!-- s:seed-1 -->",
-            '# {{string:title="默认标题"}}',
+            '# {{产品:标题="默认标题"}}',
             "",
-            "重试次数：{{int:max_retry=3}}",
-            '重复标题：{{string:title="默认标题"}}',
+            '账号：{{账号:账号A="123456"}}',
+            '重复标题：{{产品:标题="默认标题"}}',
             "<!-- /s -->",
           ].join("\n"),
         }),
@@ -70,14 +70,14 @@ describe.sequential("strategy module http api", () => {
     expect(createdStrategy.tags).toEqual(["growth", "mvp"]);
     expect(createdStrategy.placeholders).toEqual([
       {
-        type: "string",
-        key: "title",
+        type: "产品",
+        key: "标题",
         defaultValue: "默认标题",
       },
       {
-        type: "int",
-        key: "max_retry",
-        defaultValue: 3,
+        type: "账号",
+        key: "账号A",
+        defaultValue: "123456",
       },
     ]);
     expect(createdStrategy.createdAt).toBe(createdStrategy.updatedAt);
@@ -145,10 +145,10 @@ describe.sequential("strategy module http api", () => {
           summary: "升级版摘要",
           tags: ["stable"],
           contentMarkdown: [
-            '# {{string:title="升级标题"}}',
+            '# {{产品:标题="升级标题"}}',
             "",
-            '按钮：{{string:cta_text="立即开始"}}',
-            '按钮重复：{{string:cta_text="立即开始"}}',
+            '主账号：{{账号:主账号="账号-001"}}',
+            '备用账号：{{账号:备用账号="账号-002"}}',
           ].join("\n"),
         }),
       },
@@ -172,14 +172,19 @@ describe.sequential("strategy module http api", () => {
     expect(updatedStrategy.tags).toEqual(["stable"]);
     expect(updatedStrategy.placeholders).toEqual([
       {
-        type: "string",
-        key: "title",
+        type: "产品",
+        key: "标题",
         defaultValue: "升级标题",
       },
       {
-        type: "string",
-        key: "cta_text",
-        defaultValue: "立即开始",
+        type: "账号",
+        key: "主账号",
+        defaultValue: "账号-001",
+      },
+      {
+        type: "账号",
+        key: "备用账号",
+        defaultValue: "账号-002",
       },
     ]);
     expect(updatedStrategy.createdAt).toBe(createdStrategy.createdAt);
@@ -220,7 +225,7 @@ describe.sequential("strategy module http api", () => {
         body: JSON.stringify({
           name: "无效策略",
           contentMarkdown:
-            '{{string:title="标题"}} {{int:title=2}} {{string:broken=未加引号}}',
+            '{{账号:账号A="标题"}} {{账号:账号A="重复"}} {{产品:broken=未加引号}}',
         }),
       },
     );
@@ -262,7 +267,7 @@ describe.sequential("strategy module http api", () => {
         },
         body: JSON.stringify({
           name: "MVP 策略",
-          contentMarkdown: '# {{string:title="标题"}}',
+          contentMarkdown: '# {{产品:标题="标题"}}',
         }),
       },
     );

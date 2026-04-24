@@ -1,18 +1,10 @@
-export type StrategyPlaceholderType = 'string' | 'int'
+export type StrategyPlaceholderType = string
 
-export interface StrategyStringPlaceholderDto {
-  type: 'string'
+export interface StrategyPlaceholderDto {
+  type: StrategyPlaceholderType
   key: string
   defaultValue: string
 }
-
-export interface StrategyIntPlaceholderDto {
-  type: 'int'
-  key: string
-  defaultValue: number
-}
-
-export type StrategyPlaceholderDto = StrategyStringPlaceholderDto | StrategyIntPlaceholderDto
 
 export interface StrategySummaryDto {
   strategyId: string
@@ -53,7 +45,7 @@ export interface SaveStrategyInput extends CreateStrategyInput {
 export interface StrategyPlaceholderRecord {
   type: StrategyPlaceholderType
   key: string
-  defaultValue: string | number
+  defaultValue: string
   displayDefaultValue: string
   declaration: string
 }

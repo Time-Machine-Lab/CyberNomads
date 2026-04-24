@@ -70,7 +70,7 @@ export interface PollAccessSessionInput {
   force?: boolean
 }
 
-export interface VerifyAccessSessionInput {}
+export type VerifyAccessSessionInput = Record<string, never>
 
 export interface ResolvedPlatformProfileDto {
   resolvedPlatformAccountUid: string | null
@@ -198,7 +198,7 @@ export interface AccountPlatformView {
   color: AccountPlatformColor
 }
 
-export interface ResolvedPlatformProfileRecord extends ResolvedPlatformProfileDto {}
+export type ResolvedPlatformProfileRecord = ResolvedPlatformProfileDto
 
 export interface CurrentCredentialSummaryRecord extends CurrentCredentialSummaryDto {
   expiresAtLabel: string | null

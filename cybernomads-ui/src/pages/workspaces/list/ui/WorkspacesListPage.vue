@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-import { listAccounts } from '@/entities/account/api/account-service'
-import { listAgentNodes } from '@/entities/agent/api/agent-service'
 import { listAssets } from '@/entities/asset/api/asset-service'
 import { listStrategies } from '@/entities/strategy/api/strategy-service'
 import { listWorkspaces } from '@/entities/workspace/api/workspace-service'
-import type { AccountRecord } from '@/entities/account/model/types'
-import type { AgentNodeRecord } from '@/entities/agent/model/types'
 import type { AssetRecord } from '@/entities/asset/model/types'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
 import type { WorkspaceRecord } from '@/entities/workspace/model/types'
@@ -15,26 +12,13 @@ import type { WorkspaceRecord } from '@/entities/workspace/model/types'
 const workspaces = ref<WorkspaceRecord[]>([])
 const assets = ref<AssetRecord[]>([])
 const strategies = ref<StrategyRecord[]>([])
-const accounts = ref<AccountRecord[]>([])
-const agentNodes = ref<AgentNodeRecord[]>([])
-
-const hasActiveAgent = computed(() => agentNodes.value.some((node) => node.status === 'active'))
-const hasConnectedAccount = computed(() =>
-  accounts.value.some(
-    (account) =>
-      account.lifecycleStatus === 'active' &&
-      account.connectionStatus === 'connected' &&
-      account.hasCurrentCredential,
-  ),
-)
+const router = useRouter()
 
 async function loadPage() {
-  ;[workspaces.value, assets.value, strategies.value, accounts.value, agentNodes.value] = await Promise.all([
+  ;[workspaces.value, assets.value, strategies.value] = await Promise.all([
     listWorkspaces(),
     listAssets(),
     listStrategies(),
-    listAccounts({ onlyConnected: true }),
-    listAgentNodes(),
   ])
 }
 
@@ -70,51 +54,51 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   if (workspace.status === 'attention') return 'completed'
   return 'idle'
 }
+
+function openWorkspaceRuntime(workspaceId: string) {
+  void router.push(`/workspaces/${workspaceId}/runtime`)
+}
+
+function openWorkspaceEditor(workspaceId: string) {
+  void router.push(`/workspaces/${workspaceId}/edit`)
+}
 </script>
 
 <template>
   <section class="workspace-page">
     <div class="workspace-canvas">
-        <section v-if="!hasActiveAgent || !hasConnectedAccount" class="workspace-alerts">
-          <div v-if="!hasActiveAgent" class="workspace-alert">
+        <section class="workspace-alerts">
+          <div class="workspace-alert">
             <div>
-              <strong>缺少可用 Agent</strong>
-              <p>当前没有已初始化的执行节点，请先完成 OpenClaw 初始化。</p>
+              <strong>工作区以 TrafficWork 为中心</strong>
+              <p>当前列表展示的是已创建的工作对象。创建阶段只要求资产与策略，执行账号和后续运行控制在下一步继续处理。</p>
             </div>
-            <RouterLink to="/console/openclaw">前往配置</RouterLink>
-          </div>
-          <div v-if="!hasConnectedAccount" class="workspace-alert">
-            <div>
-              <strong>缺少可用账号</strong>
-              <p>工作区至少需要一个已连接账号，才能进入执行链路。</p>
-            </div>
-            <RouterLink to="/accounts">前往账号池</RouterLink>
+            <RouterLink to="/workspaces/new">创建工作区</RouterLink>
           </div>
         </section>
 
         <section class="workspace-header">
           <div>
-            <h3>工作区 / 团队列表</h3>
-            <p>管理并监控 AI 推广节点的实时状态与执行效率。</p>
+            <h3>工作区 / TrafficWork 列表</h3>
+            <p>查看每个工作区的绑定资产、策略、生命周期状态与上下文准备状态。</p>
           </div>
           <RouterLink class="workspace-header__action" to="/workspaces/new">
             <span class="material-symbols-outlined">add</span>
-            <span>创建推广团队</span>
+            <span>创建工作区</span>
           </RouterLink>
         </section>
 
         <section class="workspace-grid">
-          <RouterLink
+          <article
             v-for="workspace in workspaces"
             :key="workspace.id"
-            :to="`/workspaces/${workspace.id}/runtime`"
             class="workspace-card"
             :class="[
               `workspace-card--${resolveStatusTone(workspace)}`,
               { 'workspace-card--warning': Boolean(workspace.highlightBanner) },
             ]"
           >
-            <div class="workspace-card__body">
+            <div class="workspace-card__body" role="link" tabindex="0" @click="openWorkspaceRuntime(workspace.id)" @keydown.enter="openWorkspaceRuntime(workspace.id)">
               <div class="workspace-card__top">
                 <div class="workspace-card__identity">
                   <div class="workspace-card__icon">
@@ -128,8 +112,8 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
                     </div>
                   </div>
                 </div>
-                <button type="button" aria-label="更多">
-                  <span class="material-symbols-outlined">more_vert</span>
+                <button type="button" aria-label="编辑工作区" title="编辑工作区" @click.stop="openWorkspaceEditor(workspace.id)">
+                  <span class="material-symbols-outlined">edit</span>
                 </button>
               </div>
 
@@ -137,38 +121,45 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
                 <div class="workspace-card__meta-item">
                   <div class="workspace-card__meta-label">
                     <span class="material-symbols-outlined">inventory_2</span>
-                    <p>活跃资产</p>
+                    <p>引流资产</p>
                   </div>
-                  <strong>{{ resolveAssetName(workspace.assetId) }}</strong>
+                  <strong>{{ workspace.assetName ?? resolveAssetName(workspace.assetId) }}</strong>
                 </div>
                 <div class="workspace-card__meta-item">
                   <div class="workspace-card__meta-label">
                     <span class="material-symbols-outlined">strategy</span>
-                    <p>当前策略</p>
+                    <p>引流策略</p>
                   </div>
-                  <strong class="workspace-card__meta-accent">{{ resolveStrategyName(workspace.strategyId) }}</strong>
+                  <strong class="workspace-card__meta-accent">{{ workspace.strategyName ?? resolveStrategyName(workspace.strategyId) }}</strong>
                 </div>
               </div>
 
               <div class="workspace-card__agents">
                 <div class="workspace-card__meta-label">
-                  <span class="material-symbols-outlined">group</span>
-                  <p>已分配 Agent</p>
+                  <span class="material-symbols-outlined">deployed_code</span>
+                  <p>对象绑定</p>
                 </div>
                 <div class="workspace-card__agent-list">
-                  <span v-for="label in workspace.assignedAgentLabels ?? []" :key="`${workspace.id}-${label}`">
+                  <span v-for="label in workspace.assignedAgentLabels?.length ? workspace.assignedAgentLabels : ['待后续补充']" :key="`${workspace.id}-${label}`">
                     {{ label }}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div v-if="workspace.highlightBanner" class="workspace-card__banner">
+            <div
+              v-if="workspace.highlightBanner"
+              class="workspace-card__banner"
+              role="link"
+              tabindex="0"
+              @click="openWorkspaceRuntime(workspace.id)"
+              @keydown.enter="openWorkspaceRuntime(workspace.id)"
+            >
               <span class="material-symbols-outlined">warning</span>
               <span>{{ workspace.highlightBanner }}</span>
               <strong>ACTION_REQUIRED</strong>
             </div>
-          </RouterLink>
+          </article>
         </section>
     </div>
   </section>
@@ -543,6 +534,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   flex: 1;
   flex-direction: column;
   padding: 1.5rem;
+  cursor: pointer;
 }
 
 .workspace-card__top {
@@ -590,6 +582,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   background: #171717;
   border: 1px solid rgb(255 255 255 / 0.08);
   border-radius: 0.4rem;
+  cursor: pointer;
   transition:
     color var(--cn-transition),
     border-color var(--cn-transition),
@@ -697,6 +690,7 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.08em;
+  cursor: pointer;
 }
 
 .workspace-card__banner strong {

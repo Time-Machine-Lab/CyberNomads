@@ -67,7 +67,18 @@ export const strategySummary: StrategySummaryDto = {
 export const strategyDetail: StrategyDetailDto = {
   ...strategySummary,
   contentMarkdown: '# Growth Strategy',
-  placeholders: [],
+  placeholders: [
+    {
+      type: 'string',
+      key: 'product_name',
+      defaultValue: 'CyberNomads',
+    },
+    {
+      type: 'int',
+      key: 'max_retry',
+      defaultValue: 3,
+    },
+  ],
   createdAt: now,
 }
 
@@ -88,6 +99,18 @@ export const trafficWorkDetail: TrafficWorkDetailDto = {
       objectKey: 'primary-account',
       resourceId: accountSummary.accountId,
       resourceLabel: accountSummary.internalDisplayName,
+    },
+  ],
+  parameterBindings: [
+    {
+      type: 'string',
+      key: 'product_name',
+      value: 'CyberNomads',
+    },
+    {
+      type: 'int',
+      key: 'max_retry',
+      value: 3,
     },
   ],
   lifecycleStatus: 'ready',

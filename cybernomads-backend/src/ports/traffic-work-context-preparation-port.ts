@@ -1,6 +1,7 @@
 import type {
   ObjectBindingItem,
   ProductBindingSummary,
+  StrategyParameterBinding,
   StrategyBindingSummary,
   TrafficWorkContextSnapshot,
 } from "../modules/traffic-works/types.js";
@@ -14,6 +15,7 @@ export interface PrepareTrafficWorkContextInput {
   strategy: StrategyBindingSummary;
   strategyContentMarkdown: string;
   objectBindings: ObjectBindingItem[];
+  parameterBindings: StrategyParameterBinding[];
   context: TrafficWorkContextSnapshot;
 }
 

@@ -67,6 +67,18 @@ describe("traffic work service", () => {
           resourceLabel: "Main Account",
         },
       ],
+      parameterBindings: [
+        {
+          type: "产品",
+          key: "product_name",
+          value: "CyberNomads",
+        },
+        {
+          type: "账号",
+          key: "max_retry",
+          value: "3",
+        },
+      ],
     });
 
     expect(created.trafficWorkId).toBe("work-1");
@@ -78,6 +90,18 @@ describe("traffic work service", () => {
     expect(contextPreparation.inputs[0]).toMatchObject({
       productContentMarkdown: expect.stringContaining("# CyberNomads Product"),
       strategyContentMarkdown: expect.stringContaining("# Growth Strategy"),
+      parameterBindings: [
+        {
+          type: "产品",
+          key: "product_name",
+          value: "CyberNomads",
+        },
+        {
+          type: "账号",
+          key: "max_retry",
+          value: "3",
+        },
+      ],
     });
     expect(contextStore.snapshots.get("work-1")?.taskMarkdown).toContain(
       "Main Growth Work",
@@ -103,11 +127,25 @@ describe("traffic work service", () => {
           resourceLabel: "Backup Account",
         },
       ],
+      parameterBindings: [
+        {
+          type: "产品",
+          key: "product_name",
+          value: "CyberNomads v2",
+        },
+      ],
     });
 
     expect(updated.trafficWorkId).toBe("work-1");
     expect(updated.displayName).toBe("Main Growth Work v2");
     expect(updated.strategy.name).toBe("Retention Strategy");
+    expect(updated.parameterBindings).toEqual([
+      {
+        type: "产品",
+        key: "product_name",
+        value: "CyberNomads v2",
+      },
+    ]);
     expect(updated.contextPreparationStatus).toBe("prepared");
     expect(contextPreparation.inputs).toHaveLength(2);
 
@@ -165,6 +203,7 @@ describe("traffic work service", () => {
           resourceLabel: null,
         },
       ],
+      parameterBindings: [],
     });
 
     expect(created.lifecycleStatus).toBe("ready");
@@ -221,12 +260,74 @@ describe("traffic work service", () => {
           resourceLabel: null,
         },
       ],
+      parameterBindings: [],
     });
 
     expect(created.lifecycleStatus).toBe("ready");
     expect(created.contextPreparationStatus).toBe("failed");
     expect(created.contextPreparationStatusReason).toContain(
       "Task set is invalid.",
+    );
+  });
+
+  it("allows creating a traffic work without object bindings", async () => {
+    const stateStore = new InMemoryTrafficWorkStateStore();
+    const productStore = new InMemoryProductStore([
+      {
+        productId: "product-1",
+        name: "CyberNomads Product",
+      },
+    ]);
+    const strategyStore = new InMemoryStrategyStore([
+      {
+        strategyId: "strategy-1",
+        name: "Growth Strategy",
+      },
+    ]);
+    const contextStore = new InMemoryTrafficWorkContextStore();
+    const contextPreparation = new FakeTrafficWorkContextPreparation();
+    const service = new TrafficWorkService({
+      stateStore,
+      contextStore,
+      contextPreparation,
+      productStore: productStore.asMetadataStore(),
+      productContentStore: productStore.asContentStore(),
+      strategyStore,
+      strategyContentStore: strategyStore.asContentStore(),
+      taskSetPersistence: new FakeTaskSetPersistence(),
+      now: createSequentialNow(),
+      createTrafficWorkId: () => "work-1",
+    });
+
+    const created = await service.createTrafficWork({
+      displayName: "Unbound Work",
+      productId: "product-1",
+      strategyId: "strategy-1",
+      objectBindings: [],
+      parameterBindings: [
+        {
+          type: "产品",
+          key: "product_name",
+          value: "",
+        },
+      ],
+    });
+
+    expect(created.trafficWorkId).toBe("work-1");
+    expect(created.objectBindings).toEqual([]);
+    expect(created.parameterBindings).toEqual([
+      {
+        type: "产品",
+        key: "product_name",
+        value: "",
+      },
+    ]);
+    expect(created.contextPreparationStatus).toBe("prepared");
+    expect(contextPreparation.inputs[0]).toMatchObject({
+      objectBindings: [],
+    });
+    expect(contextStore.snapshots.get("work-1")?.taskMarkdown).toContain(
+      "## Object Bindings\n- none",
     );
   });
 });

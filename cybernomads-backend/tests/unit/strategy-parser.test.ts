@@ -6,53 +6,53 @@ import {
 } from "../../src/modules/strategies/parser.js";
 
 describe("strategy placeholder parser", () => {
-  it("parses supported placeholder types, empty string defaults, and deduplicates identical declarations", () => {
+  it("parses arbitrary placeholder types, supports Chinese segments, and deduplicates identical declarations", () => {
     const placeholders = parseStrategyPlaceholders(`
-标题：{{string:title="默认标题"}}
-按钮：{{string:cta_text=""}}
-重试：{{int:max_retry=3}}
-重复标题：{{string:title="默认标题"}}
+产品：{{产品:产品名="CyberNomads"}}
+账号：{{账号:账号A="123456"}}
+旧整数：{{int:max_retry=3}}
+重复账号：{{账号:账号A="123456"}}
 `);
 
     expect(placeholders).toEqual([
       {
-        type: "string",
-        key: "title",
-        defaultValue: "默认标题",
+        type: "产品",
+        key: "产品名",
+        defaultValue: "CyberNomads",
       },
       {
-        type: "string",
-        key: "cta_text",
-        defaultValue: "",
+        type: "账号",
+        key: "账号A",
+        defaultValue: "123456",
       },
       {
         type: "int",
         key: "max_retry",
-        defaultValue: 3,
+        defaultValue: "3",
       },
     ]);
 
     expect(
       replaceStrategyPlaceholdersWithDefaults(
-        '标题：{{string:title="默认标题"}}，次数：{{int:max_retry=3}}',
+        '产品：{{产品:产品名="CyberNomads"}}，账号：{{账号:账号A="123456"}}',
       ),
-    ).toBe("标题：默认标题，次数：3");
+    ).toBe("产品：CyberNomads，账号：123456");
   });
 
   it("rejects malformed, unsupported, and conflicting placeholder declarations", () => {
     expect(() =>
-      parseStrategyPlaceholders("{{string:title=默认标题}}"),
-    ).toThrowError(/quoted default value/);
+      parseStrategyPlaceholders("{{账号:账号A=默认标题}}"),
+    ).toThrowError(/quoted string default value/);
 
     expect(() => parseStrategyPlaceholders("{{float:ratio=1.5}}")).toThrowError(
-      /Invalid strategy placeholder syntax/,
+      /quoted string default value/,
     );
 
     expect(() =>
-      parseStrategyPlaceholders('{{string:title="A"}} {{int:title=2}}'),
-    ).toThrowError(/must keep the same type and defaultValue/);
+      parseStrategyPlaceholders('{{账号:账号A="A"}} {{账号:账号A="B"}}'),
+    ).toThrowError(/must keep the same defaultValue/);
 
-    expect(() => parseStrategyPlaceholders('{{string:title="A"}')).toThrowError(
+    expect(() => parseStrategyPlaceholders('{{账号:账号A="A"}')).toThrowError(
       /must be closed/,
     );
   });

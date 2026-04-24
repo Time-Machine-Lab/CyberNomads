@@ -146,7 +146,19 @@ export const router = createRouter({
           meta: {
             moduleTitle: '推广工作区',
             shellNavKey: 'workspaces',
-            shellSectionTitle: '创建引流团队',
+            shellSectionTitle: '创建工作区',
+            backTo: '/workspaces',
+            backLabel: '返回工作区列表',
+          },
+        },
+        {
+          path: 'workspaces/:workspaceId/edit',
+          name: 'workspaces-edit',
+          component: () => import('@/pages/workspaces/create/ui/WorkspaceCreatePage.vue'),
+          meta: {
+            moduleTitle: '推广工作区',
+            shellNavKey: 'workspaces',
+            shellSectionTitle: '编辑工作区',
             backTo: '/workspaces',
             backLabel: '返回工作区列表',
           },

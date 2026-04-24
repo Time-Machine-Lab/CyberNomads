@@ -8,9 +8,6 @@ interface StrategyPlaceholderMatch {
   placeholder: StrategyPlaceholder;
 }
 
-const STRATEGY_PLACEHOLDER_PATTERN =
-  /^(string|int)\s*:\s*([A-Za-z][A-Za-z0-9_.-]*)\s*=\s*([\s\S]+)$/;
-
 export function parseStrategyPlaceholders(
   contentMarkdown: string,
 ): StrategyPlaceholder[] {
@@ -18,9 +15,8 @@ export function parseStrategyPlaceholders(
   const deduplicatedPlaceholders = new Map<string, StrategyPlaceholder>();
 
   for (const match of matches) {
-    const existingPlaceholder = deduplicatedPlaceholders.get(
-      match.placeholder.key,
-    );
+    const identity = buildPlaceholderIdentity(match.placeholder);
+    const existingPlaceholder = deduplicatedPlaceholders.get(identity);
 
     if (
       existingPlaceholder &&
@@ -28,12 +24,12 @@ export function parseStrategyPlaceholders(
         existingPlaceholder.defaultValue !== match.placeholder.defaultValue)
     ) {
       throw new StrategyValidationError(
-        `Strategy placeholder "${match.placeholder.key}" must keep the same type and defaultValue within one strategy.`,
+        `Strategy placeholder "${match.placeholder.type}:${match.placeholder.key}" must keep the same defaultValue within one strategy.`,
       );
     }
 
     if (!existingPlaceholder) {
-      deduplicatedPlaceholders.set(match.placeholder.key, match.placeholder);
+      deduplicatedPlaceholders.set(identity, match.placeholder);
     }
   }
 
@@ -110,57 +106,72 @@ function parseStrategyPlaceholderToken(
   raw: string,
 ): StrategyPlaceholder {
   const normalizedToken = token.trim();
-  const match = STRATEGY_PLACEHOLDER_PATTERN.exec(normalizedToken);
+  const separatorIndex = normalizedToken.indexOf(":");
+  const assignmentIndex = normalizedToken.indexOf("=", separatorIndex + 1);
 
-  if (!match) {
+  if (
+    separatorIndex <= 0 ||
+    assignmentIndex <= separatorIndex + 1 ||
+    assignmentIndex >= normalizedToken.length - 1
+  ) {
     throw new StrategyValidationError(
       `Invalid strategy placeholder syntax: ${raw}`,
     );
   }
 
-  const [, placeholderType, key, rawDefaultValue] = match;
+  const placeholderType = normalizedToken.slice(0, separatorIndex).trim();
+  const key = normalizedToken.slice(separatorIndex + 1, assignmentIndex).trim();
+  const rawDefaultValue = normalizedToken.slice(assignmentIndex + 1).trim();
 
-  if (placeholderType === "string") {
-    const normalizedDefaultValue = rawDefaultValue.trim();
-
-    try {
-      const parsedDefaultValue = JSON.parse(normalizedDefaultValue) as unknown;
-
-      if (typeof parsedDefaultValue !== "string") {
-        throw new Error("not string");
-      }
-
-      return {
-        type: "string",
-        key,
-        defaultValue: parsedDefaultValue,
-      };
-    } catch {
-      throw new StrategyValidationError(
-        `String strategy placeholder must use a quoted default value: ${raw}`,
-      );
-    }
-  }
-
-  const normalizedDefaultValue = rawDefaultValue.trim();
-
-  if (!/^-?\d+$/.test(normalizedDefaultValue)) {
+  if (!isValidPlaceholderSegment(placeholderType)) {
     throw new StrategyValidationError(
-      `Int strategy placeholder must use an integer default value: ${raw}`,
+      `Strategy placeholder type is invalid: ${raw}`,
     );
   }
 
-  const parsedDefaultValue = Number.parseInt(normalizedDefaultValue, 10);
-
-  if (!Number.isSafeInteger(parsedDefaultValue)) {
+  if (!isValidPlaceholderSegment(key)) {
     throw new StrategyValidationError(
-      `Int strategy placeholder must use a safe integer default value: ${raw}`,
+      `Strategy placeholder name is invalid: ${raw}`,
     );
   }
 
   return {
-    type: "int",
+    type: placeholderType,
     key,
-    defaultValue: parsedDefaultValue,
+    defaultValue: parseStrategyPlaceholderDefaultValue(rawDefaultValue, raw),
   };
+}
+
+function parseStrategyPlaceholderDefaultValue(
+  rawDefaultValue: string,
+  raw: string,
+): string {
+  try {
+    const parsedDefaultValue = JSON.parse(rawDefaultValue) as unknown;
+
+    if (typeof parsedDefaultValue !== "string") {
+      throw new Error("not string");
+    }
+
+    return parsedDefaultValue;
+  } catch {
+    if (/^-?\d+$/.test(rawDefaultValue)) {
+      return rawDefaultValue;
+    }
+
+    throw new StrategyValidationError(
+      `Strategy placeholder must use a quoted string default value: ${raw}`,
+    );
+  }
+}
+
+function isValidPlaceholderSegment(value: string): boolean {
+  return (
+    value.length > 0 &&
+    !/[\s{}=:"']/.test(value)
+  );
+}
+
+function buildPlaceholderIdentity(placeholder: StrategyPlaceholder): string {
+  return `${placeholder.type}:${placeholder.key}`;
 }

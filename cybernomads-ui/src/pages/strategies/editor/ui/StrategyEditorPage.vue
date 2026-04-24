@@ -16,7 +16,7 @@ import type {
 interface MarkdownPlaceholderMatch {
   type: StrategyPlaceholderRecord['type']
   key: string
-  defaultValue: string | number
+  defaultValue: string
   displayDefaultValue: string
   declaration: string
   start: number
@@ -56,6 +56,7 @@ const tagDraft = ref('')
 const isTagInputVisible = ref(false)
 const activePlaceholderKey = ref('')
 const isPlaceholderDialogOpen = ref(false)
+const placeholderDraftType = ref('')
 const placeholderDraftKey = ref('')
 const placeholderDraftValue = ref('')
 const currentStrategy = ref<StrategyDetailRecord | null>(null)
@@ -102,7 +103,7 @@ const placeholderPreview = computed<StrategyPlaceholderRecord[]>(() => {
   const deduplicated = new Map<string, StrategyPlaceholderRecord>()
 
   for (const placeholder of placeholderMatches.value) {
-    deduplicated.set(placeholder.key, {
+    deduplicated.set(buildPlaceholderIdentity(placeholder), {
       type: placeholder.type,
       key: placeholder.key,
       defaultValue: placeholder.defaultValue,
@@ -115,7 +116,7 @@ const placeholderPreview = computed<StrategyPlaceholderRecord[]>(() => {
 })
 
 const activePlaceholderRecord = computed(() =>
-  placeholderPreview.value.find((placeholder) => placeholder.key === activePlaceholderKey.value) ?? null,
+  placeholderPreview.value.find((placeholder) => buildPlaceholderIdentity(placeholder) === activePlaceholderKey.value) ?? null,
 )
 
 let editorView: EditorView | null = null
@@ -126,7 +127,7 @@ function createDefaultMarkdown() {
 }
 
 function scanMarkdownPlaceholderMatches(contentMarkdown: string): MarkdownPlaceholderMatch[] {
-  const matches = contentMarkdown.matchAll(/\{\{(string|int):([a-zA-Z_][\w.-]*)=("(?:[^"\\]|\\.)*"|-?\d+)\}\}/g)
+  const matches = contentMarkdown.matchAll(/\{\{\s*([^:=\s{}"'][^:=\s{}"']*)\s*:\s*([^:=\s{}"'][^:=\s{}"']*)\s*=\s*("(?:[^"\\]|\\.)*"|-?\d+)\s*\}\}/g)
   const placeholders: MarkdownPlaceholderMatch[] = []
 
   for (const match of matches) {
@@ -134,29 +135,15 @@ function scanMarkdownPlaceholderMatches(contentMarkdown: string): MarkdownPlaceh
     const start = match.index ?? 0
     const end = start + declaration.length
 
-    if (rawType === 'int') {
-      const defaultValue = Number(rawDefaultValue)
+    try {
+      const defaultValue = JSON.parse(rawDefaultValue)
 
-      if (!Number.isInteger(defaultValue)) {
-        continue
+      if (typeof defaultValue !== 'string') {
+        throw new Error('not string')
       }
 
       placeholders.push({
-        type: 'int',
-        key,
-        defaultValue,
-        displayDefaultValue: String(defaultValue),
-        declaration,
-        start,
-        end,
-      })
-      continue
-    }
-
-    try {
-      const defaultValue = JSON.parse(rawDefaultValue)
-      placeholders.push({
-        type: 'string',
+        type: rawType,
         key,
         defaultValue,
         displayDefaultValue: String(defaultValue),
@@ -165,7 +152,19 @@ function scanMarkdownPlaceholderMatches(contentMarkdown: string): MarkdownPlaceh
         end,
       })
     } catch {
-      continue
+      if (!/^-?\d+$/.test(rawDefaultValue)) {
+        continue
+      }
+
+      placeholders.push({
+        type: rawType,
+        key,
+        defaultValue: rawDefaultValue,
+        displayDefaultValue: rawDefaultValue,
+        declaration,
+        start,
+        end,
+      })
     }
   }
 
@@ -222,12 +221,17 @@ class PlaceholderWidget extends WidgetType {
   toDOM() {
     const token = document.createElement('button')
     token.type = 'button'
-    token.className = `strategy-reference-chip strategy-reference-chip--${this.placeholder.type}`
-    token.dataset.placeholderKey = this.placeholder.key
+    token.className = 'strategy-reference-chip'
+    token.dataset.placeholderKey = buildPlaceholderIdentity(this.placeholder)
+
+    const visual = resolvePlaceholderVisual(this.placeholder.type)
+    token.style.setProperty('--strategy-placeholder-accent', visual.accent)
+    token.style.setProperty('--strategy-placeholder-border', visual.border)
+    token.style.setProperty('--strategy-placeholder-background', visual.background)
 
     const icon = document.createElement('span')
-    icon.className = 'material-symbols-outlined'
-    icon.textContent = this.placeholder.type === 'int' ? 'pin' : 'match_case'
+    icon.className = 'strategy-reference-chip__glyph'
+    icon.textContent = resolvePlaceholderGlyph(this.placeholder.type)
 
     const label = document.createElement('strong')
     label.textContent = this.placeholder.key
@@ -403,8 +407,9 @@ function applyStrategy(detail: StrategyDetailRecord | null) {
   form.tagsText = detail?.tags.join(', ') ?? ''
   tagDraft.value = ''
   isTagInputVisible.value = false
-  activePlaceholderKey.value = detail?.placeholders[0]?.key ?? ''
+  activePlaceholderKey.value = detail?.placeholders[0] ? buildPlaceholderIdentity(detail.placeholders[0]) : ''
   isPlaceholderDialogOpen.value = false
+  placeholderDraftType.value = ''
   placeholderDraftKey.value = ''
   placeholderDraftValue.value = ''
 }
@@ -477,48 +482,44 @@ function handleRemoveTag(tagToRemove: string) {
 }
 
 function openPlaceholderDialog(key: string) {
-  const placeholder = placeholderPreview.value.find((item) => item.key === key)
+  const placeholder = placeholderPreview.value.find((item) => buildPlaceholderIdentity(item) === key)
 
   if (!placeholder) {
     return
   }
 
-  activePlaceholderKey.value = key
+  activePlaceholderKey.value = buildPlaceholderIdentity(placeholder)
+  placeholderDraftType.value = placeholder.type
   placeholderDraftKey.value = placeholder.key
   placeholderDraftValue.value = placeholder.displayDefaultValue
   isPlaceholderDialogOpen.value = true
 }
 
-function normalizePlaceholderKey(value: string) {
-  const trimmed = value.trim().replace(/\s+/g, '_')
-  const normalized = trimmed.replace(/[^a-zA-Z0-9_.-]/g, '_')
+function normalizePlaceholderSegment(value: string, fallback: string) {
+  const normalized = value.trim()
 
   if (!normalized) {
-    return 'field'
+    return fallback
   }
 
-  return /^[a-zA-Z_]/.test(normalized) ? normalized : `field_${normalized}`
+  return normalized.replace(/[\s{}=:"']/g, '')
 }
 
-function serializePlaceholderValue(type: StrategyPlaceholderRecord['type'], value: string) {
-  if (type === 'int') {
-    const parsed = Number(value.trim())
-    return Number.isInteger(parsed) ? String(parsed) : '0'
-  }
-
+function serializePlaceholderValue(value: string) {
   return JSON.stringify(value)
 }
 
-function updatePlaceholderRecord(placeholder: StrategyPlaceholderRecord, nextKey: string, nextValue: string) {
-  const normalizedKey = normalizePlaceholderKey(nextKey)
-  const nextDeclaration = `{{${placeholder.type}:${normalizedKey}=${serializePlaceholderValue(placeholder.type, nextValue)}}}`
+function updatePlaceholderRecord(placeholder: StrategyPlaceholderRecord, nextType: string, nextKey: string, nextValue: string) {
+  const normalizedType = normalizePlaceholderSegment(nextType, '对象')
+  const normalizedKey = normalizePlaceholderSegment(nextKey, '字段')
+  const nextDeclaration = `{{${normalizedType}:${normalizedKey}=${serializePlaceholderValue(nextValue)}}}`
   const matcher = new RegExp(
-    String.raw`\{\{${placeholder.type}:${placeholder.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}=("(?:[^"\\]|\\.)*"|-?\d+)\}\}`,
+    String.raw`\{\{\s*${placeholder.type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s*:\s*${placeholder.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s*=\s*("(?:[^"\\]|\\.)*"|-?\d+)\s*\}\}`,
     'g',
   )
 
   form.markdown = form.markdown.replace(matcher, nextDeclaration)
-  activePlaceholderKey.value = normalizedKey
+  activePlaceholderKey.value = `${normalizedType}:${normalizedKey}`
 }
 
 function closePlaceholderDialog() {
@@ -530,7 +531,7 @@ function submitPlaceholderDialog() {
     return
   }
 
-  updatePlaceholderRecord(activePlaceholderRecord.value, placeholderDraftKey.value, placeholderDraftValue.value)
+  updatePlaceholderRecord(activePlaceholderRecord.value, placeholderDraftType.value, placeholderDraftKey.value, placeholderDraftValue.value)
   isPlaceholderDialogOpen.value = false
 }
 
@@ -719,20 +720,41 @@ async function handleInsertHeading() {
   await insertTextAtCursor('## 新章节')
 }
 
-async function handleInsertStringPlaceholder() {
+async function handleInsertPlaceholder() {
   await insertInlineTextAtCursor(buildPlaceholderDeclaration({
-    type: 'string',
-    key: 'title',
-    defaultValue: '默认标题',
+    type: '账号',
+    key: '账号A',
+    defaultValue: '123456',
   }))
 }
 
-async function handleInsertIntPlaceholder() {
-  await insertInlineTextAtCursor(buildPlaceholderDeclaration({
-    type: 'int',
-    key: 'max_retry',
-    defaultValue: 3,
-  }))
+function buildPlaceholderIdentity(placeholder: Pick<StrategyPlaceholderRecord, 'type' | 'key'>) {
+  return `${placeholder.type}:${placeholder.key}`
+}
+
+const PLACEHOLDER_VISUALS = [
+  { accent: '#8ff5ff', border: 'rgb(143 245 255 / 0.32)', background: 'rgb(143 245 255 / 0.10)' },
+  { accent: '#c3f400', border: 'rgb(195 244 0 / 0.30)', background: 'rgb(195 244 0 / 0.10)' },
+  { accent: '#ffb86b', border: 'rgb(255 184 107 / 0.30)', background: 'rgb(255 184 107 / 0.10)' },
+  { accent: '#7ab8ff', border: 'rgb(122 184 255 / 0.30)', background: 'rgb(122 184 255 / 0.10)' },
+  { accent: '#ff8cc6', border: 'rgb(255 140 198 / 0.30)', background: 'rgb(255 140 198 / 0.10)' },
+  { accent: '#7ef0c9', border: 'rgb(126 240 201 / 0.30)', background: 'rgb(126 240 201 / 0.10)' },
+] as const
+
+function resolvePlaceholderVisual(type: string) {
+  let hash = 0
+
+  for (const character of type) {
+    hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0
+  }
+
+  return PLACEHOLDER_VISUALS[Math.abs(hash) % PLACEHOLDER_VISUALS.length]
+}
+
+function resolvePlaceholderGlyph(type: string) {
+  const normalized = type.trim()
+
+  return (normalized[0] ?? 'O').toLocaleUpperCase('zh-CN')
 }
 </script>
 
@@ -874,13 +896,9 @@ async function handleInsertIntPlaceholder() {
               <span class="material-symbols-outlined">format_h1</span>
               <span>插入标题</span>
             </button>
-            <button type="button" @click="handleInsertStringPlaceholder">
-              <span class="material-symbols-outlined">match_case</span>
-              <span>文本引用</span>
-            </button>
-            <button type="button" @click="handleInsertIntPlaceholder">
-              <span class="material-symbols-outlined">pin</span>
-              <span>数字引用</span>
+            <button type="button" @click="handleInsertPlaceholder">
+              <span class="material-symbols-outlined">data_object</span>
+              <span>对象引用</span>
             </button>
             <div class="strategy-canvas__toolbar-divider" />
             <button type="button" @click="handleReload">
@@ -932,21 +950,23 @@ async function handleInsertIntPlaceholder() {
         <div class="strategy-objects__list">
           <button
             v-for="placeholder in placeholderPreview"
-            :key="placeholder.key"
+            :key="buildPlaceholderIdentity(placeholder)"
             type="button"
             class="strategy-object"
-            :class="[
-              `strategy-object--${placeholder.type}`,
-              { 'strategy-object--active': activePlaceholderKey === placeholder.key },
-            ]"
-            @click="openPlaceholderDialog(placeholder.key)"
+            :class="{ 'strategy-object--active': activePlaceholderKey === buildPlaceholderIdentity(placeholder) }"
+            :style="{
+              '--strategy-placeholder-accent': resolvePlaceholderVisual(placeholder.type).accent,
+              '--strategy-placeholder-border': resolvePlaceholderVisual(placeholder.type).border,
+              '--strategy-placeholder-background': resolvePlaceholderVisual(placeholder.type).background,
+            }"
+            @click="openPlaceholderDialog(buildPlaceholderIdentity(placeholder))"
           >
             <div class="strategy-object__icon">
-              <span class="material-symbols-outlined">{{ placeholder.type === 'int' ? 'pin' : 'match_case' }}</span>
+              <span class="strategy-object__glyph">{{ resolvePlaceholderGlyph(placeholder.type) }}</span>
             </div>
             <div class="strategy-object__content">
               <h3>{{ placeholder.key }}</h3>
-              <span>{{ placeholder.displayDefaultValue || '空字符串' }}</span>
+              <span>{{ placeholder.type }} · {{ placeholder.displayDefaultValue || '空字符串' }}</span>
             </div>
             <span class="material-symbols-outlined strategy-object__check">chevron_right</span>
           </button>
@@ -957,7 +977,7 @@ async function handleInsertIntPlaceholder() {
             </div>
             <div class="strategy-object__content">
               <h3>暂无占位符</h3>
-              <span>可使用 {{ buildPlaceholderDeclaration({ type: 'string', key: 'title', defaultValue: '默认标题' }) }}</span>
+              <span>可使用 {{ buildPlaceholderDeclaration({ type: '账号', key: '账号A', defaultValue: '123456' }) }}</span>
             </div>
             <span class="material-symbols-outlined strategy-object__check strategy-object__check--muted">remove</span>
           </div>
@@ -970,7 +990,7 @@ async function handleInsertIntPlaceholder() {
         <div class="strategy-dialog__header">
           <div>
             <h3>{{ activePlaceholderRecord.key }}</h3>
-            <p>{{ activePlaceholderRecord.type === 'int' ? '数字引用' : '文本引用' }}</p>
+            <p>{{ activePlaceholderRecord.type }} 对象引用</p>
           </div>
           <button type="button" class="strategy-dialog__close" @click="closePlaceholderDialog">
             <span class="material-symbols-outlined">close</span>
@@ -978,19 +998,28 @@ async function handleInsertIntPlaceholder() {
         </div>
 
         <label class="strategy-dialog__field">
-          <span>标题 / Key</span>
+          <span>类型 / Type</span>
           <input
+            v-model="placeholderDraftType"
             type="text"
-            v-model="placeholderDraftKey"
             @keydown.enter.prevent="submitPlaceholderDialog"
           />
         </label>
 
         <label class="strategy-dialog__field">
-          <span>默认值</span>
+          <span>名称 / Name</span>
           <input
-            :type="activePlaceholderRecord.type === 'int' ? 'number' : 'text'"
+            v-model="placeholderDraftKey"
+            type="text"
+            @keydown.enter.prevent="submitPlaceholderDialog"
+          />
+        </label>
+
+        <label class="strategy-dialog__field">
+          <span>值 / Value</span>
+          <input
             v-model="placeholderDraftValue"
+            type="text"
             @keydown.enter.prevent="submitPlaceholderDialog"
           />
         </label>
@@ -1573,28 +1602,16 @@ async function handleInsertIntPlaceholder() {
   align-items: center;
   min-height: 1.25rem;
   padding: 0 0.35rem;
-  border: 1px solid rgb(143 245 255 / 0.28);
+  border: 1px solid var(--strategy-placeholder-border);
   border-radius: 0.3rem;
-  color: #8ff5ff;
-  background: rgb(143 245 255 / 0.09);
+  color: var(--strategy-placeholder-accent);
+  background: var(--strategy-placeholder-background);
   font: inherit;
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: normal;
   line-height: 1.2;
   vertical-align: -0.1em;
-}
-
-:deep(.strategy-reference-chip--string) {
-  border-color: rgb(143 245 255 / 0.28);
-  color: #8ff5ff;
-  background: rgb(143 245 255 / 0.09);
-}
-
-:deep(.strategy-reference-chip--int) {
-  border-color: rgb(195 244 0 / 0.28);
-  color: #c3f400;
-  background: rgb(195 244 0 / 0.08);
 }
 
 :deep(.strategy-reference-chip strong) {
@@ -1604,32 +1621,22 @@ async function handleInsertIntPlaceholder() {
   letter-spacing: normal;
 }
 
-:deep(.strategy-reference-chip small) {
-  color: rgb(143 245 255 / 0.7);
-  font-size: 0.7rem;
-}
-
-:deep(.strategy-reference-chip .material-symbols-outlined) {
-  color: currentcolor;
-  font-size: 0.82rem;
+:deep(.strategy-reference-chip__glyph) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  color: #0f1718;
+  background: currentcolor;
+  font-size: 0.62rem;
+  font-weight: 800;
   line-height: 1;
 }
 
-:deep(.strategy-reference-chip--active),
 :deep(.strategy-reference-chip:hover) {
-  box-shadow: 0 0 12px rgb(143 245 255 / 0.12);
-}
-
-:deep(.strategy-reference-chip--string.strategy-reference-chip--active),
-:deep(.strategy-reference-chip--string:hover) {
-  border-color: #8ff5ff;
-  background: rgb(143 245 255 / 0.16);
-}
-
-:deep(.strategy-reference-chip--int.strategy-reference-chip--active),
-:deep(.strategy-reference-chip--int:hover) {
-  border-color: #c3f400;
-  background: rgb(195 244 0 / 0.14);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--strategy-placeholder-accent) 20%, transparent);
 }
 
 :deep(.cm-editor) {
@@ -1761,21 +1768,11 @@ async function handleInsertIntPlaceholder() {
 }
 
 .strategy-object--active {
-  border-color: rgb(143 245 255 / 0.3);
-  background: rgb(143 245 255 / 0.05);
+  border-color: var(--strategy-placeholder-border);
+  background: color-mix(in srgb, var(--strategy-placeholder-background) 70%, #1a1919);
 }
 
 .strategy-object--asset .strategy-object__icon {
-  color: #c3f400;
-  background: rgb(195 244 0 / 0.12);
-}
-
-.strategy-object--string .strategy-object__icon {
-  color: #8ff5ff;
-  background: rgb(143 245 255 / 0.12);
-}
-
-.strategy-object--int .strategy-object__icon {
   color: #c3f400;
   background: rgb(195 244 0 / 0.12);
 }
@@ -1807,12 +1804,31 @@ async function handleInsertIntPlaceholder() {
 }
 
 .strategy-object__check {
-  color: #8ff5ff;
+  color: var(--strategy-placeholder-accent, #8ff5ff);
   font-size: 1rem;
 }
 
 .strategy-object__check--muted {
   color: #adaaaa;
+}
+
+.strategy-object__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  color: var(--strategy-placeholder-accent, #8ff5ff);
+  background: var(--strategy-placeholder-background, rgb(143 245 255 / 0.1));
+  box-shadow: inset 0 0 0 1px var(--strategy-placeholder-border, rgb(143 245 255 / 0.3));
+}
+
+.strategy-object__glyph {
+  color: currentcolor;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .strategy-dialog__backdrop {

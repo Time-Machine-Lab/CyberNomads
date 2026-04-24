@@ -1,20 +1,10 @@
-export type StrategyPlaceholderType = "string" | "int";
+export type StrategyPlaceholderType = string;
 
-export interface StringStrategyPlaceholder {
-  type: "string";
+export interface StrategyPlaceholder {
+  type: StrategyPlaceholderType;
   key: string;
   defaultValue: string;
 }
-
-export interface IntStrategyPlaceholder {
-  type: "int";
-  key: string;
-  defaultValue: number;
-}
-
-export type StrategyPlaceholder =
-  | StringStrategyPlaceholder
-  | IntStrategyPlaceholder;
 
 export interface StrategyRecord {
   strategyId: string;

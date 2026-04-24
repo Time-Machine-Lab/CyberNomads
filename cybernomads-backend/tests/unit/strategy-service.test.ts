@@ -28,8 +28,8 @@ describe("strategy service", () => {
       tags: ["growth", "growth", "mvp"],
       contentMarkdown: [
         "<!-- s:seed-1 -->",
-        '# {{string:title="默认标题"}}',
-        "重试：{{int:max_retry=3}}",
+        '# {{产品:标题="默认标题"}}',
+        '账号：{{账号:账号A="123456"}}',
       ].join("\n"),
     });
 
@@ -40,19 +40,19 @@ describe("strategy service", () => {
       tags: ["growth", "mvp"],
       contentMarkdown: [
         "<!-- s:seed-1 -->",
-        '# {{string:title="默认标题"}}',
-        "重试：{{int:max_retry=3}}",
+        '# {{产品:标题="默认标题"}}',
+        '账号：{{账号:账号A="123456"}}',
       ].join("\n"),
       placeholders: [
         {
-          type: "string",
-          key: "title",
+          type: "产品",
+          key: "标题",
           defaultValue: "默认标题",
         },
         {
-          type: "int",
-          key: "max_retry",
-          defaultValue: 3,
+          type: "账号",
+          key: "账号A",
+          defaultValue: "123456",
         },
       ],
       createdAt: "2026-04-21T00:00:00.000Z",
@@ -76,9 +76,9 @@ describe("strategy service", () => {
       summary: "显式摘要",
       tags: ["stable"],
       contentMarkdown: [
-        '# {{string:title="升级标题"}}',
-        '按钮：{{string:cta_text="立即开始"}}',
-        '按钮重复：{{string:cta_text="立即开始"}}',
+        '# {{产品:标题="升级标题"}}',
+        '主账号：{{账号:主账号="账号-001"}}',
+        '备用账号：{{账号:备用账号="账号-002"}}',
       ].join("\n"),
     });
 
@@ -88,20 +88,25 @@ describe("strategy service", () => {
       summary: "显式摘要",
       tags: ["stable"],
       contentMarkdown: [
-        '# {{string:title="升级标题"}}',
-        '按钮：{{string:cta_text="立即开始"}}',
-        '按钮重复：{{string:cta_text="立即开始"}}',
+        '# {{产品:标题="升级标题"}}',
+        '主账号：{{账号:主账号="账号-001"}}',
+        '备用账号：{{账号:备用账号="账号-002"}}',
       ].join("\n"),
       placeholders: [
         {
-          type: "string",
-          key: "title",
+          type: "产品",
+          key: "标题",
           defaultValue: "升级标题",
         },
         {
-          type: "string",
-          key: "cta_text",
-          defaultValue: "立即开始",
+          type: "账号",
+          key: "主账号",
+          defaultValue: "账号-001",
+        },
+        {
+          type: "账号",
+          key: "备用账号",
+          defaultValue: "账号-002",
         },
       ],
       createdAt: "2026-04-21T00:00:00.000Z",
@@ -123,7 +128,7 @@ describe("strategy service", () => {
     await expect(
       service.createStrategy({
         name: "无效策略",
-        contentMarkdown: '{{string:title="A"}} {{int:title=2}}',
+        contentMarkdown: '{{账号:账号A="A"}} {{账号:账号A="B"}}',
       }),
     ).rejects.toBeInstanceOf(StrategyValidationError);
 
@@ -134,7 +139,7 @@ describe("strategy service", () => {
     await expect(
       service.updateStrategy("missing-strategy", {
         name: "missing",
-        contentMarkdown: '# {{string:title="A"}}',
+        contentMarkdown: '# {{产品:标题="A"}}',
       }),
     ).rejects.toBeInstanceOf(StrategyNotFoundError);
   });

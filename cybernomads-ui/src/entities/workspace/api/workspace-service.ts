@@ -66,7 +66,9 @@ function mapTrafficWorkToWorkspace(
     status: mapLifecycleStatus(dto.lifecycleStatus),
     statusLabel: `${resolveLifecycleLabel(dto.lifecycleStatus)} / ${dto.contextPreparationStatus}`,
     assetId: dto.product.productId,
+    assetName: dto.product.name,
     strategyId: dto.strategy.strategyId,
+    strategyName: dto.strategy.name,
     accountIds: objectBindings.map((binding) => binding.resourceId).filter(Boolean),
     taskIds: [],
     lastRunAt: 'lastStartedAt' in dto ? (dto.lastStartedAt ?? dto.updatedAt) : dto.updatedAt,
@@ -78,8 +80,13 @@ function mapTrafficWorkToWorkspace(
     ),
     themeColor: dto.lifecycleStatus === 'running' ? 'cyan' : dto.contextPreparationStatus === 'failed' ? 'red' : 'blue',
     lifecycleStatus: dto.lifecycleStatus,
+    lifecycleStatusReason: 'lifecycleStatusReason' in dto ? dto.lifecycleStatusReason : null,
     contextPreparationStatus: dto.contextPreparationStatus,
+    contextPreparationStatusReason: 'contextPreparationStatusReason' in dto ? dto.contextPreparationStatusReason : null,
     objectBindings,
+    parameterBindings: 'parameterBindings' in dto ? dto.parameterBindings : [],
+    createdAt: 'createdAt' in dto ? dto.createdAt : dto.updatedAt,
+    updatedAt: dto.updatedAt,
   }
 }
 
@@ -94,6 +101,7 @@ function mapCreateWorkspaceInput(input: CreateWorkspaceInput): CreateTrafficWork
       resourceId: accountId,
       resourceLabel: `Account ${index + 1}`,
     })),
+    parameterBindings: input.parameterBindings,
   }
 }
 

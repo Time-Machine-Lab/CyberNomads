@@ -51,20 +51,11 @@ function normalizeTags(tags: string[] | null | undefined) {
 }
 
 function formatPlaceholderDefaultValue(placeholder: StrategyPlaceholderDto) {
-  if (placeholder.type === 'int') {
-    return String(placeholder.defaultValue)
-  }
-
-  return placeholder.defaultValue
+  return String(placeholder.defaultValue)
 }
 
 export function buildPlaceholderDeclaration(placeholder: StrategyPlaceholderDto) {
-  const defaultValue =
-    placeholder.type === 'int'
-      ? placeholder.defaultValue
-      : JSON.stringify(placeholder.defaultValue)
-
-  return `{{${placeholder.type}:${placeholder.key}=${defaultValue}}}`
+  return `{{${placeholder.type}:${placeholder.key}=${JSON.stringify(placeholder.defaultValue)}}}`
 }
 
 export function mapStrategyPlaceholderDtoToRecord(
@@ -102,34 +93,26 @@ export function mapStrategyDetailDtoToRecord(dto: StrategyDetailDto): StrategyDe
 }
 
 export function parseStrategyPlaceholdersFromMarkdown(contentMarkdown: string): StrategyPlaceholderDto[] {
-  const matches = contentMarkdown.matchAll(/\{\{(string|int):([a-zA-Z_][\w.-]*)=("(?:[^"\\]|\\.)*"|-?\d+)\}\}/g)
+  const matches = contentMarkdown.matchAll(/\{\{\s*([^:=\s{}"'][^:=\s{}"']*)\s*:\s*([^:=\s{}"'][^:=\s{}"']*)\s*=\s*("(?:[^"\\]|\\.)*"|-?\d+)\s*\}\}/g)
   const placeholders: StrategyPlaceholderDto[] = []
 
   for (const match of matches) {
     const [, type, key, rawDefaultValue] = match
 
-    if (type === 'int') {
-      const value = Number(rawDefaultValue)
-
-      if (Number.isInteger(value)) {
-        placeholders.push({
-          type: 'int',
-          key,
-          defaultValue: value,
-        })
-      }
-
-      continue
-    }
-
     try {
       placeholders.push({
-        type: 'string',
+        type,
         key,
         defaultValue: JSON.parse(rawDefaultValue),
       })
     } catch {
-      continue
+      if (/^-?\d+$/.test(rawDefaultValue)) {
+        placeholders.push({
+          type,
+          key,
+          defaultValue: rawDefaultValue,
+        })
+      }
     }
   }
 
