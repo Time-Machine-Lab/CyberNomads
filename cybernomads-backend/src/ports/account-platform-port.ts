@@ -42,6 +42,7 @@ export interface AccountPlatformPollQrSessionResult {
   progressStatus: AccountPlatformQrProgressStatus;
   providerSession: JsonObject | null;
   candidateCredential: JsonObject | null;
+  candidateCredentialExpiresAt: string | null;
   reason: string | null;
   expiresAt: string | null;
   logs: AccessSessionLogEntry[];

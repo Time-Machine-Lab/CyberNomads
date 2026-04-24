@@ -239,7 +239,7 @@ export class AccountAccessSessionService {
     if (candidateCredentialRef && result.candidateCredential) {
       await this.options.secretStore.writeSecret(candidateCredentialRef, {
         payload: result.candidateCredential,
-        expiresAt: result.expiresAt ?? sessionRecord.expiresAt,
+        expiresAt: result.candidateCredentialExpiresAt ?? null,
       } satisfies StoredCredentialSecret);
     }
     if (sessionRecord.logRef) {

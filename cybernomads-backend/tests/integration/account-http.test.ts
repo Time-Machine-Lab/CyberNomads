@@ -209,6 +209,54 @@ describe.sequential("account module http api", () => {
     expect(detail.connectionStatusReason).toContain("QR access session expired");
     expect(detail.currentAccessSession.sessionStatus).toBe("expired");
   });
+
+  it("keeps the active credential valid after qr session timeout once login already succeeded", async () => {
+    const now = createMutableNow("2026-04-24T08:00:00.000Z");
+    const { application } = await startTemporaryApplication(
+      temporaryDirectories,
+      applications,
+      { now: now.current },
+    );
+
+    const createdAccount = await createAccount(application, {
+      platform: "bilibili",
+      internalDisplayName: "Bili 扫码登录成功账号",
+    });
+
+    const qrSession = await startQrAccessSession(
+      application,
+      createdAccount.accountId,
+      {},
+    );
+    const polledSession = await pollAccessSession(
+      application,
+      createdAccount.accountId,
+      qrSession.sessionId,
+      {},
+    );
+
+    expect(polledSession.sessionStatus).toBe("ready_for_verification");
+
+    const verification = await verifyAccessSession(
+      application,
+      createdAccount.accountId,
+      qrSession.sessionId,
+      {},
+    );
+
+    expect(verification.verificationResult).toBe("succeeded");
+    expect(verification.account.connectionStatus).toBe("connected");
+    expect(verification.account.currentCredential.expiresAt).toBeNull();
+
+    now.set("2026-04-24T08:01:30.000Z");
+
+    const detail = await fetchJson(
+      `${application.http.url}/api/accounts/${createdAccount.accountId}`,
+    );
+
+    expect(detail.connectionStatus).toBe("connected");
+    expect(detail.currentCredential.expiresAt).toBeNull();
+  });
 });
 
 async function startTemporaryApplication(
@@ -353,6 +401,7 @@ class FakeHttpAccountPlatform implements AccountPlatformPort {
       candidateCredential: {
         token: "qr-token",
       },
+      candidateCredentialExpiresAt: null,
       reason: "credential resolved",
       expiresAt: null,
       logs: [

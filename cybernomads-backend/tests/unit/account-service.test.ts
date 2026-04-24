@@ -247,6 +247,54 @@ describe("account module services", () => {
     expect(detail.connectionStatusReason).toContain("QR access session expired");
     expect(detail.currentAccessSession?.sessionStatus).toBe("expired");
   });
+
+  it("does not inherit the qr session timeout as the active credential expiry after a successful qr login", async () => {
+    const stateStore = new InMemoryAccountStateStore();
+    const sessionStore = new InMemoryAccessSessionStateStore();
+    const secretStore = new InMemoryAccountSecretStore();
+    const platform = new FakeAccountPlatform("bilibili");
+    const now = createMutableNow("2026-04-24T08:00:00.000Z");
+    const accountService = new AccountService({
+      stateStore,
+      accessSessionStateStore: sessionStore,
+      secretStore,
+      platforms: [platform],
+      now: now.current,
+      createAccountId: () => "account-1",
+    });
+    const accessSessionService = new AccountAccessSessionService({
+      accountStateStore: stateStore,
+      sessionStateStore: sessionStore,
+      secretStore,
+      platforms: [platform],
+      now: now.current,
+      createSessionId: () => "session-qr-1",
+    });
+
+    await accountService.createAccount({
+      platform: "bilibili",
+      internalDisplayName: "扫码登录账号",
+    });
+
+    await accessSessionService.startQrAccessSession("account-1", {});
+    await accessSessionService.pollAccessSession("account-1", "session-qr-1", {});
+    const verification = await accessSessionService.verifyAccessSession(
+      "account-1",
+      "session-qr-1",
+      {},
+    );
+
+    expect(verification.verificationResult).toBe("succeeded");
+    expect(verification.account.connectionStatus).toBe("connected");
+    expect(verification.account.currentCredential.expiresAt).toBeNull();
+
+    now.set("2026-04-24T08:01:30.000Z");
+
+    const detail = await accountService.getAccountDetail("account-1");
+
+    expect(detail.connectionStatus).toBe("connected");
+    expect(detail.currentCredential.expiresAt).toBeNull();
+  });
 });
 
 class InMemoryAccountStateStore implements AccountStateStore {
@@ -373,6 +421,7 @@ class FakeAccountPlatform implements AccountPlatformPort {
       candidateCredential: {
         token: "resolved-token",
       },
+      candidateCredentialExpiresAt: null,
       reason: "credential resolved",
       expiresAt: null,
       logs: [logEntry("info", "qr session polled")],
