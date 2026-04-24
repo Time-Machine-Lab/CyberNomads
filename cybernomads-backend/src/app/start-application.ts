@@ -8,6 +8,7 @@ import { AgentAccessTrafficWorkContextPreparationAdapter } from "../adapters/age
 import { FileSystemAccountSecretStore } from "../adapters/storage/file-system/account-secret-store.js";
 import { FileSystemAgentServiceCredentialStore } from "../adapters/storage/file-system/agent-service-credential-store.js";
 import { FileSystemProductContentStore } from "../adapters/storage/file-system/product-content-store.js";
+import { FileSystemRuntimeAgentResourceStore } from "../adapters/storage/file-system/runtime-agent-resource-store.js";
 import { FileSystemTrafficWorkContextStore } from "../adapters/storage/file-system/traffic-work-context-store.js";
 import { FileSystemStrategyContentStore } from "../adapters/storage/file-system/strategy-content-store.js";
 import { OpenClawAgentProvider } from "../adapters/agent/openclaw/openclaw-adapter.js";
@@ -26,6 +27,7 @@ import { AgentAccessService } from "../modules/agent-access/service.js";
 import { AccountService } from "../modules/accounts/service.js";
 import { ProductService } from "../modules/products/service.js";
 import { TaskService } from "../modules/tasks/service.js";
+import { TaskDecompositionSupportToolsService } from "../modules/task-decomposition-support-tools/service.js";
 import { TrafficWorkService } from "../modules/traffic-works/service.js";
 import { StrategyService } from "../modules/strategies/service.js";
 import type { AccountPlatformPort } from "../ports/account-platform-port.js";
@@ -71,9 +73,8 @@ export async function startApplication(
   const accountRepository = new SqliteAccountsRepository(
     runtime.paths.databaseFile,
   );
-  const accountAccessSessionRepository = new SqliteAccountAccessSessionsRepository(
-    runtime.paths.databaseFile,
-  );
+  const accountAccessSessionRepository =
+    new SqliteAccountAccessSessionsRepository(runtime.paths.databaseFile);
   const agentServiceStateRepository = new SqliteAgentServiceStateRepository(
     runtime.paths.databaseFile,
   );
@@ -99,6 +100,12 @@ export async function startApplication(
   const trafficWorkContextStore = new FileSystemTrafficWorkContextStore(
     runtime.paths.workDirectory,
   );
+  const runtimeAgentResourceStore = new FileSystemRuntimeAgentResourceStore({
+    runtimePaths: runtime.paths,
+  });
+  const bundledBilibiliPlatform = new BilibiliStubAccountPlatformAdapter({
+    runtimeSkillsRootDirectory: runtime.paths.agentSkillsDirectory,
+  });
   const productService = new ProductService({
     metadataStore: productRepository,
     contentStore: productContentStore,
@@ -111,20 +118,14 @@ export async function startApplication(
     stateStore: accountRepository,
     accessSessionStateStore: accountAccessSessionRepository,
     secretStore: accountSecretStore,
-    platforms: [
-      new BilibiliStubAccountPlatformAdapter(),
-      ...(options.accountPlatforms ?? []),
-    ],
+    platforms: [bundledBilibiliPlatform, ...(options.accountPlatforms ?? [])],
     now: options.now,
   });
   const accountAccessSessionService = new AccountAccessSessionService({
     accountStateStore: accountRepository,
     sessionStateStore: accountAccessSessionRepository,
     secretStore: accountSecretStore,
-    platforms: [
-      new BilibiliStubAccountPlatformAdapter(),
-      ...(options.accountPlatforms ?? []),
-    ],
+    platforms: [bundledBilibiliPlatform, ...(options.accountPlatforms ?? [])],
     now: options.now,
   });
   const agentAccessService = new AgentAccessService({
@@ -135,12 +136,21 @@ export async function startApplication(
   const taskService = new TaskService({
     taskStore: taskRepository,
   });
+  const taskDecompositionSupportToolsService =
+    new TaskDecompositionSupportToolsService({
+      trafficWorkStateStore: trafficWorkRepository,
+      trafficWorkContextStore,
+      runtimeAgentResourceStore,
+      taskService,
+    });
   const trafficWorkService = new TrafficWorkService({
     stateStore: trafficWorkRepository,
     contextStore: trafficWorkContextStore,
-    contextPreparation: new AgentAccessTrafficWorkContextPreparationAdapter(
+    contextPreparation: new AgentAccessTrafficWorkContextPreparationAdapter({
       agentAccessService,
-    ),
+      runtimeRootDirectory: runtime.paths.runtimeRoot,
+      runtimeSkillsDirectory: runtime.paths.agentSkillsDirectory,
+    }),
     productStore: productRepository,
     productContentStore,
     strategyStore: strategyReferenceRepository,
@@ -170,6 +180,7 @@ export async function startApplication(
       agentAccessService,
       trafficWorkService,
       taskService,
+      taskDecompositionSupportToolsService,
       host: options.host,
       port: options.port,
     });

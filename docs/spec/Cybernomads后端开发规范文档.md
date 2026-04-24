@@ -38,6 +38,7 @@ cybernomads-backend/
 │   │   ├── products/              /**/ 产品模块，放产品资料、Markdown 内容和产品提示词管理代码。
 │   │   ├── resource-binding/      /**/ 对象绑定模块，放策略对象引用、资源映射和绑定解析相关代码。
 │   │   ├── strategies/            /**/ 策略模块，放策略包组合、策略编译和策略内容管理代码。
+│   │   ├── task-decomposition-support-tools/ /**/ 任务拆分支撑工具模块，放受控资源拷贝与批量任务保存等 Agent 工具入口代码。
 │   │   ├── tasks/                 /**/ 任务模块，放任务定义、任务状态和任务执行条件相关代码。
 │   │   └── traffic-works/         /**/ 引流工作模块，放引流工作创建、启动、暂停、更新和任务生成入口代码。
 │   ├── ports/                     /**/ 系统抽象边界目录，只放接口、契约和协议类型；禁止写任何具体实现。
@@ -92,7 +93,6 @@ cybernomads/
 - `task.md` 与 `scripts/` 的命名和职责应保持稳定，避免不同引流工作目录结构不一致。
 - 若后续扩展更多运行时文件，也应优先放入既有语义目录中，避免在 `cybernomads/` 根目录无限散落文件。
 
-
 ### 1.4 命名与代码风格 (Naming & Code Style)
 
 - **目录命名**：统一使用小写英文或 `kebab-case`
@@ -118,3 +118,4 @@ cybernomads/
 - 读取和写入文本文件时应显式指定编码，避免依赖平台默认编码。
 - 任何本地文件系统实现都必须考虑 macOS、Windows、Linux 在路径分隔符、权限、大小写敏感性上的差异。
 - 产品、策略和引流工作相关 Markdown 文件应通过统一文件命名与目录映射规则生成，禁止在不同模块中各自定义一套落盘规则。
+- 当 `cybernomads-backend/runtime-assets/agent/` 下新增或调整可复用 Skill、Knowledge 等 Agent 运行时资源时，必须同步更新 `cybernomads-backend/runtime-assets/agent/knowledge/Agent资源清单.md`，确保 Agent 与开发者读取到的资源目录说明始终一致。

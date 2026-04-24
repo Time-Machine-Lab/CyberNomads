@@ -10,6 +10,7 @@ const serviceMocks = vi.hoisted(() => ({
   listAssets: vi.fn(),
   getAssetById: vi.fn(),
   saveAsset: vi.fn(),
+  deleteAsset: vi.fn(),
 }))
 
 vi.mock('@/entities/asset/api/asset-service', () => serviceMocks)
@@ -62,6 +63,7 @@ describe('assets product pages', () => {
     serviceMocks.listAssets.mockResolvedValue([createAsset()])
     serviceMocks.getAssetById.mockResolvedValue(createAsset())
     serviceMocks.saveAsset.mockResolvedValue(createAsset())
+    serviceMocks.deleteAsset.mockResolvedValue('deleted')
   })
 
   it('renders product summaries on the assets list page through the entity API boundary', async () => {
@@ -95,6 +97,34 @@ describe('assets product pages', () => {
     })
   })
 
+  it('deletes an asset from the overflow menu without triggering editor navigation', async () => {
+    const { wrapper, router } = await mountWithRouter('/assets', AssetsListPage, '/assets')
+
+    await wrapper.get('[data-testid="asset-menu-trigger-product-1"]').trigger('click')
+    await wrapper.get('[data-testid="asset-delete-action-product-1"]').trigger('click')
+    await wrapper.get('[data-testid="asset-delete-confirm-product-1"]').trigger('click')
+    await flushPromises()
+
+    expect(serviceMocks.deleteAsset).toHaveBeenCalledWith('product-1')
+    expect(router.currentRoute.value.path).toBe('/assets')
+    expect(wrapper.find('[data-testid="assets-grid"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="assets-action-feedback"]').text()).toContain('已删除')
+  })
+
+  it('keeps the asset visible when delete fails', async () => {
+    serviceMocks.deleteAsset.mockRejectedValueOnce(new Error('delete failed'))
+
+    const { wrapper } = await mountWithRouter('/assets', AssetsListPage, '/assets')
+
+    await wrapper.get('[data-testid="asset-menu-trigger-product-1"]').trigger('click')
+    await wrapper.get('[data-testid="asset-delete-action-product-1"]').trigger('click')
+    await wrapper.get('[data-testid="asset-delete-confirm-product-1"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-grid"]').text()).toContain('后端产品资产')
+    expect(wrapper.get('[data-testid="assets-action-feedback"]').text()).toContain('删除')
+  })
+
   it('loads full product detail into the editor', async () => {
     const { wrapper } = await mountWithRouter(
       '/assets/product-1/edit',
@@ -108,6 +138,20 @@ describe('assets product pages', () => {
 
     expect(serviceMocks.getAssetById).toHaveBeenCalledWith('product-1')
     expect((wrapper.get('input[required]').element as HTMLInputElement).value).toBe('后端产品资产')
+  })
+
+  it('renders a back link and removes unsupported target metadata from the editor header', async () => {
+    const { wrapper } = await mountWithRouter(
+      '/assets/product-1/edit',
+      AssetEditorPage,
+      '/assets/:assetId/edit',
+    )
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('[data-testid="asset-editor-back-link"]').text()).toContain('返回资产列表')
+    })
+
+    expect(wrapper.text()).not.toContain('目标节点')
   })
 
   it('renders not-found state for a missing product detail', async () => {

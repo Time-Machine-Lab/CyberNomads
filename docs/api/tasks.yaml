@@ -170,6 +170,10 @@ paths:
                 $ref: "#/components/schemas/TaskSetWriteResult"
         "400":
           description: 请求参数不合法
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskErrorResponse"
         "404":
           description: 引流工作不存在
         "409":
@@ -198,6 +202,10 @@ paths:
                 $ref: "#/components/schemas/TaskSetWriteResult"
         "400":
           description: 请求参数不合法
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskErrorResponse"
         "404":
           description: 引流工作不存在
         "409":
@@ -598,5 +606,39 @@ components:
         - running
         - completed
         - failed
+
+    TaskErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/TaskValidationDetails"
+
+    TaskValidationDetails:
+      type:
+        - object
+        - "null"
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskValidationIssue"
+
+    TaskValidationIssue:
+      type: object
+      required:
+        - path
+        - message
+      properties:
+        path:
+          type: string
+        message:
+          type: string
 
   securitySchemes: {}

@@ -1,0 +1,233 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Task Decomposition Support Tools API
+  version: 1.0.0
+  description: >
+    面向 Agent 任务拆分阶段的受控工具接口。当前阶段只开放两类最小必要工具：
+    运行时 Agent 资源拷贝工具，以及批量任务保存工具。
+    这些接口用于让 Agent 在受控边界内准备引流工作上下文和持久化任务集，
+    不开放任意文件写入或直接 SQLite 修改能力。
+  summary: 任务拆分支撑工具受控接口
+
+tags:
+  - name: TaskDecompositionSupportTools
+    description: 任务拆分阶段使用的受控工具接口
+
+paths:
+  /api/task-decomposition-support-tools/runtime-resource-copy:
+    post:
+      tags:
+        - TaskDecompositionSupportTools
+      summary: 拷贝运行时 Agent 资源到引流工作上下文
+      description: >
+        将运行时 `cybernomads/agent/skills/` 或 `cybernomads/agent/knowledge/`
+        下的资源，受控地拷贝到指定引流工作的工作上下文目录。
+        该接口只允许在固定运行时边界内工作，越界路径必须被拒绝。
+      operationId: copyRuntimeAgentResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopyRuntimeAgentResourceRequest"
+      responses:
+        "200":
+          description: 拷贝成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopyRuntimeAgentResourceResult"
+        "400":
+          description: 请求参数不合法或路径越界
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolErrorResponse"
+        "404":
+          description: 引流工作或资源不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolErrorResponse"
+
+  /api/task-decomposition-support-tools/batch-save-tasks:
+    post:
+      tags:
+        - TaskDecompositionSupportTools
+      summary: 通过受控工具批量保存任务集
+      description: >
+        为一个引流工作执行一次整批任务集保存。该接口支持 `create` 与 `replace`
+        两种模式，并沿用任务模块的整批成功或整批失败语义。
+        当校验失败时，必须返回明确的字段级失败原因。
+      operationId: batchSaveTasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchSaveTasksRequest"
+      responses:
+        "200":
+          description: 替换模式保存成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchSaveTasksResult"
+        "201":
+          description: 创建模式保存成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchSaveTasksResult"
+        "400":
+          description: 请求参数不合法或任务集校验失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolErrorResponse"
+        "404":
+          description: 引流工作不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolErrorResponse"
+        "409":
+          description: 当前引流工作状态不允许执行该保存
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolErrorResponse"
+
+components:
+  schemas:
+    CopyRuntimeAgentResourceRequest:
+      type: object
+      required:
+        - trafficWorkId
+        - resourceType
+        - resourcePath
+      properties:
+        trafficWorkId:
+          type: string
+          description: 目标引流工作稳定标识
+          minLength: 1
+        resourceType:
+          type: string
+          enum:
+            - skill
+            - knowledge
+          description: 要拷贝的运行时 Agent 资源类型
+        resourcePath:
+          type: string
+          description: >
+            资源在受控运行时根目录下的相对路径。该路径只能位于所选资源类型对应的根目录内。
+          minLength: 1
+
+    CopyRuntimeAgentResourceResult:
+      type: object
+      required:
+        - trafficWorkId
+        - resourceType
+        - sourceAbsolutePath
+        - sourceRuntimeRelativePath
+        - targetAbsolutePath
+        - targetRuntimeRelativePath
+      properties:
+        trafficWorkId:
+          type: string
+        resourceType:
+          type: string
+          enum:
+            - skill
+            - knowledge
+        sourceAbsolutePath:
+          type: string
+          description: 运行时资源的实际绝对路径
+        sourceRuntimeRelativePath:
+          type: string
+          description: 运行时资源相对于 `cybernomads/` 根目录的相对路径
+        targetAbsolutePath:
+          type: string
+          description: 拷贝后资源在引流工作上下文中的实际绝对路径
+        targetRuntimeRelativePath:
+          type: string
+          description: 拷贝后资源相对于 `cybernomads/` 根目录的相对路径
+
+    BatchSaveTasksRequest:
+      type: object
+      required:
+        - trafficWorkId
+        - mode
+        - taskSet
+      properties:
+        trafficWorkId:
+          type: string
+          minLength: 1
+        mode:
+          type: string
+          enum:
+            - create
+            - replace
+          description: >
+            任务集保存模式。`create` 用于首次任务拆分，`replace` 用于引流工作更新后的任务集替换。
+        taskSet:
+          $ref: "./tasks.yaml#/components/schemas/TaskSetWriteRequest"
+
+    BatchSaveTasksResult:
+      type: object
+      required:
+        - mode
+        - trafficWorkId
+        - taskCount
+        - tasks
+      properties:
+        mode:
+          type: string
+          enum:
+            - create
+            - replace
+        trafficWorkId:
+          type: string
+        taskCount:
+          type: integer
+          minimum: 0
+        tasks:
+          type: array
+          items:
+            $ref: "./tasks.yaml#/components/schemas/TaskSetTaskResult"
+
+    ToolErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/ValidationErrorDetails"
+
+    ValidationErrorDetails:
+      type:
+        - object
+        - "null"
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationIssue"
+
+    ValidationIssue:
+      type: object
+      required:
+        - path
+        - message
+      properties:
+        path:
+          type: string
+        message:
+          type: string
+
+  securitySchemes: {}

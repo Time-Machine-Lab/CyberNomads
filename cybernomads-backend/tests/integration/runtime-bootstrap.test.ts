@@ -33,6 +33,13 @@ describe.sequential("runtime bootstrap", () => {
     const runtimePaths = resolveRuntimePaths(workingDirectory);
 
     await expect(access(runtimePaths.runtimeRoot)).resolves.toBeUndefined();
+    await expect(access(runtimePaths.agentDirectory)).resolves.toBeUndefined();
+    await expect(
+      access(runtimePaths.agentSkillsDirectory),
+    ).resolves.toBeUndefined();
+    await expect(
+      access(runtimePaths.agentKnowledgeDirectory),
+    ).resolves.toBeUndefined();
     await expect(
       access(runtimePaths.productDirectory),
     ).resolves.toBeUndefined();
@@ -41,6 +48,15 @@ describe.sequential("runtime bootstrap", () => {
     ).resolves.toBeUndefined();
     await expect(access(runtimePaths.workDirectory)).resolves.toBeUndefined();
     await expect(access(runtimePaths.databaseFile)).resolves.toBeUndefined();
+    await expect(
+      access(
+        join(
+          runtimePaths.agentSkillsDirectory,
+          "cybernomads-task-decomposition",
+          "SKILL.md",
+        ),
+      ),
+    ).resolves.toBeUndefined();
 
     expect(result.appliedScripts).toEqual([
       "001-bootstrap.sql",
@@ -166,6 +182,42 @@ describe.sequential("runtime bootstrap", () => {
     database.close();
 
     expect(recordedScripts?.count).toBe(10);
+  });
+
+  it("refreshes bundled agent runtime assets without deleting unrelated runtime files", async () => {
+    const workingDirectory =
+      await createTemporaryDirectory(temporaryDirectories);
+
+    await bootstrapRuntime({ workingDirectory });
+    const runtimePaths = resolveRuntimePaths(workingDirectory);
+    const managedSkillFile = join(
+      runtimePaths.agentSkillsDirectory,
+      "cybernomads-task-decomposition",
+      "SKILL.md",
+    );
+    const bundledSkillFile = join(
+      process.cwd(),
+      "runtime-assets",
+      "agent",
+      "skills",
+      "cybernomads-task-decomposition",
+      "SKILL.md",
+    );
+    const unrelatedFile = join(
+      runtimePaths.agentKnowledgeDirectory,
+      "local-notes.txt",
+    );
+    const originalManagedContent = await readFile(bundledSkillFile, "utf8");
+
+    await writeFile(managedSkillFile, "stale content", "utf8");
+    await writeFile(unrelatedFile, "keep me", "utf8");
+
+    await bootstrapRuntime({ workingDirectory });
+
+    await expect(readFile(managedSkillFile, "utf8")).resolves.toBe(
+      originalManagedContent,
+    );
+    await expect(readFile(unrelatedFile, "utf8")).resolves.toBe("keep me");
   });
 
   it("fails startup explicitly when the SQLite runtime database cannot be opened", async () => {

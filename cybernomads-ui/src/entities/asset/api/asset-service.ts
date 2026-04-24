@@ -14,6 +14,8 @@ import { HttpClientError, requestJson } from '@/shared/api/http-client'
 
 type AssetDataSource = 'mock' | 'real'
 
+export type DeleteAssetResult = 'deleted' | 'missing'
+
 export interface AssetRequestOptions {
   source?: AssetDataSource
 }
@@ -83,6 +85,27 @@ export async function updateAsset(
   })
 
   return mapProductDetailDtoToAssetRecord(dto)
+}
+
+export async function deleteAsset(
+  id: string,
+  _options: AssetRequestOptions = {},
+): Promise<DeleteAssetResult> {
+  void _options
+
+  try {
+    await requestJson(`${PRODUCT_API_ROOT}/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
+
+    return 'deleted'
+  } catch (error) {
+    if (error instanceof HttpClientError && error.status === 404) {
+      return 'missing'
+    }
+
+    throw error
+  }
 }
 
 export async function saveAsset(

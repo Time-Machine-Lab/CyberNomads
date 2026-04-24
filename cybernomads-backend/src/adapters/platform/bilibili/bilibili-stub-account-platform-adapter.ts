@@ -21,6 +21,12 @@ export class BilibiliStubAccountPlatformAdapter implements AccountPlatformPort {
   readonly platformCode = "bilibili";
   private skillDirectoryPromise: Promise<string> | null = null;
 
+  constructor(
+    private readonly options: {
+      runtimeSkillsRootDirectory?: string;
+    } = {},
+  ) {}
+
   async startQrSession(
     _input: AccountPlatformStartQrSessionInput,
   ): Promise<AccountPlatformStartQrSessionResult> {
@@ -220,10 +226,12 @@ export class BilibiliStubAccountPlatformAdapter implements AccountPlatformPort {
   private async resolveSkillDirectory(): Promise<string> {
     if (!this.skillDirectoryPromise) {
       this.skillDirectoryPromise = (async () => {
-        const explicitSkillsRoot = join(
-          dirname(fileURLToPath(import.meta.url)),
-          "../../../../runtime-assets/skills",
-        );
+        const explicitSkillsRoot =
+          this.options.runtimeSkillsRootDirectory ??
+          join(
+            dirname(fileURLToPath(import.meta.url)),
+            "../../../../runtime-assets/agent/skills",
+          );
         const skillsRoot = await resolveBundledRuntimeSkillsDirectory(
           explicitSkillsRoot,
         );

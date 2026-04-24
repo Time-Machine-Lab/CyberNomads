@@ -1,8 +1,7 @@
 import type { TrafficWorkContextSnapshot } from "../modules/traffic-works/types.js";
 
 export interface TrafficWorkContextStore {
-  writeTaskContext(
+  ensureWorkContext(
     trafficWorkId: string,
-    taskMarkdown: string,
   ): Promise<TrafficWorkContextSnapshot>;
 }

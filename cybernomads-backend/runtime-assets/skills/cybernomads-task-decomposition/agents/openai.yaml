@@ -1,4 +1,0 @@
-interface:
-  display_name: "Cybernomads 任务拆分"
-  short_description: "将引流工作拆成可执行任务集。"
-  default_prompt: "使用 $cybernomads-task-decomposition 将一个 Cybernomads 引流工作拆分为原子任务集。"

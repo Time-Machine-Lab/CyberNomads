@@ -9,15 +9,15 @@ The backend SHALL, during startup, treat the current working directory plus `cyb
 #### Scenario: Missing runtime root is created
 - **WHEN** the backend starts and the current working directory does not contain `cybernomads/`
 - **THEN** the system creates the `cybernomads/` runtime root
-- **AND** the system creates the fixed child directories `product/`, `strategy/`, and `work/`
+- **AND** the system creates the fixed child directories `agent/`, `agent/skills/`, `agent/knowledge/`, `product/`, `strategy/`, and `work/`
 
 #### Scenario: Existing runtime root does not skip follow-up checks
 - **WHEN** the backend starts and the current working directory already contains `cybernomads/`
 - **THEN** the system skips only the runtime root creation action
-- **AND** the system continues checking SQLite availability and runtime SQL execution
+- **AND** the system continues checking fixed runtime directories, Agent runtime asset synchronization, SQLite availability, and runtime SQL execution
 
 ### Requirement: Backend SHALL prepare the fixed runtime directory structure
-The backend SHALL ensure that the runtime root contains the fixed directories required by the MVP runtime layout: `product/`, `strategy/`, and `work/`.
+The backend SHALL ensure that the runtime root contains the fixed directories required by the MVP runtime layout: `agent/`, `agent/skills/`, `agent/knowledge/`, `product/`, `strategy/`, and `work/`.
 
 #### Scenario: Missing fixed child directory is created
 - **WHEN** the runtime root exists but one or more fixed child directories are missing
@@ -55,7 +55,7 @@ The backend SHALL load SQL scripts from bundled runtime SQL assets and SHALL exe
 - **AND** the startup remains successful without duplicating initialization state
 
 ### Requirement: Backend SHALL not create business runtime content during bootstrap
-The backend SHALL limit startup initialization to runtime foundation concerns and MUST NOT create concrete work instance directories, default product files, default strategy files, or other business seed content.
+The backend SHALL limit startup initialization to runtime foundation concerns and bundled Agent runtime asset synchronization and MUST NOT create concrete work instance directories, default product files, default strategy files, or other business seed content.
 
 #### Scenario: Bootstrap does not create concrete work directories
 - **WHEN** the backend completes startup initialization
@@ -66,6 +66,19 @@ The backend SHALL limit startup initialization to runtime foundation concerns an
 - **WHEN** the backend completes startup initialization
 - **THEN** the system does not create default product markdown files
 - **AND** the system does not create default strategy markdown files
+
+### Requirement: Backend SHALL synchronize bundled Agent runtime assets into the runtime root
+The backend SHALL synchronize bundled Agent runtime assets from the packaged runtime asset source into `cybernomads/agent/skills/` and `cybernomads/agent/knowledge/` during startup so runtime-facing Agent paths remain stable.
+
+#### Scenario: First startup copies bundled Agent assets
+- **WHEN** the backend starts against a runtime root that does not yet contain bundled Agent runtime assets
+- **THEN** the system copies the bundled `skills/` assets into `cybernomads/agent/skills/`
+- **AND** the system copies the bundled `knowledge/` assets into `cybernomads/agent/knowledge/`
+
+#### Scenario: Repeated startup refreshes managed Agent assets without deleting unrelated files
+- **WHEN** the backend starts and the runtime root already contains Agent runtime assets
+- **THEN** the system rechecks the bundled Agent asset source and refreshes managed files as needed
+- **AND** the system does not delete unrelated runtime files that are outside the bundled managed set
 
 ### Requirement: Backend SHALL fail startup clearly when bootstrap cannot complete
 The backend SHALL stop startup and return an explicit failure when the runtime root cannot be prepared, the SQLite database cannot be opened or created, or bundled runtime SQL execution fails.
@@ -79,4 +92,3 @@ The backend SHALL stop startup and return an explicit failure when the runtime r
 - **WHEN** a bundled runtime SQL script cannot be loaded or executed successfully
 - **THEN** the startup fails
 - **AND** the system returns an explicit bootstrap error instead of entering ready state
-

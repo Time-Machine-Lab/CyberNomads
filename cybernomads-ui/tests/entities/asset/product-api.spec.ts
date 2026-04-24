@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createAsset,
+  deleteAsset,
   getAssetById,
   listAssets,
   saveAsset,
@@ -19,6 +20,10 @@ function createJsonResponse(payload: unknown, status = 200) {
       'Content-Type': 'application/json',
     },
   })
+}
+
+function createNoContentResponse(status = 204) {
+  return new Response(null, { status })
 }
 
 function createSaveInput(id?: string) {
@@ -149,5 +154,23 @@ describe('asset product API integration', () => {
       name: '联调产品',
       contentMarkdown: '# 联调产品\n\n完整产品内容。',
     })
+  })
+
+  it('deletes products through the documented delete contract and handles 404 as stale state', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(createNoContentResponse())
+      .mockResolvedValueOnce(createJsonResponse({ message: 'not found' }, 404))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(deleteAsset('product-delete', { source: 'real' })).resolves.toBe('deleted')
+    await expect(deleteAsset('product-missing', { source: 'real' })).resolves.toBe('missing')
+
+    const deleteUrl = fetchMock.mock.calls[0]?.[0] as URL
+    const deleteInit = fetchMock.mock.calls[0]?.[1] as RequestInit
+
+    expect(deleteUrl.pathname).toBe('/api/products/product-delete')
+    expect(deleteInit.method).toBe('DELETE')
+    expect(deleteInit.body).toBeUndefined()
   })
 })

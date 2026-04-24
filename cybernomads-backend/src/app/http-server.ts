@@ -15,6 +15,8 @@ import { createStrategiesController } from "../modules/strategies/controller.js"
 import type { StrategyService } from "../modules/strategies/service.js";
 import { createTasksController } from "../modules/tasks/controller.js";
 import type { TaskService } from "../modules/tasks/service.js";
+import { createTaskDecompositionSupportToolsController } from "../modules/task-decomposition-support-tools/controller.js";
+import type { TaskDecompositionSupportToolsService } from "../modules/task-decomposition-support-tools/service.js";
 import { createTrafficWorksController } from "../modules/traffic-works/controller.js";
 import type { TrafficWorkService } from "../modules/traffic-works/service.js";
 import { sendJson } from "../shared/http.js";
@@ -30,6 +32,7 @@ export interface StartHttpServerOptions {
   agentAccessService: AgentAccessService;
   trafficWorkService: TrafficWorkService;
   taskService: TaskService;
+  taskDecompositionSupportToolsService: TaskDecompositionSupportToolsService;
   host?: string;
   port?: number;
 }
@@ -56,9 +59,7 @@ export async function startHttpServer(
     options.accountService,
   );
   const handleAccountAccessSessionRequest =
-    createAccountAccessSessionsController(
-      options.accountAccessSessionService,
-    );
+    createAccountAccessSessionsController(options.accountAccessSessionService);
   const handleAgentAccessRequest = createAgentAccessController(
     options.agentAccessService,
   );
@@ -66,6 +67,10 @@ export async function startHttpServer(
     options.trafficWorkService,
   );
   const handleTasksRequest = createTasksController(options.taskService);
+  const handleTaskDecompositionSupportToolsRequest =
+    createTaskDecompositionSupportToolsController(
+      options.taskDecompositionSupportToolsService,
+    );
 
   const server = createServer(async (request, response) => {
     try {
@@ -75,6 +80,7 @@ export async function startHttpServer(
         handleAccountsRequest,
         handleStrategiesRequest,
         handleProductsRequest,
+        handleTaskDecompositionSupportToolsRequest,
         handleTasksRequest,
         handleTrafficWorksRequest,
       ];
