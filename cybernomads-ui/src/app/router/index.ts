@@ -43,7 +43,7 @@ export const router = createRouter({
           path: 'workspaces',
           name: 'workspaces-list',
           component: () => import('@/pages/workspaces/list/ui/WorkspacesListPage.vue'),
-          meta: { moduleTitle: '推广工作区', shellNavKey: 'workspaces', shellSectionTitle: '团队列表' },
+          meta: { moduleTitle: '推广工作区', shellNavKey: 'workspaces', shellSectionTitle: '工作区列表' },
         },
         {
           path: 'workspaces/:workspaceId',

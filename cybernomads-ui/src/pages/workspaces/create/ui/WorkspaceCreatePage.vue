@@ -7,7 +7,7 @@ import { getStrategyById, listStrategies } from '@/entities/strategy/api/strateg
 import { createWorkspace, getWorkspaceById, updateTrafficWork } from '@/entities/workspace/api/workspace-service'
 import type { AssetAttachmentRecord, AssetRecord } from '@/entities/asset/model/types'
 import type { StrategyDetailRecord, StrategyPlaceholderRecord, StrategyRecord } from '@/entities/strategy/model/types'
-import type { StrategyParameterBinding, WorkspaceRecord } from '@/entities/workspace/model/types'
+import type { ObjectBindingItem, WorkspaceRecord } from '@/entities/workspace/model/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,15 +104,17 @@ watch(selectedStrategyId, (next, previous) => {
 function buildInitialParameterFormValues(detail: StrategyDetailRecord) {
   const savedBindings =
     isEditMode.value && workspace.value?.strategyId === detail.id
-      ? new Map((workspace.value.parameterBindings ?? []).map((binding) => [binding.key, binding]))
-      : new Map<string, StrategyParameterBinding>()
+      ? new Map(
+          (workspace.value.objectBindings ?? []).map((binding) => [`${binding.objectType}:${binding.objectKey}`, binding]),
+        )
+      : new Map<string, ObjectBindingItem>()
 
   return Object.fromEntries(
     detail.placeholders.map((placeholder) => {
-      const savedBinding = savedBindings.get(placeholder.key)
+      const savedBinding = savedBindings.get(`${placeholder.type}:${placeholder.key}`)
 
-      if (savedBinding?.type === placeholder.type) {
-        return [placeholder.key, String(savedBinding.value)]
+      if (savedBinding) {
+        return [placeholder.key, String(savedBinding.resourceLabel ?? savedBinding.resourceId)]
       }
 
       return [placeholder.key, String(placeholder.defaultValue)]
@@ -171,6 +173,30 @@ function resolveStrategyTag(strategy: StrategyRecord) {
   return strategy.tags[0] ?? '未分类'
 }
 
+const PARAMETER_VISUALS = [
+  { accent: '#8ff5ff', border: 'rgb(143 245 255 / 0.32)', background: 'rgb(143 245 255 / 0.10)' },
+  { accent: '#c3f400', border: 'rgb(195 244 0 / 0.3)', background: 'rgb(195 244 0 / 0.1)' },
+  { accent: '#ffb86b', border: 'rgb(255 184 107 / 0.3)', background: 'rgb(255 184 107 / 0.1)' },
+  { accent: '#7ab8ff', border: 'rgb(122 184 255 / 0.3)', background: 'rgb(122 184 255 / 0.1)' },
+  { accent: '#ff8cc6', border: 'rgb(255 140 198 / 0.3)', background: 'rgb(255 140 198 / 0.1)' },
+  { accent: '#7ef0c9', border: 'rgb(126 240 201 / 0.3)', background: 'rgb(126 240 201 / 0.1)' },
+] as const
+
+function resolveParameterVisual(type: string) {
+  const normalizedType = type.trim() || '对象'
+  let hash = 0
+
+  for (const character of normalizedType) {
+    hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0
+  }
+
+  return PARAMETER_VISUALS[Math.abs(hash) % PARAMETER_VISUALS.length]
+}
+
+function resolveParameterGlyph(type: string) {
+  return (type.trim()[0] ?? '对').toLocaleUpperCase('zh-CN')
+}
+
 function resolveParameterInputType(placeholder: StrategyPlaceholderRecord) {
   void placeholder
   return 'text'
@@ -202,12 +228,39 @@ function resolveParameterFieldError(placeholder: StrategyPlaceholderRecord) {
   return ''
 }
 
-function buildParameterBindings(): StrategyParameterBinding[] {
+function resolveParameterDeclarationPreview(placeholder: StrategyPlaceholderRecord) {
+  return `{{${placeholder.type}:${placeholder.key}=${JSON.stringify(resolveParameterFieldValue(placeholder.key))}}}`
+}
+
+function resolveParameterMeta(placeholder: StrategyPlaceholderRecord) {
+  if (placeholder.displayDefaultValue) {
+    return `默认值 · ${placeholder.displayDefaultValue}`
+  }
+
+  return `${placeholder.type} 参数`
+}
+
+function buildStrategyObjectBindings(): ObjectBindingItem[] {
   return strategyPlaceholders.value.map((placeholder) => ({
-    type: placeholder.type,
-    key: placeholder.key,
-    value: resolveParameterFieldValue(placeholder.key),
+    objectType: placeholder.type,
+    objectKey: placeholder.key,
+    resourceId: resolveParameterFieldValue(placeholder.key),
+    resourceLabel: resolveParameterFieldValue(placeholder.key),
   }))
+}
+
+function buildPreservedObjectBindings() {
+  if (!isEditMode.value || !workspace.value) {
+    return []
+  }
+
+  const strategyBindingSignatures = new Set(
+    strategyPlaceholders.value.map((placeholder) => `${placeholder.type}:${placeholder.key}`),
+  )
+
+  return (workspace.value.objectBindings ?? []).filter(
+    (binding) => !strategyBindingSignatures.has(`${binding.objectType}:${binding.objectKey}`),
+  )
 }
 
 async function handleSubmit() {
@@ -223,8 +276,7 @@ async function handleSubmit() {
         displayName: workspaceName.value,
         productId: selectedAssetId.value,
         strategyId: selectedStrategyId.value,
-        objectBindings: workspace.value.objectBindings ?? [],
-        parameterBindings: buildParameterBindings(),
+        objectBindings: [...buildPreservedObjectBindings(), ...buildStrategyObjectBindings()],
       })
       await router.push('/workspaces')
       return
@@ -235,8 +287,7 @@ async function handleSubmit() {
       summary: workspaceSummary.value,
       assetId: selectedAssetId.value,
       strategyId: selectedStrategyId.value,
-      accountIds: [],
-      parameterBindings: buildParameterBindings(),
+      objectBindings: buildStrategyObjectBindings(),
     })
 
     await router.push({
@@ -397,24 +448,45 @@ async function handleSubmit() {
                     <strong>{{ strategyDetail.name }}</strong>
                     <p>已从策略模板中解析出 {{ strategyPlaceholders.length }} 个参数字段。</p>
                   </div>
-                  <span class="parameter-panel__badge">Markdown Template</span>
+                  <span class="parameter-panel__badge">模板参数</span>
                 </div>
 
                 <div class="parameter-grid">
-                  <label v-for="placeholder in strategyPlaceholders" :key="placeholder.key" class="parameter-field">
-                    <span class="parameter-field__label">
-                      {{ placeholder.key }}
-                      <small>{{ placeholder.type }}</small>
-                    </span>
-                    <input
-                      :type="resolveParameterInputType(placeholder)"
-                      :value="resolveParameterFieldValue(placeholder.key)"
-                      :placeholder="placeholder.displayDefaultValue || '空字符串'"
-                      :class="{ 'parameter-field__input--error': resolveParameterFieldError(placeholder) }"
-                      @input="handleParameterFieldInput(placeholder.key, $event)"
-                    />
-                    <code>{{ placeholder.declaration }}</code>
-                    <p v-if="resolveParameterFieldError(placeholder)" class="parameter-field__error">
+                  <label
+                    v-for="placeholder in strategyPlaceholders"
+                    :key="placeholder.key"
+                    class="parameter-card"
+                    :style="{
+                      '--parameter-accent': resolveParameterVisual(placeholder.type).accent,
+                      '--parameter-border': resolveParameterVisual(placeholder.type).border,
+                      '--parameter-background': resolveParameterVisual(placeholder.type).background,
+                    }"
+                  >
+                    <div class="parameter-card__top">
+                      <div class="parameter-card__identity">
+                        <div class="parameter-card__icon">
+                          <span class="parameter-card__glyph">{{ resolveParameterGlyph(placeholder.type) }}</span>
+                        </div>
+                        <div class="parameter-card__meta">
+                          <strong>{{ placeholder.key }}</strong>
+                          <span>{{ resolveParameterMeta(placeholder) }}</span>
+                        </div>
+                      </div>
+                      <span class="parameter-card__tag">{{ placeholder.type }}</span>
+                    </div>
+
+                    <div class="parameter-card__input-shell">
+                      <input
+                        :type="resolveParameterInputType(placeholder)"
+                        :value="resolveParameterFieldValue(placeholder.key)"
+                        :placeholder="placeholder.displayDefaultValue || '空字符串'"
+                        :class="{ 'parameter-card__input--error': resolveParameterFieldError(placeholder) }"
+                        @input="handleParameterFieldInput(placeholder.key, $event)"
+                      />
+                    </div>
+
+                    <code class="parameter-card__declaration">{{ resolveParameterDeclarationPreview(placeholder) }}</code>
+                    <p v-if="resolveParameterFieldError(placeholder)" class="parameter-card__error">
                       {{ resolveParameterFieldError(placeholder) }}
                     </p>
                   </label>
@@ -981,9 +1053,12 @@ async function handleSubmit() {
   display: grid;
   gap: 1rem;
   padding: 1.5rem;
-  background: #131313;
-  border: 1px solid rgb(72 72 71 / 0.2);
-  border-radius: 0.85rem;
+  background:
+    radial-gradient(circle at top right, rgb(143 245 255 / 0.04), transparent 32%),
+    #151515;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 1rem;
+  box-shadow: 0 18px 36px rgb(0 0 0 / 0.16);
 }
 
 .parameter-panel__header,
@@ -996,6 +1071,12 @@ async function handleSubmit() {
 .parameter-panel__header {
   justify-content: space-between;
   align-items: center;
+}
+
+.parameter-panel__header strong {
+  display: block;
+  font-size: 1.35rem;
+  line-height: 1.15;
 }
 
 .parameter-panel__header strong,
@@ -1021,76 +1102,162 @@ async function handleSubmit() {
 }
 
 .parameter-panel__badge {
-  padding: 0.35rem 0.65rem;
+  padding: 0.45rem 0.8rem;
   color: var(--cn-primary);
   background: rgb(143 245 255 / 0.08);
-  border: 1px solid rgb(143 245 255 / 0.18);
+  border: 1px solid rgb(143 245 255 / 0.16);
   border-radius: 999px;
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .parameter-grid {
   display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr));
 }
 
-.parameter-field {
+.parameter-card {
   display: grid;
-  gap: 0.55rem;
-  padding: 1rem;
-  background: #1a1919;
-  border: 1px solid rgb(72 72 71 / 0.18);
-  border-radius: 0.75rem;
-}
-
-.parameter-field__label {
-  display: flex;
-  justify-content: space-between;
   gap: 0.75rem;
-  align-items: baseline;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid rgb(72 72 71 / 0.18);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--parameter-background, rgb(143 245 255 / 0.1)) 14%, #1a1919);
+  transition:
+    border-color var(--cn-transition),
+    background-color var(--cn-transition),
+    transform var(--cn-transition);
+}
+
+.parameter-card:hover {
+  border-color: color-mix(in srgb, var(--parameter-border, rgb(143 245 255 / 0.3)) 82%, rgb(255 255 255 / 0.08));
+  background: color-mix(in srgb, var(--parameter-background, rgb(143 245 255 / 0.1)) 20%, #1c1b1b);
+  transform: translateY(-1px);
+}
+
+.parameter-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.parameter-card__identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.parameter-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.72rem;
+  color: var(--parameter-accent, #8ff5ff);
+  background: var(--parameter-background, rgb(143 245 255 / 0.1));
+  box-shadow: inset 0 0 0 1px var(--parameter-border, rgb(143 245 255 / 0.3));
+}
+
+.parameter-card__glyph {
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.parameter-card__meta {
+  display: grid;
+  gap: 0.14rem;
+  min-width: 0;
+}
+
+.parameter-card__meta strong {
+  overflow: hidden;
+  color: #fff;
+  font-size: 0.95rem;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.parameter-field__label small {
-  color: var(--cn-on-surface-muted);
-  font-size: 0.74rem;
-  font-weight: 500;
+.parameter-card__meta span {
+  overflow: hidden;
+  color: #8d8d8d;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.parameter-field input,
-.parameter-field code {
+.parameter-card__tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.35rem;
+  padding: 0 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--parameter-border, rgb(143 245 255 / 0.3)) 80%, rgb(255 255 255 / 0.08));
+  border-radius: 999px;
+  color: var(--parameter-accent, #8ff5ff);
+  background: color-mix(in srgb, var(--parameter-background, rgb(143 245 255 / 0.1)) 62%, rgb(255 255 255 / 0.01));
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.parameter-card__input-shell {
+  padding: 0;
+}
+
+.parameter-card input,
+.parameter-card code {
   width: 100%;
 }
 
-.parameter-field input {
-  min-height: 2.9rem;
+.parameter-card input {
+  min-height: 2.85rem;
   padding: 0 0.9rem;
   color: #fff;
-  background: #101010;
-  border: 1px solid rgb(72 72 71 / 0.24);
-  border-radius: 0.6rem;
+  background: #121212;
+  border: 1px solid rgb(72 72 71 / 0.22);
+  border-radius: 0.68rem;
+  font-size: 0.9rem;
+  font-weight: 500;
   outline: 0;
+  transition: border-color var(--cn-transition), box-shadow var(--cn-transition);
 }
 
-.parameter-field input:focus {
-  border-color: rgb(143 245 255 / 0.45);
-  box-shadow: 0 0 0 3px rgb(143 245 255 / 0.08);
+.parameter-card input::placeholder {
+  color: #787474;
 }
 
-.parameter-field__input--error {
+.parameter-card input:focus {
+  border-color: var(--parameter-border, rgb(143 245 255 / 0.45));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--parameter-background, rgb(143 245 255 / 0.08)) 50%, transparent);
+}
+
+.parameter-card__input--error {
   border-color: rgb(255 113 108 / 0.45) !important;
 }
 
-.parameter-field code {
-  overflow-wrap: anywhere;
-  color: var(--cn-tertiary);
-  font-size: 0.74rem;
+.parameter-card__declaration {
+  display: block;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--parameter-accent, #8ff5ff) 72%, #8d8d8d 28%);
+  font-family: 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', Consolas, monospace;
+  font-size: 0.65rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.parameter-field__error {
+.parameter-card__error {
   margin: 0;
   font-size: 0.78rem;
 }
@@ -1143,6 +1310,19 @@ async function handleSubmit() {
 
   .create-timeline {
     padding-left: 2rem;
+  }
+
+  .parameter-panel {
+    padding: 1.25rem;
+  }
+
+  .parameter-panel__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .parameter-panel__badge {
+    align-self: flex-start;
   }
 
   .create-step__node {

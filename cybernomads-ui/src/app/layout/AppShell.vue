@@ -56,7 +56,7 @@ const primaryAction = computed(() => {
       return { to: '/accounts/new', icon: 'add', label: '新增账号' }
     case 'workspaces':
     default:
-      return { to: '/workspaces/new', icon: 'add', label: '创建团队' }
+      return { to: '/workspaces/new', icon: 'add', label: '创建工作区' }
   }
 })
 </script>

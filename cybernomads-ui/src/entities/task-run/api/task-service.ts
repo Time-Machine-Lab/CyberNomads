@@ -26,10 +26,10 @@ function mapBackendStatus(status: BackendTaskStatus): TaskRunRecord['status'] {
 }
 
 function resolveStatusLabel(status: BackendTaskStatus) {
-  if (status === 'ready') return 'Ready'
-  if (status === 'running') return 'Running'
-  if (status === 'completed') return 'Completed'
-  return 'Failed'
+  if (status === 'ready') return '待执行'
+  if (status === 'running') return '执行中'
+  if (status === 'completed') return '已完成'
+  return '执行失败'
 }
 
 function mapTaskSummaryToRunRecord(dto: TaskSummaryDto, index = 0): TaskRunRecord {
@@ -44,7 +44,7 @@ function mapTaskSummaryToRunRecord(dto: TaskSummaryDto, index = 0): TaskRunRecor
     id: dto.taskId,
     workspaceId: dto.trafficWorkId,
     name: dto.name,
-    summary: dto.inputNeeds.map((need) => need.description).join(' / ') || dto.condition.cron || 'Contract-backed task',
+    summary: dto.inputNeeds.map((need) => need.description).join(' / ') || dto.condition.cron || '按后端契约生成的任务',
     status: mapBackendStatus(dto.status),
     statusLabel: resolveStatusLabel(dto.status),
     progress: progressByStatus[dto.status],
@@ -52,7 +52,7 @@ function mapTaskSummaryToRunRecord(dto: TaskSummaryDto, index = 0): TaskRunRecor
     nextRunAt: dto.condition.cron ?? dto.updatedAt,
     code: `TASK-${String(index + 1).padStart(2, '0')}`,
     accent: dto.status === 'failed' ? 'red' : dto.status === 'completed' ? 'lime' : 'cyan',
-    note: dto.condition.cron ?? 'No schedule declared',
+    note: dto.condition.cron ?? '未声明调度计划',
     condition: dto.condition,
     inputNeeds: dto.inputNeeds,
   }
@@ -97,6 +97,11 @@ function applyTaskGraphLayout(tasks: TaskRunRecord[]): TaskRunRecord[] {
   if (tasks.length === 0) {
     return tasks
   }
+
+  const LANE_X_OFFSET = 240
+  const LANE_Y_OFFSET = 430
+  const LANE_X_GAP = 440
+  const LANE_Y_GAP = 380
 
   const tasksById = new Map(tasks.map((task) => [task.id, task]))
   const depthCache = new Map<string, number>()
@@ -149,8 +154,8 @@ function applyTaskGraphLayout(tasks: TaskRunRecord[]): TaskRunRecord[] {
 
     return {
       ...task,
-      x: 120 + depth * 380,
-      y: 140 + Math.max(rowIndex, 0) * 240,
+      x: LANE_X_OFFSET + depth * LANE_X_GAP,
+      y: LANE_Y_OFFSET + Math.max(rowIndex, 0) * LANE_Y_GAP,
     }
   })
 }

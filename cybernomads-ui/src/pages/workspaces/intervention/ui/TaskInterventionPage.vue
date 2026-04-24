@@ -26,23 +26,23 @@ const referenceDraft = computed(() => {
 
   const task = context.value.task
   const inputNeeds = task.inputNeeds?.length
-    ? task.inputNeeds.map((need) => `- ${need.name}: ${need.description} (${need.source})`).join('\n')
-    : '- No additional input needs declared.'
+    ? task.inputNeeds.map((need) => `- ${need.name}: ${need.description}（来源：${need.source}）`).join('\n')
+    : '- 当前没有声明额外输入需求。'
 
   return [
-    `# Task output note: ${task.name}`,
+    `# 任务输出记录：${task.name}`,
     '',
-    `Task ID: ${task.id}`,
-    `Status: ${task.statusLabel ?? task.status}`,
+    `任务 ID：${task.id}`,
+    `当前状态：${task.statusLabel ?? task.status}`,
     '',
-    '## Backend instruction',
+    '## 后端指令',
     task.instruction ?? task.summary,
     '',
-    '## Input needs',
+    '## 输入需求',
     inputNeeds,
     '',
-    '## Operator note',
-    '- Record the intervention, observation, or output location here.',
+    '## 人工备注',
+    '- 在这里记录人工观察、补充说明或产物地址。',
   ].join('\n')
 })
 
@@ -106,7 +106,7 @@ function discardChanges() {
       <section v-if="isLoading" class="intervention-state">
         <span class="material-symbols-outlined">sync</span>
         <h1>正在加载任务详情</h1>
-        <p>正在读取 Task detail 与 output records。</p>
+        <p>正在读取任务详情与输出记录。</p>
       </section>
 
       <section v-else-if="errorMessage" class="intervention-state intervention-state--error">
@@ -119,7 +119,7 @@ function discardChanges() {
       <section v-else-if="!context" class="intervention-state">
         <span class="material-symbols-outlined">search_off</span>
         <h1>未找到任务</h1>
-        <p>请确认路由中的 TrafficWork ID 与 Task ID 是否仍然有效。</p>
+        <p>请确认路由中的工作区 ID 与任务 ID 是否仍然有效。</p>
       </section>
 
       <template v-else>
@@ -132,7 +132,7 @@ function discardChanges() {
           <div class="intervention-editor__panel">
             <div class="intervention-toolbar">
               <span class="material-symbols-outlined">edit_note</span>
-              <span>description</span>
+              <span>输出说明</span>
             </div>
 
             <div class="intervention-body">
@@ -191,7 +191,7 @@ function discardChanges() {
 
             <div class="intervention-logs__body">
               <div v-if="outputRecords.length === 0" class="intervention-logs__empty">
-                暂无 output records。
+                暂无输出记录。
               </div>
               <div
                 v-for="record in outputRecords"
@@ -282,9 +282,14 @@ function discardChanges() {
 }
 
 .intervention-main {
-  display: flex;
+  display: grid;
   flex: 1;
-  min-height: 0;
+  gap: 1.5rem;
+  width: min(calc(100% - 2rem), 1400px);
+  margin: 0 auto;
+  padding: 1.5rem 0;
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .intervention-state {
@@ -338,10 +343,8 @@ function discardChanges() {
 
 .intervention-editor {
   display: flex;
-  flex: 1;
   flex-direction: column;
   min-width: 0;
-  padding: 1.5rem;
 }
 
 .intervention-editor__intro {
@@ -387,6 +390,10 @@ function discardChanges() {
 }
 
 .intervention-body__lines {
+  display: grid;
+  grid-auto-rows: 1.85em;
+  align-content: start;
+  justify-items: end;
   padding: 1rem 0.75rem 1rem 0;
   border-right: 1px solid rgb(72 72 71 / 0.2);
   background: #131313;
@@ -398,8 +405,15 @@ function discardChanges() {
   user-select: none;
 }
 
+.intervention-body__lines span {
+  display: block;
+  min-width: 1ch;
+}
+
 .intervention-body textarea {
+  display: block;
   width: 100%;
+  min-height: 34rem;
   border: 0;
   padding: 1rem;
   color: #fff;
@@ -412,12 +426,9 @@ function discardChanges() {
 }
 
 .intervention-sidebar {
-  display: none;
+  display: flex;
   flex-direction: column;
-  width: 24rem;
-  padding: 1.5rem;
-  border-left: 1px solid rgb(72 72 71 / 0.2);
-  background: #131313;
+  min-width: 0;
 }
 
 .intervention-sidebar__section,
@@ -532,8 +543,35 @@ function discardChanges() {
 }
 
 @media (min-width: 1100px) {
+  .intervention-main {
+    grid-template-columns: minmax(0, 1fr) 24rem;
+  }
+
   .intervention-sidebar {
-    display: flex;
+    position: sticky;
+    top: 5.5rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .intervention-main {
+    width: min(calc(100% - 1rem), 1400px);
+    gap: 1rem;
+    padding: 1rem 0;
+  }
+
+  .intervention-header,
+  .intervention-footer {
+    padding: 1rem;
+  }
+
+  .intervention-body {
+    grid-template-columns: 2.6rem minmax(0, 1fr);
+  }
+
+  .intervention-body__lines {
+    padding-right: 0.45rem;
+    font-size: 0.72rem;
   }
 }
 </style>

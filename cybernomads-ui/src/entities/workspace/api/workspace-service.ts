@@ -3,7 +3,6 @@ import type {
   CreateTrafficWorkRequest,
   CreateWorkspaceInput,
   ListTrafficWorksResultDto,
-  ObjectBindingItem,
   TrafficWorkContextPreparationStatus,
   TrafficWorkDetailDto,
   TrafficWorkLifecycleStatus,
@@ -33,58 +32,86 @@ function mapLifecycleStatus(status: TrafficWorkLifecycleStatus): WorkspaceStatus
 }
 
 function resolveLifecycleLabel(status: TrafficWorkLifecycleStatus) {
-  if (status === 'ready') return 'Ready'
-  if (status === 'running') return 'Running'
-  if (status === 'ended') return 'Ended'
-  if (status === 'archived') return 'Archived'
-  return 'Deleted'
+  if (status === 'ready') return '已就绪'
+  if (status === 'running') return '运行中'
+  if (status === 'ended') return '已结束'
+  if (status === 'archived') return '已归档'
+  return '已删除'
+}
+
+function resolvePreparationLabel(status: TrafficWorkContextPreparationStatus) {
+  if (status === 'prepared') return '已准备'
+  if (status === 'failed') return '准备失败'
+  return '准备中'
+}
+
+function localizeTrafficWorkReason(reason?: string | null) {
+  if (!reason) {
+    return null
+  }
+
+  const knownReasons: Record<string, string> = {
+    'The current active agent service is not configured.': '当前未配置可用的 Agent 服务。',
+    'Traffic work archived.': '工作区已归档。',
+    'Traffic work deleted.': '工作区已删除。',
+    'Traffic work ended.': '工作区已结束。',
+    'Traffic work started.': '工作区已启动。',
+    'Traffic work paused.': '工作区已暂停。',
+    'Traffic work context prepared.': '工作区上下文已准备完成。',
+    'Traffic work context preparation failed.': '工作区上下文准备失败。',
+  }
+
+  return knownReasons[reason] ?? reason
 }
 
 function resolveContextBanner(status: TrafficWorkContextPreparationStatus, reason?: string | null) {
   if (status === 'prepared') return undefined
-  if (status === 'failed') return reason ?? 'Context preparation failed'
-  return 'Context preparation pending'
+  if (status === 'failed') return localizeTrafficWorkReason(reason) ?? '上下文准备失败'
+  return localizeTrafficWorkReason(reason) ?? '上下文准备中'
 }
 
 function mapTrafficWorkToWorkspace(
   dto: TrafficWorkSummaryDto | TrafficWorkDetailDto,
 ): WorkspaceRecord {
-  const objectBindings =
-    'objectBindings' in dto
-      ? dto.objectBindings
-      : Array.from({ length: dto.objectBindingCount }, (_, index): ObjectBindingItem => ({
-          objectType: 'account',
-          objectKey: `account-${index + 1}`,
-          resourceId: '',
-          resourceLabel: `Account ${index + 1}`,
-        }))
+  const objectBindings = 'objectBindings' in dto ? dto.objectBindings : undefined
+  const objectBindingCount = 'objectBindings' in dto ? dto.objectBindings.length : dto.objectBindingCount
+  const lifecycleStatusLabel = resolveLifecycleLabel(dto.lifecycleStatus)
+  const contextPreparationStatusLabel = resolvePreparationLabel(dto.contextPreparationStatus)
+  const lifecycleStatusReason =
+    'lifecycleStatusReason' in dto ? localizeTrafficWorkReason(dto.lifecycleStatusReason) : null
+  const contextPreparationStatusReason =
+    'contextPreparationStatusReason' in dto
+      ? localizeTrafficWorkReason(dto.contextPreparationStatusReason)
+      : null
 
   return {
     id: dto.trafficWorkId,
     name: dto.displayName,
     summary: `${dto.product.name} / ${dto.strategy.name}`,
     status: mapLifecycleStatus(dto.lifecycleStatus),
-    statusLabel: `${resolveLifecycleLabel(dto.lifecycleStatus)} / ${dto.contextPreparationStatus}`,
+    statusLabel: `${lifecycleStatusLabel} / ${contextPreparationStatusLabel}`,
     assetId: dto.product.productId,
     assetName: dto.product.name,
     strategyId: dto.strategy.strategyId,
     strategyName: dto.strategy.name,
-    accountIds: objectBindings.map((binding) => binding.resourceId).filter(Boolean),
+    accountIds: (objectBindings ?? []).map((binding) => binding.resourceId).filter(Boolean),
     taskIds: [],
     lastRunAt: 'lastStartedAt' in dto ? (dto.lastStartedAt ?? dto.updatedAt) : dto.updatedAt,
     nextRunAt: 'contextPreparedAt' in dto ? (dto.contextPreparedAt ?? dto.updatedAt) : dto.updatedAt,
-    assignedAgentLabels: objectBindings.map((binding) => binding.resourceLabel ?? binding.resourceId).filter(Boolean),
+    assignedAgentLabels: (objectBindings ?? []).map((binding) => binding.resourceLabel ?? binding.resourceId).filter(Boolean),
     highlightBanner: resolveContextBanner(
       dto.contextPreparationStatus,
-      'contextPreparationStatusReason' in dto ? dto.contextPreparationStatusReason : null,
+      contextPreparationStatusReason,
     ),
     themeColor: dto.lifecycleStatus === 'running' ? 'cyan' : dto.contextPreparationStatus === 'failed' ? 'red' : 'blue',
     lifecycleStatus: dto.lifecycleStatus,
-    lifecycleStatusReason: 'lifecycleStatusReason' in dto ? dto.lifecycleStatusReason : null,
+    lifecycleStatusLabel,
+    lifecycleStatusReason,
     contextPreparationStatus: dto.contextPreparationStatus,
-    contextPreparationStatusReason: 'contextPreparationStatusReason' in dto ? dto.contextPreparationStatusReason : null,
+    contextPreparationStatusLabel,
+    contextPreparationStatusReason,
+    objectBindingCount,
     objectBindings,
-    parameterBindings: 'parameterBindings' in dto ? dto.parameterBindings : [],
     createdAt: 'createdAt' in dto ? dto.createdAt : dto.updatedAt,
     updatedAt: dto.updatedAt,
   }
@@ -95,13 +122,7 @@ function mapCreateWorkspaceInput(input: CreateWorkspaceInput): CreateTrafficWork
     displayName: input.name,
     productId: input.assetId,
     strategyId: input.strategyId,
-    objectBindings: input.accountIds.map((accountId, index) => ({
-      objectType: 'account',
-      objectKey: index === 0 ? 'primary-account' : `account-${index + 1}`,
-      resourceId: accountId,
-      resourceLabel: `Account ${index + 1}`,
-    })),
-    parameterBindings: input.parameterBindings,
+    objectBindings: input.objectBindings,
   }
 }
 

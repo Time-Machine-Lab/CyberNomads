@@ -7,7 +7,7 @@ import { listStrategies } from '@/entities/strategy/api/strategy-service'
 import { listWorkspaces } from '@/entities/workspace/api/workspace-service'
 import type { AssetRecord } from '@/entities/asset/model/types'
 import type { StrategyRecord } from '@/entities/strategy/model/types'
-import type { WorkspaceRecord } from '@/entities/workspace/model/types'
+import type { ObjectBindingItem, WorkspaceRecord } from '@/entities/workspace/model/types'
 
 const workspaces = ref<WorkspaceRecord[]>([])
 const assets = ref<AssetRecord[]>([])
@@ -53,6 +53,26 @@ function resolveStatusTone(workspace: WorkspaceRecord) {
   if (workspace.status === 'running') return 'running'
   if (workspace.status === 'attention') return 'completed'
   return 'idle'
+}
+
+function resolveObjectBindingGlyph(binding: ObjectBindingItem) {
+  const normalizedType = binding.objectType.trim()
+
+  if (normalizedType.includes('账号')) return 'person'
+  if (normalizedType.includes('产品')) return 'inventory_2'
+  if (normalizedType.includes('策略')) return 'strategy'
+  if (normalizedType.includes('素材')) return 'perm_media'
+  if (normalizedType.includes('人设')) return 'badge'
+  return 'deployed_code'
+}
+
+function resolveObjectBindingTitle(binding: ObjectBindingItem) {
+  return binding.resourceLabel?.trim() || binding.objectKey.trim() || '未命名对象'
+}
+
+function resolveObjectBindingMeta(binding: ObjectBindingItem) {
+  const segments = [binding.objectType.trim(), binding.objectKey.trim()].filter(Boolean)
+  return segments.join(' · ') || '对象绑定'
 }
 
 function openWorkspaceRuntime(workspaceId: string) {
@@ -135,14 +155,60 @@ function openWorkspaceEditor(workspaceId: string) {
               </div>
 
               <div class="workspace-card__agents">
-                <div class="workspace-card__meta-label">
-                  <span class="material-symbols-outlined">deployed_code</span>
-                  <p>对象绑定</p>
-                </div>
-                <div class="workspace-card__agent-list">
-                  <span v-for="label in workspace.assignedAgentLabels?.length ? workspace.assignedAgentLabels : ['待后续补充']" :key="`${workspace.id}-${label}`">
-                    {{ label }}
+                <div class="workspace-card__agents-header">
+                  <div class="workspace-card__meta-label">
+                    <span class="material-symbols-outlined">deployed_code</span>
+                    <p>对象绑定</p>
+                  </div>
+                  <span class="workspace-card__agents-count">
+                    {{ workspace.objectBindingCount ?? workspace.objectBindings?.length ?? 0 }}
                   </span>
+                </div>
+
+                <div v-if="workspace.objectBindings?.length" class="workspace-card__binding-list">
+                  <div
+                    v-for="binding in workspace.objectBindings.slice(0, 3)"
+                    :key="`${workspace.id}-${binding.objectType}-${binding.objectKey}-${binding.resourceId}`"
+                    class="workspace-card__binding"
+                  >
+                    <div class="workspace-card__binding-icon">
+                      <span class="material-symbols-outlined">{{ resolveObjectBindingGlyph(binding) }}</span>
+                    </div>
+                    <div class="workspace-card__binding-content">
+                      <strong>{{ resolveObjectBindingTitle(binding) }}</strong>
+                      <span>{{ resolveObjectBindingMeta(binding) }}</span>
+                    </div>
+                  </div>
+
+                  <div v-if="workspace.objectBindings.length > 3" class="workspace-card__binding workspace-card__binding--more">
+                    <div class="workspace-card__binding-icon">
+                      <span class="material-symbols-outlined">more_horiz</span>
+                    </div>
+                    <div class="workspace-card__binding-content">
+                      <strong>还有 {{ workspace.objectBindings.length - 3 }} 项对象绑定</strong>
+                      <span>进入工作区后可继续查看和维护</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else-if="workspace.objectBindingCount" class="workspace-card__binding-empty">
+                  <div class="workspace-card__binding-empty-icon">
+                    <span class="material-symbols-outlined">deployed_code</span>
+                  </div>
+                  <div>
+                    <strong>已绑定 {{ workspace.objectBindingCount }} 项对象</strong>
+                    <p>列表接口当前只返回数量摘要，进入工作区详情后可查看完整对象绑定内容。</p>
+                  </div>
+                </div>
+
+                <div v-else class="workspace-card__binding-empty">
+                  <div class="workspace-card__binding-empty-icon">
+                    <span class="material-symbols-outlined">schedule</span>
+                  </div>
+                  <div>
+                    <strong>暂未配置对象绑定</strong>
+                    <p>当前阶段只创建了资产与策略，后续执行阶段再补充绑定对象。</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -659,23 +725,118 @@ function openWorkspaceEditor(workspaceId: string) {
   margin-top: auto;
 }
 
-.workspace-card__agent-list {
+.workspace-card__agents-header {
   display: flex;
-  gap: 0.5rem;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 
-.workspace-card__agent-list span {
+.workspace-card__agents-count {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  background: #262626;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  border-radius: 0.35rem;
+  min-width: 1.7rem;
+  height: 1.45rem;
+  padding: 0 0.5rem;
+  color: var(--cn-on-surface-muted);
+  background: rgb(255 255 255 / 0.05);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 999px;
   font-family: var(--cn-font-mono);
+  font-size: 0.68rem;
+}
+
+.workspace-card__binding-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.workspace-card__binding {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.75rem 0.8rem;
+  background: rgb(26 26 26 / 0.55);
+  border: 1px solid rgb(255 255 255 / 0.06);
+  border-radius: 0.75rem;
+}
+
+.workspace-card__binding-icon,
+.workspace-card__binding-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  color: var(--cn-on-surface-muted);
+  background: rgb(255 255 255 / 0.05);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 0.6rem;
+}
+
+.workspace-card__binding-icon span,
+.workspace-card__binding-empty-icon span {
+  font-size: 0.95rem;
+}
+
+.workspace-card__binding-content {
+  min-width: 0;
+}
+
+.workspace-card__binding-content strong,
+.workspace-card__binding-content span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-card__binding-content strong {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.workspace-card__binding-content span {
+  margin-top: 0.18rem;
+  color: var(--cn-on-surface-muted);
   font-size: 0.72rem;
+}
+
+.workspace-card__binding--more {
+  border-style: dashed;
+}
+
+.workspace-card__binding-empty {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+  min-height: 5.2rem;
+  padding: 0.9rem;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.02), rgb(255 255 255 / 0.01));
+  border: 1px dashed rgb(255 255 255 / 0.12);
+  border-radius: 0.85rem;
+}
+
+.workspace-card__binding-empty strong,
+.workspace-card__binding-empty p {
+  margin: 0;
+}
+
+.workspace-card__binding-empty strong {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.workspace-card__binding-empty p {
+  margin-top: 0.25rem;
+  color: var(--cn-on-surface-muted);
+  font-size: 0.76rem;
+  line-height: 1.6;
 }
 
 .workspace-card__banner {

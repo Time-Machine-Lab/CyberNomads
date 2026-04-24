@@ -264,7 +264,7 @@ describe('frontend product-domain workflows', () => {
     expect(wrapper.findAll('.account-card')).toHaveLength(0)
     expect(wrapper.findAll('.create-step--accounts')).toHaveLength(0)
 
-    const submitButton = wrapper.get('.create-main__submit--header')
+    const submitButton = wrapper.get('.create-main__submit')
     expect(submitButton.attributes('disabled')).toBeUndefined()
     await submitButton.trigger('click')
     await flushPromises()
@@ -279,7 +279,20 @@ describe('frontend product-domain workflows', () => {
       displayName: 'Product · Growth Strategy',
       productId: productSummary.productId,
       strategyId: strategySummary.strategyId,
-      objectBindings: [],
+      objectBindings: [
+        {
+          objectType: '账号',
+          objectKey: '账号A',
+          resourceId: 'CyberNomads',
+          resourceLabel: 'CyberNomads',
+        },
+        {
+          objectType: '风控时间',
+          objectKey: '冷却时长',
+          resourceId: '5秒',
+          resourceLabel: '5秒',
+        },
+      ],
     })
   })
 
@@ -293,7 +306,7 @@ describe('frontend product-domain workflows', () => {
 
     expect(wrapper.text()).toContain('编辑工作区')
 
-    const submitButton = wrapper.get('.create-main__submit--header')
+    const submitButton = wrapper.get('.create-main__submit')
     expect(submitButton.attributes('disabled')).toBeUndefined()
     await submitButton.trigger('click')
     await flushPromises()
@@ -317,7 +330,7 @@ describe('frontend product-domain workflows', () => {
 
     expect(wrapper.text()).toContain(taskSummary.name)
     expect(wrapper.text()).toContain('工作状态概览')
-    expect(wrapper.text()).toContain('prepared')
+    expect(wrapper.text()).toContain('已准备')
     expect(wrapper.text()).not.toContain('CAPTCHA detected')
     expect(wrapper.text()).not.toContain('实时执行日志')
   })

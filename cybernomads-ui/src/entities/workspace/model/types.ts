@@ -11,14 +11,6 @@ export interface ObjectBindingItem {
   resourceLabel?: string | null
 }
 
-export type StrategyParameterBindingType = string
-
-export interface StrategyParameterBinding {
-  type: StrategyParameterBindingType
-  key: string
-  value: string
-}
-
 export interface TrafficWorkBindingSummary {
   productId?: string
   strategyId?: string
@@ -42,7 +34,6 @@ export interface TrafficWorkDetailDto {
   product: { productId: string; name: string }
   strategy: { strategyId: string; name: string }
   objectBindings: ObjectBindingItem[]
-  parameterBindings: StrategyParameterBinding[]
   lifecycleStatus: TrafficWorkLifecycleStatus
   lifecycleStatusReason?: string | null
   contextPreparationStatus: TrafficWorkContextPreparationStatus
@@ -65,7 +56,6 @@ export interface CreateTrafficWorkRequest {
   productId: string
   strategyId: string
   objectBindings: ObjectBindingItem[]
-  parameterBindings: StrategyParameterBinding[]
 }
 
 export type UpdateTrafficWorkRequest = CreateTrafficWorkRequest
@@ -88,11 +78,13 @@ export interface WorkspaceRecord {
   highlightBanner?: string
   themeColor?: 'cyan' | 'lime' | 'blue' | 'red'
   lifecycleStatus?: TrafficWorkLifecycleStatus
+  lifecycleStatusLabel?: string
   lifecycleStatusReason?: string | null
   contextPreparationStatus?: TrafficWorkContextPreparationStatus
+  contextPreparationStatusLabel?: string
   contextPreparationStatusReason?: string | null
+  objectBindingCount?: number
   objectBindings?: ObjectBindingItem[]
-  parameterBindings?: StrategyParameterBinding[]
   createdAt?: string
   updatedAt?: string
 }
@@ -102,8 +94,7 @@ export interface CreateWorkspaceInput {
   summary: string
   assetId: string
   strategyId: string
-  accountIds: string[]
-  parameterBindings: StrategyParameterBinding[]
+  objectBindings: ObjectBindingItem[]
 }
 
 export interface WorkspaceExecutionView {

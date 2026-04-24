@@ -29,12 +29,12 @@ describe('strategy mappers', () => {
       name: '详情策略',
       summary: '',
       tags: ['详情'],
-      contentMarkdown: '# 详情策略\n\n使用 {{string:title="默认标题"}}',
+      contentMarkdown: '# 详情策略\n\n使用 {{账号:账号A="默认账号"}}',
       placeholders: [
         {
-          type: 'string',
-          key: 'title',
-          defaultValue: '默认标题',
+          type: '账号',
+          key: '账号A',
+          defaultValue: '默认账号',
         },
       ],
       createdAt: '2026-04-20T08:00:00.000Z',
@@ -42,27 +42,27 @@ describe('strategy mappers', () => {
     })
 
     expect(record.id).toBe('strategy-detail')
-    expect(record.placeholders[0]?.declaration).toBe('{{string:title="默认标题"}}')
+    expect(record.placeholders[0]?.declaration).toBe('{{账号:账号A="默认账号"}}')
     expect(record.summary).toBeTruthy()
   })
 
   it('parses placeholders from markdown', () => {
     const placeholders = parseStrategyPlaceholdersFromMarkdown(
-      '# 测试\n\n{{string:title="默认标题"}}\n{{int:max_retry=3}}\n',
+      '# 测试\n\n{{账号:账号A="默认账号"}}\n{{风控时间:冷却时长="5秒"}}\n',
     )
 
     expect(placeholders).toEqual([
       {
-        type: 'string',
-        key: 'title',
-        defaultValue: '默认标题',
+        type: '账号',
+        key: '账号A',
+        defaultValue: '默认账号',
       },
       {
-        type: 'int',
-        key: 'max_retry',
-        defaultValue: 3,
+        type: '风控时间',
+        key: '冷却时长',
+        defaultValue: '5秒',
       },
     ])
-    expect(buildPlaceholderDeclaration(placeholders[0]!)).toBe('{{string:title="默认标题"}}')
+    expect(buildPlaceholderDeclaration(placeholders[0]!)).toBe('{{账号:账号A="默认账号"}}')
   })
 })

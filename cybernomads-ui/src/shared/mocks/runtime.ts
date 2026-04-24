@@ -1130,14 +1130,15 @@ export function createWorkspaceData(input: CreateWorkspaceInput) {
     statusLabel: '运行中',
     assetId: input.assetId,
     strategyId: input.strategyId,
-    accountIds: input.accountIds,
+    accountIds: input.objectBindings.map((binding) => binding.resourceId),
     taskIds: tasks.map((task) => task.id),
     lastRunAt: nowIso(),
     nextRunAt: nowIso(),
     assignedAgentLabels: ['N', 'A', 'V'],
     themeColor: 'cyan',
     highlightBanner: `${asset?.name ?? '新资产'} · ${strategy?.name ?? '新策略'}`,
-    parameterBindings: input.parameterBindings,
+    objectBindingCount: input.objectBindings.length,
+    objectBindings: input.objectBindings,
   }
 
   database.workspaces.unshift(workspace)
