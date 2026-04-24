@@ -1,25 +1,45 @@
-# 受控工具
+# 受控工具与接口
 
-## 允许的持久化边界
+## 优先使用的受控入口
 
-只能通过 Cybernomads 受控 API/工具持久化任务集：
+当前任务拆分阶段优先使用以下受控入口：
 
-- 为引流工作创建当前任务集：`POST /api/traffic-works/{trafficWorkId}/task-set`
-- 为引流工作替换当前任务集：`PUT /api/traffic-works/{trafficWorkId}/task-set`
+- 复制运行时 Agent 资源  
+  `POST /api/task-decomposition-support-tools/runtime-resource-copy`
 
-首次引流工作拆分后使用创建接口。引流工作更新并重新拆分后使用替换接口。
+- 批量保存任务集  
+  `POST /api/task-decomposition-support-tools/batch-save-tasks`
+
+## 批量保存模式
+
+- 首次创建引流工作后的任务拆分：`mode = "create"`
+- 引流工作更新后的任务重建：`mode = "replace"`
+
+## 兼容入口
+
+如果当前环境没有暴露专门的任务拆分支撑工具入口，而是只暴露任务模块 API，则可以使用：
+
+- `POST /api/traffic-works/{trafficWorkId}/task-set`
+- `PUT /api/traffic-works/{trafficWorkId}/task-set`
+
+但无论走哪种入口，都必须遵守同一条原则：整批成功或整批失败，不允许你直接编辑数据库。
+
+## 资源复制规则
+
+- 只能从 Cybernomads 全局 `agent/skills/` 或 `agent/knowledge/` 复制到当前引流工作目录。
+- Skill 复制到当前工作 `skills/`
+- Knowledge 复制到当前工作 `knowledge/`
+- 不要把资源复制到工作目录之外
+
+## 保存规则
+
+- 一次提交完整任务集
+- 失败时要关注返回的字段级错误原因
+- 不要忽略校验错误继续声称“任务拆分完成”
 
 ## 禁止事项
 
-- 不要直接编辑数据库文件或运行时元数据存储。
-- 不要通过临时脚本写入任务记录。
-- 不要让 Agent 或 subagent 绕过任务模块。
-- 不要从本 Skill 修改引流工作生命周期状态。
-
-## 持久化检查清单
-
-- 确认任务集只归属于一个 `trafficWorkId`。
-- 确认每个任务都有 `taskKey`、`name`、`instruction`、`condition`、`inputNeeds` 和 `contextRef`。
-- 确认每个 `relyOnTaskKey` 都指向同一请求内的另一个任务。
-- 用一次受控请求提交完整任务集。
-- 将持久化错误视为任务准备失败反馈给调用方。
+- 不要直接编辑数据库文件
+- 不要使用临时脚本绕过任务模块写任务记录
+- 不要在本 Skill 中修改引流工作生命周期状态
+- 不要把路径越界请求包装成“资源复制”

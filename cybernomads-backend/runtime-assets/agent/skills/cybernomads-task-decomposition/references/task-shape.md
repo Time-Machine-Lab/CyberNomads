@@ -1,31 +1,31 @@
-# 任务形状
+# 任务输出契约
 
-## 输出契约
+## 最终输出形状
 
-返回可被 Cybernomads 任务集创建或替换 API 接收的请求体：
+任务拆分的最终结构要能被 Cybernomads 受控任务保存入口接收：
 
 ```json
 {
   "source": {
     "kind": "agent-decomposition",
     "requestId": "optional-request-id",
-    "description": "short source summary"
+    "description": "本次拆分的简短说明"
   },
   "tasks": [
     {
       "taskKey": "search-candidate-videos",
       "name": "搜索候选视频",
-      "instruction": "目标、步骤、可用上下文、预期数据和完成标准。",
-      "documentRef": "optional-task-doc-ref",
-      "contextRef": "work/<traffic-work-id>/task/search-candidate-videos",
+      "instruction": "目标、步骤、使用资源、预期产出和完成标准。",
+      "documentRef": "task-search-candidate-videos.md",
+      "contextRef": "work/<trafficWorkId>/skills/bilibili-web-api",
       "condition": {
-        "cron": null,
+        "cron": "0 */6 * * *",
         "relyOnTaskKeys": []
       },
       "inputNeeds": [
         {
           "name": "strategy-context",
-          "description": "用于判断相关性的策略与产品定位。",
+          "description": "用于判断视频相关性的策略与产品定位。",
           "source": "traffic-work-context"
         }
       ]
@@ -34,27 +34,41 @@
 }
 ```
 
-## 必填字段
+## 字段规则
 
-- `taskKey`：在本次请求内稳定。使用小写短横线命名，不要依赖展示名称。
-- `name`：简短的人类可读任务名称。
-- `instruction`：面向 Agent 的执行说明。包含目标、步骤、要加载的工具或资产、预期产出和完成标准。
-- `documentRef`：可选的任务说明文档引用。
-- `contextRef`：后续执行 Agent 可加载的上下文资产引用。
-- `condition.cron`：时间条件；如果不是定时任务则为 `null`。
-- `condition.relyOnTaskKeys`：执行前需要考虑的上游任务键。
-- `inputNeeds`：执行 Agent 工作前必须加载的数据。每项必须包含 `name`、`description` 和 `source`。
+- `taskKey`
+  - 必填
+  - 使用稳定英文短横线命名
+  - 在同一次任务集请求内必须唯一
+- `name`
+  - 必填
+  - 使用中文可读任务名
+- `instruction`
+  - 必填
+  - 必须能指导后续 subagent 独立执行
+- `documentRef`
+  - 建议填写
+  - 必须落在当前引流工作目录内
+- `contextRef`
+  - 必填
+  - 表达后续执行时应优先加载的上下文入口
+- `condition.cron`
+  - 不需要定时时写 `null`
+- `condition.relyOnTaskKeys`
+  - 不依赖上游任务时写空数组
+- `inputNeeds`
+  - 必填数组
+  - 每一项都要明确名称、说明和来源
 
-## 协作规则
+## 元数据质量要求
 
-- 用 `condition.relyOnTaskKeys` 表达执行顺序。
-- 用 `inputNeeds` 表达数据依赖语义。
-- 如果下游任务消费上游产出，必须同时声明上游依赖和输入需求。
-- 将产出指导写在 `instruction` 中；不要定义一个覆盖所有任务的通用产出数据 schema。
+- 每个任务必须有稳定英文 `taskKey`
+- 每个任务必须有任务文档引用或明确的文档计划
+- 每个任务必须能看出输入、过程、产出和完成标准
+- 每个任务必须能解释为什么它要独立存在
 
-## 任务质量
+## 依赖映射规则
 
-- 优先拆成只有一个清晰结果的原子任务。
-- 每个任务都应有可控上下文，便于后续 subagent 执行。
-- 避免“运行整个策略”这类过宽任务；应拆成搜索、评估、草拟、发布或请求、观察、跟进等任务。
-- 不要写入调度算法、重试策略、provider 协议或平台自动化实现细节。
+- `relyOnTaskKeys` 只能引用本次请求内已经声明的任务键。
+- 不要引用不存在的任务键。
+- 不要只写自然语言“依赖上游任务”，而不写结构化依赖。

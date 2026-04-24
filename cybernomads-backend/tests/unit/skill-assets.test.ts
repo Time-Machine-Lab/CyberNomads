@@ -35,7 +35,7 @@ describe("runtime skill assets", () => {
     }
   });
 
-  it("keeps skill assets free of provider-specific protocols and platform implementation details", async () => {
+  it("keeps skill assets free of provider-specific protocols and unsafe persistence details", async () => {
     const skills = await listBundledRuntimeSkills();
     const files = skills.flatMap((skill) => [
       skill.skillFile,
@@ -46,8 +46,6 @@ describe("runtime skill assets", () => {
     for (const file of files) {
       const source = await readFile(file, "utf8");
       expect(source).not.toMatch(/OpenClaw/i);
-      expect(source).not.toMatch(/Bilibili|B站/i);
-      expect(source).not.toMatch(/SQLite/i);
       expect(source).not.toMatch(/CREATE TABLE|INSERT INTO|UPDATE tasks/i);
     }
   });

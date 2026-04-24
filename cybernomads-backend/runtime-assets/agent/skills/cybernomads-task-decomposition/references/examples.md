@@ -1,47 +1,62 @@
-# 示例
+# 真实样例
 
-## 示例 1：搜索候选视频
+## 样例：AI 产品广撒网宣传工作（B 站首期）
 
-任务：
+这是一个真实风格的前向检查样例，用来校准任务拆分是否足够落地。
+
+### 输入背景
+
+- 引流工作名称：`AI产品广撒网宣传工作`
+- 产品方向：一个面向普通创作者的 AI 效率产品
+- 策略方向：先通过 B 站搜索相关热门内容广撒网曝光，再对潜在互动用户进行评论和私信跟进
+- 目标平台：B 站
+- 可用对象：评论账号、私信账号、产品介绍素材
+
+### 资源识别结果
+
+应该复制的全局 Skill：
+
+- `cybernomads-task-execution`
+- `bilibili-web-api`
+
+应该准备的共享知识：
+
+- 产品卖点摘要
+- 评论语气约束
+- 私信跟进边界说明
+
+### 任务拆分示例
+
+#### 任务 1：搜索候选视频
 
 - `taskKey`: `search-candidate-videos`
 - `name`: `搜索候选视频`
-- `condition`: `{ "cron": "0 */6 * * *", "relyOnTaskKeys": [] }`
-- `inputNeeds`: 产品定位、目标受众、策略关键词
-- `instruction`: 搜索与产品和策略匹配的近期候选视频，将候选元数据保存到任务数据区域，并为下游任务提供产出说明。
+- `cron`: `0 */6 * * *`
+- `relyOnTaskKeys`: `[]`
+- 主要产出：`data/search-candidate-videos.json`
 
-预期产出指导：
-
-- 候选视频列表产物。
-- 产出记录描述：`候选视频列表`。
-- 数据位置：任务数据区域路径或产物引用。
-
-## 示例 2：寻找潜客并评论
-
-任务：
+#### 任务 2：筛选潜客并评论
 
 - `taskKey`: `comment-on-prospects`
-- `name`: `寻找潜客并评论`
-- `condition`: `{ "cron": null, "relyOnTaskKeys": ["search-candidate-videos"] }`
-- `inputNeeds`: 来自 `search-candidate-videos` 的候选视频列表、品牌语气、评论约束
-- `instruction`: 加载候选视频，选择相关潜客，撰写上下文化评论，只执行允许的评论动作，保存评论结果，并记录产出数据。
+- `name`: `筛选潜客并评论`
+- `cron`: `null`
+- `relyOnTaskKeys`: `["search-candidate-videos"]`
+- 输入来源：候选视频列表、评论语气规则、产品摘要
+- 主要产出：`data/comment-on-prospects.json`
 
-重要协作：
-
-- 依赖条件指向 `search-candidate-videos`。
-- 输入需求说明候选数据来自上游产出记录或任务数据区域。
-
-## 示例 3：私信跟进
-
-任务：
+#### 任务 3：私信跟进
 
 - `taskKey`: `private-message-follow-up`
 - `name`: `私信跟进`
-- `condition`: `{ "cron": "0 10 * * *", "relyOnTaskKeys": ["comment-on-prospects"] }`
-- `inputNeeds`: 评论后互动或合格的潜客、私信模板指导、产品行动号召
-- `instruction`: 加载合格潜客，撰写简短跟进私信，只通过允许的工具发送，保存跟进结果，并创建产出记录。
+- `cron`: `0 */1 * * *`
+- `relyOnTaskKeys`: `["comment-on-prospects"]`
+- 输入来源：评论互动结果、可联系对象、私信边界规则
+- 主要产出：`data/private-message-follow-up.json`
 
-边界：
+### 收口检查
 
-- 任务可以引用平台能力工具，但不要定义工具实现。
-- 任务不拥有统一的私信数据 schema。
+- 每个任务都能独立交给一个 subagent
+- 上游依赖和下游输入都已声明
+- 资源复制目标明确
+- 数据文件位置明确
+- 本样例应通过受控批量保存入口，首次创建使用 `mode = "create"`
