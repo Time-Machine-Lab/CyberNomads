@@ -10,7 +10,7 @@ describe("strategy placeholder parser", () => {
     const placeholders = parseStrategyPlaceholders(`
 产品：{{产品:产品名="CyberNomads"}}
 账号：{{账号:账号A="123456"}}
-旧整数：{{int:max_retry=3}}
+风控时间：{{风控时间:等待时长="5秒"}}
 重复账号：{{账号:账号A="123456"}}
 `);
 
@@ -26,9 +26,9 @@ describe("strategy placeholder parser", () => {
         defaultValue: "123456",
       },
       {
-        type: "int",
-        key: "max_retry",
-        defaultValue: "3",
+        type: "风控时间",
+        key: "等待时长",
+        defaultValue: "5秒",
       },
     ]);
 

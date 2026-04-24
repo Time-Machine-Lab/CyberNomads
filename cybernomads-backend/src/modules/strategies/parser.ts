@@ -155,10 +155,6 @@ function parseStrategyPlaceholderDefaultValue(
 
     return parsedDefaultValue;
   } catch {
-    if (/^-?\d+$/.test(rawDefaultValue)) {
-      return rawDefaultValue;
-    }
-
     throw new StrategyValidationError(
       `Strategy placeholder must use a quoted string default value: ${raw}`,
     );
@@ -166,10 +162,7 @@ function parseStrategyPlaceholderDefaultValue(
 }
 
 function isValidPlaceholderSegment(value: string): boolean {
-  return (
-    value.length > 0 &&
-    !/[\s{}=:"']/.test(value)
-  );
+  return value.length > 0 && !/[\s{}=:"']/.test(value);
 }
 
 function buildPlaceholderIdentity(placeholder: StrategyPlaceholder): string {

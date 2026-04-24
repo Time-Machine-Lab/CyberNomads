@@ -5,7 +5,8 @@ info:
   description: >
     策略模块首版 API 契约。当前阶段只提供创建、更新、列表、详情能力；
     策略详情返回完整 Markdown 正文、标签以及从正文解析得到的占位符信息，
-    不提供独立的快照插入接口。
+    不提供独立的快照插入接口。对象引用当前统一使用正文内联契约
+    `{{type:name="value"}}`。
   summary: 策略模块 MVP 对外契约
 
 tags:
@@ -224,9 +225,9 @@ components:
     StrategyPlaceholder:
       type: object
       description: >
-        从策略正文解析得到的参数占位符声明。
-        当前契约固定正文规范语法为 `{{string:title="默认标题"}}`、
-        `{{string:cta_text=""}}` 或 `{{int:max_retry=3}}`。
+        从策略正文解析得到的对象引用占位符声明。
+        当前契约固定正文规范语法为 `{{type:name="value"}}`，
+        例如 `{{账号:对象1=""}}` 或 `{{时间:发布时间="18:30"}}`。
       required:
         - type
         - key
@@ -234,20 +235,14 @@ components:
       properties:
         type:
           type: string
-          enum:
-            - string
-            - int
-          description: 参数占位符类型。当前仅支持 `string` 与 `int`
+          description: 对象引用类型。当前为开放字符串，不限制固定枚举，支持中文类型名。
         key:
           type: string
-          description: 参数稳定键，用于标识正文中的可填写字段
+          description: 对象引用稳定名称，用于标识正文中的可填写字段或槽位
         defaultValue:
-          oneOf:
-            - type: string
-            - type: integer
+          type: string
           description: >
-            参数默认值。`string` 类型必须提供字符串默认值，可为空字符串；
-            `int` 类型必须提供整数默认值。
+            对象引用默认值。当前统一为字符串字面量，可为空字符串。
 
     StrategyDetail:
       type: object
@@ -289,7 +284,7 @@ components:
         placeholders:
           type: array
           description: >
-            从正文解析得到的参数占位符声明集合。
+            从正文解析得到的对象引用占位符声明集合。
             当前阶段仅返回 `type`、`key` 和 `defaultValue`，
             不返回位置信息，也不返回运行时填充值。
           items:

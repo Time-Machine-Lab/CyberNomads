@@ -23,6 +23,12 @@ interface MarkdownPlaceholderMatch {
   end: number
 }
 
+interface StrategyPlaceholderPreviewItem extends StrategyPlaceholderRecord {
+  instanceId: string
+  start: number
+  end: number
+}
+
 interface StrategyImportBlockMatch {
   sourceId: string
   title: string
@@ -99,24 +105,21 @@ const filteredCatalog = computed(() => {
   })
 })
 
-const placeholderPreview = computed<StrategyPlaceholderRecord[]>(() => {
-  const deduplicated = new Map<string, StrategyPlaceholderRecord>()
-
-  for (const placeholder of placeholderMatches.value) {
-    deduplicated.set(buildPlaceholderIdentity(placeholder), {
-      type: placeholder.type,
-      key: placeholder.key,
-      defaultValue: placeholder.defaultValue,
-      displayDefaultValue: placeholder.displayDefaultValue,
-      declaration: placeholder.declaration,
-    })
-  }
-
-  return [...deduplicated.values()]
-})
+const placeholderPreview = computed<StrategyPlaceholderPreviewItem[]>(() =>
+  placeholderMatches.value.map((placeholder) => ({
+    instanceId: buildPlaceholderInstanceId(placeholder),
+    type: placeholder.type,
+    key: placeholder.key,
+    defaultValue: placeholder.defaultValue,
+    displayDefaultValue: placeholder.displayDefaultValue,
+    declaration: placeholder.declaration,
+    start: placeholder.start,
+    end: placeholder.end,
+  })),
+)
 
 const activePlaceholderRecord = computed(() =>
-  placeholderPreview.value.find((placeholder) => buildPlaceholderIdentity(placeholder) === activePlaceholderKey.value) ?? null,
+  placeholderPreview.value.find((placeholder) => placeholder.instanceId === activePlaceholderKey.value) ?? null,
 )
 
 let editorView: EditorView | null = null
@@ -222,7 +225,7 @@ class PlaceholderWidget extends WidgetType {
     const token = document.createElement('button')
     token.type = 'button'
     token.className = 'strategy-reference-chip'
-    token.dataset.placeholderKey = buildPlaceholderIdentity(this.placeholder)
+    token.dataset.placeholderKey = buildPlaceholderInstanceId(this.placeholder)
 
     const visual = resolvePlaceholderVisual(this.placeholder.type)
     token.style.setProperty('--strategy-placeholder-accent', visual.accent)
@@ -407,7 +410,7 @@ function applyStrategy(detail: StrategyDetailRecord | null) {
   form.tagsText = detail?.tags.join(', ') ?? ''
   tagDraft.value = ''
   isTagInputVisible.value = false
-  activePlaceholderKey.value = detail?.placeholders[0] ? buildPlaceholderIdentity(detail.placeholders[0]) : ''
+  activePlaceholderKey.value = ''
   isPlaceholderDialogOpen.value = false
   placeholderDraftType.value = ''
   placeholderDraftKey.value = ''
@@ -482,13 +485,13 @@ function handleRemoveTag(tagToRemove: string) {
 }
 
 function openPlaceholderDialog(key: string) {
-  const placeholder = placeholderPreview.value.find((item) => buildPlaceholderIdentity(item) === key)
+  const placeholder = placeholderPreview.value.find((item) => item.instanceId === key)
 
   if (!placeholder) {
     return
   }
 
-  activePlaceholderKey.value = buildPlaceholderIdentity(placeholder)
+  activePlaceholderKey.value = placeholder.instanceId
   placeholderDraftType.value = placeholder.type
   placeholderDraftKey.value = placeholder.key
   placeholderDraftValue.value = placeholder.displayDefaultValue
@@ -509,17 +512,20 @@ function serializePlaceholderValue(value: string) {
   return JSON.stringify(value)
 }
 
-function updatePlaceholderRecord(placeholder: StrategyPlaceholderRecord, nextType: string, nextKey: string, nextValue: string) {
+function updatePlaceholderRecord(placeholder: StrategyPlaceholderPreviewItem, nextType: string, nextKey: string, nextValue: string) {
   const normalizedType = normalizePlaceholderSegment(nextType, '对象')
   const normalizedKey = normalizePlaceholderSegment(nextKey, '字段')
   const nextDeclaration = `{{${normalizedType}:${normalizedKey}=${serializePlaceholderValue(nextValue)}}}`
-  const matcher = new RegExp(
-    String.raw`\{\{\s*${placeholder.type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s*:\s*${placeholder.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s*=\s*("(?:[^"\\]|\\.)*"|-?\d+)\s*\}\}`,
-    'g',
-  )
 
-  form.markdown = form.markdown.replace(matcher, nextDeclaration)
-  activePlaceholderKey.value = `${normalizedType}:${normalizedKey}`
+  form.markdown = [
+    form.markdown.slice(0, placeholder.start),
+    nextDeclaration,
+    form.markdown.slice(placeholder.end),
+  ].join('')
+  activePlaceholderKey.value = buildPlaceholderInstanceId({
+    start: placeholder.start,
+    end: placeholder.start + nextDeclaration.length,
+  })
 }
 
 function closePlaceholderDialog() {
@@ -720,16 +726,34 @@ async function handleInsertHeading() {
   await insertTextAtCursor('## 新章节')
 }
 
+function resolveNextPlaceholderNumber() {
+  let maxValue = 0
+
+  for (const placeholder of placeholderPreview.value) {
+    const matched = /^对象(\d+)$/.exec(placeholder.key.trim())
+
+    if (!matched) {
+      continue
+    }
+
+    maxValue = Math.max(maxValue, Number(matched[1]))
+  }
+
+  return maxValue + 1
+}
+
 async function handleInsertPlaceholder() {
+  const nextNumber = resolveNextPlaceholderNumber()
+
   await insertInlineTextAtCursor(buildPlaceholderDeclaration({
-    type: '账号',
-    key: '账号A',
-    defaultValue: '123456',
+    type: '对象',
+    key: `对象${nextNumber}`,
+    defaultValue: '',
   }))
 }
 
-function buildPlaceholderIdentity(placeholder: Pick<StrategyPlaceholderRecord, 'type' | 'key'>) {
-  return `${placeholder.type}:${placeholder.key}`
+function buildPlaceholderInstanceId(placeholder: Pick<MarkdownPlaceholderMatch, 'start' | 'end'>) {
+  return `${placeholder.start}:${placeholder.end}`
 }
 
 const PLACEHOLDER_VISUALS = [
@@ -742,9 +766,10 @@ const PLACEHOLDER_VISUALS = [
 ] as const
 
 function resolvePlaceholderVisual(type: string) {
+  const normalizedType = type.trim() || '对象'
   let hash = 0
 
-  for (const character of type) {
+  for (const character of normalizedType) {
     hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0
   }
 
@@ -950,16 +975,16 @@ function resolvePlaceholderGlyph(type: string) {
         <div class="strategy-objects__list">
           <button
             v-for="placeholder in placeholderPreview"
-            :key="buildPlaceholderIdentity(placeholder)"
+            :key="placeholder.instanceId"
             type="button"
             class="strategy-object"
-            :class="{ 'strategy-object--active': activePlaceholderKey === buildPlaceholderIdentity(placeholder) }"
+            :class="{ 'strategy-object--active': activePlaceholderKey === placeholder.instanceId }"
             :style="{
               '--strategy-placeholder-accent': resolvePlaceholderVisual(placeholder.type).accent,
               '--strategy-placeholder-border': resolvePlaceholderVisual(placeholder.type).border,
               '--strategy-placeholder-background': resolvePlaceholderVisual(placeholder.type).background,
             }"
-            @click="openPlaceholderDialog(buildPlaceholderIdentity(placeholder))"
+            @click="openPlaceholderDialog(placeholder.instanceId)"
           >
             <div class="strategy-object__icon">
               <span class="strategy-object__glyph">{{ resolvePlaceholderGlyph(placeholder.type) }}</span>
@@ -977,7 +1002,7 @@ function resolvePlaceholderGlyph(type: string) {
             </div>
             <div class="strategy-object__content">
               <h3>暂无占位符</h3>
-              <span>可使用 {{ buildPlaceholderDeclaration({ type: '账号', key: '账号A', defaultValue: '123456' }) }}</span>
+              <span>可使用 {{ buildPlaceholderDeclaration({ type: '对象', key: '对象1', defaultValue: '' }) }}</span>
             </div>
             <span class="material-symbols-outlined strategy-object__check strategy-object__check--muted">remove</span>
           </div>
@@ -1600,18 +1625,22 @@ function resolvePlaceholderGlyph(type: string) {
   display: inline-flex;
   gap: 0.25rem;
   align-items: center;
-  min-height: 1.25rem;
-  padding: 0 0.35rem;
+  box-sizing: border-box;
+  height: 1.22em;
+  margin: 0 0.1em;
+  padding: 0 0.4rem;
   border: 1px solid var(--strategy-placeholder-border);
   border-radius: 0.3rem;
   color: var(--strategy-placeholder-accent);
   background: var(--strategy-placeholder-background);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 1em;
   font-weight: 700;
   letter-spacing: normal;
-  line-height: 1.2;
-  vertical-align: -0.1em;
+  line-height: 1.02;
+  white-space: nowrap;
+  vertical-align: 0.02em;
+  transform: translateY(-0.08em);
 }
 
 :deep(.strategy-reference-chip strong) {
@@ -1619,20 +1648,27 @@ function resolvePlaceholderGlyph(type: string) {
   font-size: inherit;
   font-weight: 700;
   letter-spacing: normal;
+  line-height: 1;
 }
 
 :deep(.strategy-reference-chip__glyph) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 1em;
+  height: 1em;
+  flex: 0 0 1em;
   border-radius: 999px;
-  color: #0f1718;
-  background: currentcolor;
-  font-size: 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--strategy-placeholder-accent) 36%, transparent);
+  color: var(--strategy-placeholder-accent);
+  background: radial-gradient(circle at 50% 50%, rgb(8 18 19 / 0.92), rgb(6 11 12 / 0.98));
+  box-shadow:
+    inset 0 0 10px color-mix(in srgb, var(--strategy-placeholder-accent) 12%, transparent),
+    0 0 14px color-mix(in srgb, var(--strategy-placeholder-accent) 28%, transparent);
+  font-size: 0.68em;
   font-weight: 800;
   line-height: 1;
+  text-shadow: 0 0 10px color-mix(in srgb, var(--strategy-placeholder-accent) 45%, transparent);
 }
 
 :deep(.strategy-reference-chip:hover) {
