@@ -1,7 +1,7 @@
 # product-module-runtime Specification
 
 ## Purpose
-Define the backend runtime behavior for the product module, including create, update, list, detail, and full-context delivery.
+Define the backend runtime behavior for the product module, including create, update, list, detail, delete, and full-context delivery.
 
 ## Requirements
 
@@ -37,13 +37,24 @@ The backend product module SHALL provide a product detail view that returns the 
 - **THEN** the system returns the product's complete markdown content
 - **AND** the returned detail SHALL be usable as the current full product context for downstream consumers
 
-### Requirement: Product module SHALL exclude deletion in MVP
-The backend product module SHALL not implement product deletion behavior in the MVP scope.
+### Requirement: Product module SHALL support product deletion
+The backend product module SHALL implement product deletion behavior.
 
-#### Scenario: Runtime scope excludes product deletion
-- **WHEN** the MVP product module is implemented
-- **THEN** the runtime behavior SHALL include create, update, list, and detail capabilities
-- **AND** the runtime behavior SHALL NOT include product deletion capability
+#### Scenario: Runtime supports product deletion
+- **WHEN** a delete request is submitted for an existing product
+- **THEN** the runtime SHALL delete the product metadata
+- **AND** it SHALL delete the associated Markdown content file
+- **AND** the product SHALL no longer appear in product list results
+- **AND** subsequent product detail reads SHALL return not found
+
+#### Scenario: Runtime rejects deleting missing product
+- **WHEN** a delete request is submitted for a product identifier that does not exist
+- **THEN** the runtime SHALL return a not found error
+
+#### Scenario: Runtime does not check references before deletion
+- **WHEN** a delete request is submitted for an existing product
+- **THEN** the runtime SHALL NOT block deletion because the product may be referenced by other domains
+- **AND** reference handling SHALL remain outside the product deletion behavior
 
 ### Requirement: Product module implementation SHALL align with top-level contracts
 The backend product module SHALL implement its runtime behavior in alignment with the established product API and SQL contracts before exposing product functionality.
@@ -52,3 +63,7 @@ The backend product module SHALL implement its runtime behavior in alignment wit
 - **WHEN** the product module implementation is prepared
 - **THEN** the implementation SHALL use the published product API and SQL contracts as the source of truth
 - **AND** the implementation SHALL update those top-level contracts first if runtime behavior requires contract changes
+
+#### Scenario: Delete implementation follows updated contracts
+- **WHEN** product deletion is implemented
+- **THEN** the runtime SHALL update controller, service, storage adapters, tests, and API documentation consistently with the delete contract
