@@ -100,6 +100,25 @@ export async function listBundledRuntimeSkills(
   return skills;
 }
 
+export async function resolveRuntimeInstalledSkillFile(
+  runtimeSkillsDirectory: string,
+  skillName: string,
+): Promise<string> {
+  const skillFile = resolve(runtimeSkillsDirectory, skillName, "SKILL.md");
+
+  try {
+    await access(skillFile);
+    return skillFile;
+  } catch (error) {
+    throw new Error(
+      `Failed to locate installed runtime Skill file "${skillName}".`,
+      {
+        cause: error,
+      },
+    );
+  }
+}
+
 export async function syncBundledRuntimeAgentAssets(
   runtimePaths: Pick<
     RuntimePaths,

@@ -142,7 +142,11 @@ export async function startApplication(
     stateStore: trafficWorkRepository,
     contextStore: trafficWorkContextStore,
     contextPreparation: new AgentAccessTrafficWorkContextPreparationAdapter(
-      agentAccessService,
+      {
+        agentAccessService,
+        runtimeRootDirectory: runtime.paths.runtimeRoot,
+        runtimeSkillsDirectory: runtime.paths.agentSkillsDirectory,
+      },
     ),
     productStore: productRepository,
     productContentStore,

@@ -107,8 +107,23 @@ describe.sequential("traffic work module http api", () => {
     });
     expect(created.lifecycleStatus).toBe("ready");
     expect(created.contextPreparationStatus).toBe("prepared");
+    expect(provider.sentMessages.at(-1)?.message).toContain("[引流工作信息]");
+    expect(provider.sentMessages.at(-1)?.message).toContain("[产品信息]");
+    expect(provider.sentMessages.at(-1)?.message).toContain("[策略信息]");
+    expect(provider.sentMessages.at(-1)?.message).toContain("[任务拆分Skill信息]");
+    expect(provider.sentMessages.at(-1)?.message).toContain("[基础路径信息]");
+    expect(provider.sentMessages.at(-1)?.message).toContain("[规则]");
     expect(provider.sentMessages.at(-1)?.message).toContain(
-      "Decompose this Cybernomads traffic work into an atomic task set.",
+      `Cybernomads目录绝对路径: ${runtimePaths.runtimeRoot}`,
+    );
+    expect(provider.sentMessages.at(-1)?.message).toContain(
+      `引流工作目录: ./work/${created.trafficWorkId}`,
+    );
+    expect(provider.sentMessages.at(-1)?.message).toContain(
+      "任务拆分Skill位置: ./agent/skills/cybernomads-task-decomposition/SKILL.md",
+    );
+    expect(provider.sentMessages.at(-1)?.message).not.toContain(
+      "Work context root:",
     );
 
     const createdTasksResponse = await fetch(
@@ -244,6 +259,13 @@ describe.sequential("traffic work module http api", () => {
     await expect(
       readFile(join(workDirectory, "collect-2.md"), "utf8"),
     ).resolves.toContain("Collect candidates 2");
+    expect(provider.sentMessages.at(-1)?.message).toContain("[引流工作信息]");
+    expect(provider.sentMessages.at(-1)?.message).toContain(
+      `引流工作目录: ./work/${created.trafficWorkId}`,
+    );
+    expect(provider.sentMessages.at(-1)?.message).toContain(
+      "任务拆分Skill位置: ./agent/skills/cybernomads-task-decomposition/SKILL.md",
+    );
 
     const endResponse = await fetch(
       `${application.http.url}/api/traffic-works/${created.trafficWorkId}/end`,

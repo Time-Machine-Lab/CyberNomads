@@ -1,9 +1,5 @@
-# traffic-work-task-decomposition-integration Specification
+## MODIFIED Requirements
 
-## Purpose
-
-Define the orchestration contract that connects traffic work creation and update flows with Agent task decomposition and controlled task-module persistence, while preserving provider neutrality, task storage boundaries, and traffic work preparation state semantics.
-## Requirements
 ### Requirement: Traffic work creation SHALL trigger Agent task decomposition
 
 When a traffic work is created, the backend SHALL trigger Agent task decomposition after the work context skeleton is ready and before the work is considered prepared.
@@ -93,6 +89,8 @@ The integration SHALL bridge traffic work, task, and Agent service domains witho
 - **THEN** the task module SHALL validate and store task records and output-tracking contracts
 - **AND** it SHALL NOT call Agent providers or decide traffic work lifecycle transitions
 
+## ADDED Requirements
+
 ### Requirement: Task decomposition prompt SHALL carry structured business context and runtime file access hints
 
 The backend SHALL send a structured task decomposition prompt that tells the Agent what each section represents and SHALL include the Cybernomads root directory absolute path together with relative runtime paths for the work directory and the task decomposition `SKILL.md`.
@@ -140,4 +138,3 @@ The backend SHALL validate the required runtime inputs for task decomposition be
 - **WHEN** the backend cannot resolve the traffic work context directory snapshot needed for prompt construction
 - **THEN** it SHALL fail the preparation attempt before invoking the Agent service
 - **AND** it SHALL avoid sending a partial decomposition request
-
