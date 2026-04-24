@@ -1,4 +1,0 @@
-interface:
-  display_name: "Cybernomads 任务执行"
-  short_description: "执行单个任务并回写状态与产出。"
-  default_prompt: "使用 $cybernomads-task-execution 执行一个 Cybernomads 任务并更新任务状态。"
