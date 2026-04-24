@@ -1,6 +1,8 @@
 import type {
-  AccountConnectionAttemptDetailDto,
-  AccountConnectionAttemptDetailRecord,
+  AccessSessionDetailDto,
+  AccessSessionDetailRecord,
+  AccessSessionLogsRecord,
+  AccessSessionLogsResponseDto,
   AccountDetailDto,
   AccountDetailRecord,
   AccountPlatformColor,
@@ -9,16 +11,14 @@ import type {
   AccountStateTone,
   AccountStateView,
   AccountSummaryDto,
-  ActiveTokenSummaryDto,
-  ActiveTokenSummaryRecord,
   AvailabilityStatus,
-  ConnectionAttemptLogsRecord,
-  ConnectionAttemptLogsResponseDto,
-  LatestConnectionAttemptSummaryDto,
-  LatestConnectionAttemptSummaryRecord,
+  ConnectionStatus,
+  CurrentAccessSessionSummaryDto,
+  CurrentAccessSessionSummaryRecord,
+  CurrentCredentialSummaryDto,
+  CurrentCredentialSummaryRecord,
   LegacyMockAccountRecord,
   LifecycleStatus,
-  LoginStatus,
   ResolvedPlatformProfileDto,
   ResolvedPlatformProfileRecord,
 } from '@/entities/account/model/types'
@@ -103,15 +103,14 @@ export function resolvePlatformColorClass(color: AccountPlatformColor) {
 
 function resolveState(input: {
   lifecycleStatus: LifecycleStatus
-  loginStatus: LoginStatus
+  connectionStatus: ConnectionStatus
   availabilityStatus: AvailabilityStatus
-  hasActiveToken: boolean
-  isConsumable: boolean
+  hasCurrentCredential: boolean
 }): AccountStateView {
   if (input.lifecycleStatus === 'deleted') {
     return {
       label: '已删除',
-      detail: '账号已逻辑删除，暂不可被消费。',
+      detail: '账号已逻辑删除，暂不可继续接入。',
       tone: 'muted',
       signal: 'muted',
     }
@@ -120,40 +119,40 @@ function resolveState(input: {
   if (input.lifecycleStatus === 'disabled') {
     return {
       label: '已停用',
-      detail: '账号已停用，需要先恢复生命周期状态。',
+      detail: '账号已停用，需要先恢复后再继续操作。',
       tone: 'warning',
       signal: 'warning',
     }
   }
 
-  if (input.loginStatus === 'connecting') {
+  if (input.connectionStatus === 'connecting') {
     return {
-      label: '连接中',
-      detail: '已有待处理令牌，等待解析或校验完成。',
+      label: '接入中',
+      detail: '当前存在进行中的令牌接入会话。',
       tone: 'neutral',
       signal: 'primary',
     }
   }
 
-  if (input.loginStatus === 'not_logged_in') {
+  if (input.connectionStatus === 'not_logged_in') {
     return {
       label: '未登录',
-      detail: '当前账号还没有可用令牌。',
+      detail: '当前账号还没有已生效令牌。',
       tone: 'warning',
       signal: 'warning',
     }
   }
 
-  if (input.loginStatus === 'login_failed') {
+  if (input.connectionStatus === 'connect_failed') {
     return {
-      label: '校验失败',
+      label: '接入失败',
       detail: '最近一次令牌校验未通过。',
       tone: 'danger',
       signal: 'danger',
     }
   }
 
-  if (input.loginStatus === 'expired') {
+  if (input.connectionStatus === 'expired') {
     return {
       label: '令牌过期',
       detail: '当前令牌已过期，需要重新接入。',
@@ -162,10 +161,10 @@ function resolveState(input: {
     }
   }
 
-  if (!input.hasActiveToken) {
+  if (!input.hasCurrentCredential) {
     return {
       label: '未登录',
-      detail: '当前账号还没有可用令牌。',
+      detail: '当前账号还没有已生效令牌。',
       tone: 'warning',
       signal: 'warning',
     }
@@ -173,54 +172,27 @@ function resolveState(input: {
 
   if (input.availabilityStatus === 'offline') {
     return {
-      label: '离线',
-      detail: '最近一次可用性检查未通过。',
-      tone: 'danger',
-      signal: 'danger',
-    }
-  }
-
-  if (input.availabilityStatus === 'restricted') {
-    return {
-      label: '受限',
-      detail: '平台侧已限制当前账号能力。',
-      tone: 'danger',
-      signal: 'danger',
-    }
-  }
-
-  if (input.availabilityStatus === 'risk') {
-    return {
-      label: '风险',
-      detail: '最近一次检查提示账号存在风险。',
+      label: '已连接',
+      detail: '连接已建立，但最近一次诊断提示离线。',
       tone: 'warning',
       signal: 'warning',
     }
   }
 
-  if (input.availabilityStatus === 'unknown') {
+  if (input.availabilityStatus === 'restricted' || input.availabilityStatus === 'risk') {
     return {
-      label: '待校验',
-      detail: '令牌已接入，但尚未完成可用性检查。',
-      tone: 'neutral',
-      signal: 'primary',
-    }
-  }
-
-  if (input.isConsumable) {
-    return {
-      label: '可用',
-      detail: '账号和令牌状态均满足消费条件。',
-      tone: 'healthy',
-      signal: 'primary',
+      label: '已连接',
+      detail: '连接已建立，但当前存在风险或受限提示。',
+      tone: 'warning',
+      signal: 'warning',
     }
   }
 
   return {
-    label: '待处理',
-    detail: '当前状态组合不可消费，请检查详情。',
-    tone: 'neutral',
-    signal: 'muted',
+    label: '已连接',
+    detail: '账号已完成接入，可继续查看或替换当前令牌。',
+    tone: 'healthy',
+    signal: 'primary',
   }
 }
 
@@ -232,7 +204,7 @@ function mapResolvedPlatformProfile(
   }
 }
 
-function mapActiveToken(dto: ActiveTokenSummaryDto): ActiveTokenSummaryRecord {
+function mapCurrentCredential(dto: CurrentCredentialSummaryDto): CurrentCredentialSummaryRecord {
   return {
     ...dto,
     expiresAtLabel: formatTimestamp(dto.expiresAt, {
@@ -254,15 +226,16 @@ function mapActiveToken(dto: ActiveTokenSummaryDto): ActiveTokenSummaryRecord {
   }
 }
 
-function resolveAttemptState(
-  attemptStatus: AccountConnectionAttemptDetailDto['attemptStatus'],
+function resolveSessionState(
+  sessionStatus: AccessSessionDetailDto['sessionStatus'],
 ): { label: string; tone: AccountStateTone } {
-  if (attemptStatus === 'pending_resolution') return { label: '待解析', tone: 'neutral' }
-  if (attemptStatus === 'ready_for_validation') return { label: '待校验', tone: 'warning' }
-  if (attemptStatus === 'validating') return { label: '校验中', tone: 'neutral' }
-  if (attemptStatus === 'validation_succeeded') return { label: '已生效', tone: 'healthy' }
-  if (attemptStatus === 'validation_failed') return { label: '校验失败', tone: 'danger' }
-  if (attemptStatus === 'expired') return { label: '已过期', tone: 'warning' }
+  if (sessionStatus === 'waiting_for_scan') return { label: '待扫码', tone: 'neutral' }
+  if (sessionStatus === 'waiting_for_confirmation') return { label: '待确认', tone: 'neutral' }
+  if (sessionStatus === 'ready_for_verification') return { label: '待验证', tone: 'warning' }
+  if (sessionStatus === 'verifying') return { label: '验证中', tone: 'neutral' }
+  if (sessionStatus === 'verified') return { label: '已生效', tone: 'healthy' }
+  if (sessionStatus === 'verify_failed') return { label: '验证失败', tone: 'danger' }
+  if (sessionStatus === 'expired') return { label: '已过期', tone: 'warning' }
   return { label: '已取消', tone: 'muted' }
 }
 
@@ -282,10 +255,10 @@ function resolveChallengeMessage(challenge: Record<string, unknown> | null) {
   return challenge.message
 }
 
-function mapLatestConnectionAttempt(
-  dto: LatestConnectionAttemptSummaryDto,
-): LatestConnectionAttemptSummaryRecord {
-  const state = resolveAttemptState(dto.attemptStatus)
+function mapCurrentAccessSession(
+  dto: CurrentAccessSessionSummaryDto,
+): CurrentAccessSessionSummaryRecord {
+  const state = resolveSessionState(dto.sessionStatus)
 
   return {
     ...dto,
@@ -305,7 +278,7 @@ function mapLatestConnectionAttempt(
       minute: '2-digit',
       hour12: false,
     }),
-    validatedAtLabel: formatTimestamp(dto.validatedAt, {
+    verifiedAtLabel: formatTimestamp(dto.verifiedAt, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -343,11 +316,10 @@ function buildRecord(input: {
   remark: string | null
   tags: string[]
   lifecycleStatus: LifecycleStatus
-  loginStatus: LoginStatus
+  connectionStatus: ConnectionStatus
   availabilityStatus: AvailabilityStatus
   resolvedPlatformProfile: ResolvedPlatformProfileRecord
-  hasActiveToken: boolean
-  isConsumable: boolean
+  hasCurrentCredential: boolean
   updatedAt: string
 }): AccountRecord {
   const state = resolveState(input)
@@ -361,11 +333,10 @@ function buildRecord(input: {
     remark: input.remark,
     tags: input.tags,
     lifecycleStatus: input.lifecycleStatus,
-    loginStatus: input.loginStatus,
+    connectionStatus: input.connectionStatus,
     availabilityStatus: input.availabilityStatus,
     resolvedPlatformProfile: input.resolvedPlatformProfile,
-    hasActiveToken: input.hasActiveToken,
-    isConsumable: input.isConsumable,
+    hasCurrentCredential: input.hasCurrentCredential,
     updatedAt: input.updatedAt,
     updatedAtLabel,
     state,
@@ -380,11 +351,10 @@ export function mapAccountSummaryDtoToRecord(dto: AccountSummaryDto): AccountRec
     remark: null,
     tags: dto.tags,
     lifecycleStatus: dto.lifecycleStatus,
-    loginStatus: dto.loginStatus,
+    connectionStatus: dto.connectionStatus,
     availabilityStatus: dto.availabilityStatus,
     resolvedPlatformProfile: mapResolvedPlatformProfile(dto.resolvedPlatformProfile),
-    hasActiveToken: dto.hasActiveToken,
-    isConsumable: dto.isConsumable,
+    hasCurrentCredential: dto.hasCurrentCredential,
     updatedAt: dto.updatedAt,
   })
 }
@@ -397,22 +367,21 @@ export function mapAccountDetailDtoToRecord(dto: AccountDetailDto): AccountDetai
     remark: dto.remark,
     tags: dto.tags,
     lifecycleStatus: dto.lifecycleStatus,
-    loginStatus: dto.loginStatus,
+    connectionStatus: dto.connectionStatus,
     availabilityStatus: dto.availabilityStatus,
     resolvedPlatformProfile: mapResolvedPlatformProfile(dto.resolvedPlatformProfile),
-    hasActiveToken: dto.activeToken.hasToken,
-    isConsumable: dto.isConsumable,
+    hasCurrentCredential: dto.currentCredential.hasCredential,
     updatedAt: dto.updatedAt,
   })
 
   return {
     ...base,
-    loginStatusReason: dto.loginStatusReason,
+    connectionStatusReason: dto.connectionStatusReason,
     availabilityStatusReason: dto.availabilityStatusReason,
     platformMetadata: dto.platformMetadata,
-    activeToken: mapActiveToken(dto.activeToken),
-    latestConnectionAttempt: dto.latestConnectionAttempt
-      ? mapLatestConnectionAttempt(dto.latestConnectionAttempt)
+    currentCredential: mapCurrentCredential(dto.currentCredential),
+    currentAccessSession: dto.currentAccessSession
+      ? mapCurrentAccessSession(dto.currentAccessSession)
       : null,
     lastConnectedAt: dto.lastConnectedAt,
     lastConnectedAtLabel: formatTimestamp(dto.lastConnectedAt, {
@@ -423,8 +392,8 @@ export function mapAccountDetailDtoToRecord(dto: AccountDetailDto): AccountDetai
       minute: '2-digit',
       hour12: false,
     }),
-    lastValidatedAt: dto.lastValidatedAt,
-    lastValidatedAtLabel: formatTimestamp(dto.lastValidatedAt, {
+    lastVerifiedAt: dto.lastVerifiedAt,
+    lastVerifiedAtLabel: formatTimestamp(dto.lastVerifiedAt, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -453,10 +422,10 @@ export function mapAccountDetailDtoToRecord(dto: AccountDetailDto): AccountDetai
   }
 }
 
-export function mapAccountConnectionAttemptDetailDtoToRecord(
-  dto: AccountConnectionAttemptDetailDto,
-): AccountConnectionAttemptDetailRecord {
-  const state = resolveAttemptState(dto.attemptStatus)
+export function mapAccessSessionDetailDtoToRecord(
+  dto: AccessSessionDetailDto,
+): AccessSessionDetailRecord {
+  const state = resolveSessionState(dto.sessionStatus)
 
   return {
     ...dto,
@@ -480,7 +449,7 @@ export function mapAccountConnectionAttemptDetailDtoToRecord(
       minute: '2-digit',
       hour12: false,
     }),
-    validatedAtLabel: formatTimestamp(dto.validatedAt, {
+    verifiedAtLabel: formatTimestamp(dto.verifiedAt, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -507,12 +476,12 @@ export function mapAccountConnectionAttemptDetailDtoToRecord(
   }
 }
 
-export function mapConnectionAttemptLogsResponseDtoToRecord(
-  dto: ConnectionAttemptLogsResponseDto,
-): ConnectionAttemptLogsRecord {
+export function mapAccessSessionLogsResponseDtoToRecord(
+  dto: AccessSessionLogsResponseDto,
+): AccessSessionLogsRecord {
   return {
     accountId: dto.accountId,
-    attemptId: dto.attemptId,
+    sessionId: dto.sessionId,
     entries: dto.entries.map((entry) => ({
       ...entry,
       timestampLabel: formatTimestamp(entry.timestamp, {
@@ -532,23 +501,20 @@ export function mapLegacyMockAccountToRecord(mock: LegacyMockAccountRecord): Acc
   const semantics =
     mock.status === 'connected'
       ? {
-          loginStatus: 'connected' as const,
+          connectionStatus: 'connected' as const,
           availabilityStatus: 'healthy' as const,
-          hasActiveToken: true,
-          isConsumable: true,
+          hasCurrentCredential: true,
         }
       : mock.status === 'needs-auth'
         ? {
-            loginStatus: 'expired' as const,
+            connectionStatus: 'expired' as const,
             availabilityStatus: 'unknown' as const,
-            hasActiveToken: false,
-            isConsumable: false,
+            hasCurrentCredential: false,
           }
         : {
-            loginStatus: 'connected' as const,
+            connectionStatus: 'connected' as const,
             availabilityStatus: 'risk' as const,
-            hasActiveToken: true,
-            isConsumable: false,
+            hasCurrentCredential: true,
           }
 
   return buildRecord({
@@ -574,11 +540,11 @@ export function mapLegacyMockAccountToDetailRecord(mock: LegacyMockAccountRecord
 
   return {
     ...record,
-    loginStatusReason: record.loginStatus === 'expired' ? 'Mock 场景下未配置当前可用令牌。' : null,
+    connectionStatusReason: record.connectionStatus === 'expired' ? 'Mock 场景下未配置当前可用令牌。' : null,
     availabilityStatusReason: record.availabilityStatus === 'risk' ? 'Mock 场景下模拟为存在平台风控提醒。' : null,
     platformMetadata: {},
-    activeToken: {
-      hasToken: record.hasActiveToken,
+    currentCredential: {
+      hasCredential: record.hasCurrentCredential,
       expiresAt: null,
       updatedAt: record.updatedAt,
       expiresAtLabel: null,
@@ -591,10 +557,10 @@ export function mapLegacyMockAccountToDetailRecord(mock: LegacyMockAccountRecord
         hour12: false,
       }),
     },
-    latestConnectionAttempt: null,
-    lastConnectedAt: record.loginStatus === 'connected' ? record.updatedAt : null,
+    currentAccessSession: null,
+    lastConnectedAt: record.connectionStatus === 'connected' ? record.updatedAt : null,
     lastConnectedAtLabel:
-      record.loginStatus === 'connected'
+      record.connectionStatus === 'connected'
         ? formatTimestamp(record.updatedAt, {
             year: 'numeric',
             month: '2-digit',
@@ -604,8 +570,8 @@ export function mapLegacyMockAccountToDetailRecord(mock: LegacyMockAccountRecord
             hour12: false,
           })
         : null,
-    lastValidatedAt: record.updatedAt,
-    lastValidatedAtLabel: formatTimestamp(record.updatedAt, {
+    lastVerifiedAt: record.updatedAt,
+    lastVerifiedAtLabel: formatTimestamp(record.updatedAt, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',

@@ -27,12 +27,12 @@ export class AccountNotFoundError extends AccountModuleError {
   }
 }
 
-export class AccountConnectionAttemptNotFoundError extends AccountModuleError {
-  constructor(accountId: string, attemptId: string) {
+export class AccountAccessSessionNotFoundError extends AccountModuleError {
+  constructor(accountId: string, sessionId: string) {
     super(
-      "ACCOUNT_CONNECTION_ATTEMPT_NOT_FOUND",
+      "ACCOUNT_ACCESS_SESSION_NOT_FOUND",
       404,
-      `Connection attempt "${attemptId}" was not found for account "${accountId}".`,
+      `Access session "${sessionId}" was not found for account "${accountId}".`,
     );
   }
 }

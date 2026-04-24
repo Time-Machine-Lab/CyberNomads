@@ -17,28 +17,29 @@ export interface LegacyMockAccountRecord {
 export type JsonObject = Record<string, unknown>
 
 export type LifecycleStatus = 'active' | 'disabled' | 'deleted'
-export type LoginStatus = 'not_logged_in' | 'connecting' | 'connected' | 'login_failed' | 'expired'
+export type ConnectionStatus = 'not_logged_in' | 'connecting' | 'connected' | 'connect_failed' | 'expired'
 export type AvailabilityStatus = 'unknown' | 'healthy' | 'risk' | 'restricted' | 'offline'
-export type ConnectionMethod = 'manual_token' | 'qr_login'
-export type ConnectionAttemptStatus =
-  | 'pending_resolution'
-  | 'ready_for_validation'
-  | 'validating'
-  | 'validation_succeeded'
-  | 'validation_failed'
+export type AccessMode = 'manual_token' | 'qr_login'
+export type AccessSessionStatus =
+  | 'waiting_for_scan'
+  | 'waiting_for_confirmation'
+  | 'ready_for_verification'
+  | 'verifying'
+  | 'verified'
+  | 'verify_failed'
   | 'expired'
   | 'canceled'
-export type ValidationResult = 'succeeded' | 'failed'
-export type ConnectionAttemptLogLevel = 'info' | 'warn' | 'error'
+export type VerificationResult = 'succeeded' | 'failed'
+export type AccessSessionLogLevel = 'info' | 'warn' | 'error'
 
 export interface ListAccountsQuery {
   platform?: string
   keyword?: string
   lifecycleStatus?: LifecycleStatus
-  loginStatus?: LoginStatus
+  connectionStatus?: ConnectionStatus
   availabilityStatus?: AvailabilityStatus
   includeDeleted?: boolean
-  onlyConsumable?: boolean
+  onlyConnected?: boolean
 }
 
 export interface CreateAccountInput {
@@ -56,20 +57,20 @@ export interface UpdateAccountInput {
   platformMetadata: JsonObject
 }
 
-export interface StartConnectionAttemptInput {
-  connectionMethod: ConnectionMethod
-  tokenValue?: string | null
-  context?: JsonObject
+export interface StartTokenAccessSessionInput {
+  token: string
   expiresAt?: string | null
 }
 
-export interface ResolveConnectionAttemptInput {
-  resolutionPayload?: JsonObject
+export interface StartQrAccessSessionInput {
+  expiresAt?: string | null
 }
 
-export interface ValidateConnectionAttemptInput {
-  validationPayload?: JsonObject
+export interface PollAccessSessionInput {
+  force?: boolean
 }
+
+export interface VerifyAccessSessionInput {}
 
 export interface ResolvedPlatformProfileDto {
   resolvedPlatformAccountUid: string | null
@@ -78,23 +79,23 @@ export interface ResolvedPlatformProfileDto {
   resolvedProfileMetadata: JsonObject
 }
 
-export interface ActiveTokenSummaryDto {
-  hasToken: boolean
+export interface CurrentCredentialSummaryDto {
+  hasCredential: boolean
   expiresAt: string | null
   updatedAt: string | null
 }
 
-export interface LatestConnectionAttemptSummaryDto {
-  attemptId: string
-  connectionMethod: ConnectionMethod
-  attemptStatus: ConnectionAttemptStatus
-  attemptStatusReason: string | null
+export interface CurrentAccessSessionSummaryDto {
+  sessionId: string
+  accessMode: AccessMode
+  sessionStatus: AccessSessionStatus
+  sessionStatusReason: string | null
   challenge: JsonObject | null
-  hasCandidateToken: boolean
-  tokenApplied: boolean
+  hasCandidateCredential: boolean
+  credentialApplied: boolean
   hasLogs: boolean
   expiresAt: string | null
-  validatedAt: string | null
+  verifiedAt: string | null
   appliedAt: string | null
   createdAt: string
   updatedAt: string
@@ -106,11 +107,10 @@ export interface AccountSummaryDto {
   internalDisplayName: string
   tags: string[]
   lifecycleStatus: LifecycleStatus
-  loginStatus: LoginStatus
+  connectionStatus: ConnectionStatus
   availabilityStatus: AvailabilityStatus
   resolvedPlatformProfile: ResolvedPlatformProfileDto
-  hasActiveToken: boolean
-  isConsumable: boolean
+  hasCurrentCredential: boolean
   updatedAt: string
 }
 
@@ -122,16 +122,15 @@ export interface AccountDetailDto {
   tags: string[]
   platformMetadata: JsonObject
   lifecycleStatus: LifecycleStatus
-  loginStatus: LoginStatus
-  loginStatusReason: string | null
+  connectionStatus: ConnectionStatus
+  connectionStatusReason: string | null
   availabilityStatus: AvailabilityStatus
   availabilityStatusReason: string | null
   resolvedPlatformProfile: ResolvedPlatformProfileDto
-  activeToken: ActiveTokenSummaryDto
-  latestConnectionAttempt: LatestConnectionAttemptSummaryDto | null
-  isConsumable: boolean
+  currentCredential: CurrentCredentialSummaryDto
+  currentAccessSession: CurrentAccessSessionSummaryDto | null
   lastConnectedAt: string | null
-  lastValidatedAt: string | null
+  lastVerifiedAt: string | null
   deletedAt: string | null
   createdAt: string
   updatedAt: string
@@ -141,57 +140,45 @@ export interface ListAccountsResultDto {
   items: AccountSummaryDto[]
 }
 
-export interface AccountConnectionAttemptDetailDto {
+export interface AccessSessionDetailDto {
   accountId: string
-  attemptId: string
+  sessionId: string
   platform: string
-  connectionMethod: ConnectionMethod
-  attemptStatus: ConnectionAttemptStatus
-  attemptStatusReason: string | null
+  accessMode: AccessMode
+  sessionStatus: AccessSessionStatus
+  sessionStatusReason: string | null
   challenge: JsonObject | null
-  hasCandidateToken: boolean
-  tokenApplied: boolean
+  hasCandidateCredential: boolean
+  credentialApplied: boolean
   resolvedPlatformProfile: ResolvedPlatformProfileDto
   hasLogs: boolean
   expiresAt: string | null
-  validatedAt: string | null
+  verifiedAt: string | null
   appliedAt: string | null
   createdAt: string
   updatedAt: string
 }
 
-export interface ConnectionAttemptLogEntryDto {
+export interface AccessSessionLogEntryDto {
   timestamp: string
-  level: ConnectionAttemptLogLevel
+  level: AccessSessionLogLevel
   message: string
   details?: JsonObject
 }
 
-export interface ConnectionAttemptLogsResponseDto {
+export interface AccessSessionLogsResponseDto {
   accountId: string
-  attemptId: string
-  entries: ConnectionAttemptLogEntryDto[]
+  sessionId: string
+  entries: AccessSessionLogEntryDto[]
 }
 
-export interface ValidateConnectionAttemptResponseDto {
-  attemptId: string
-  validationResult: ValidationResult
-  validationReason: string | null
-  tokenApplied: boolean
+export interface VerifyAccessSessionResponseDto {
+  sessionId: string
+  verificationResult: VerificationResult
+  verificationReason: string | null
+  credentialApplied: boolean
   account: AccountDetailDto
-  attempt: AccountConnectionAttemptDetailDto
-}
-
-export interface AvailabilityCheckResultDto {
-  accountId: string
-  lifecycleStatus: LifecycleStatus
-  loginStatus: LoginStatus
-  availabilityStatus: AvailabilityStatus
-  availabilityStatusReason: string | null
-  hasActiveToken: boolean
-  isConsumable: boolean
-  consumabilityReason: string | null
-  checkedAt: string
+  session: AccessSessionDetailDto
 }
 
 export type AccountStateTone = 'healthy' | 'warning' | 'danger' | 'neutral' | 'muted'
@@ -213,15 +200,15 @@ export interface AccountPlatformView {
 
 export interface ResolvedPlatformProfileRecord extends ResolvedPlatformProfileDto {}
 
-export interface ActiveTokenSummaryRecord extends ActiveTokenSummaryDto {
+export interface CurrentCredentialSummaryRecord extends CurrentCredentialSummaryDto {
   expiresAtLabel: string | null
   updatedAtLabel: string | null
 }
 
-export interface LatestConnectionAttemptSummaryRecord extends LatestConnectionAttemptSummaryDto {
+export interface CurrentAccessSessionSummaryRecord extends CurrentAccessSessionSummaryDto {
   createdAtLabel: string | null
   updatedAtLabel: string | null
-  validatedAtLabel: string | null
+  verifiedAtLabel: string | null
   appliedAtLabel: string | null
   expiresAtLabel: string | null
   challengeImageUrl: string | null
@@ -238,50 +225,49 @@ export interface AccountRecord {
   remark: string | null
   tags: string[]
   lifecycleStatus: LifecycleStatus
-  loginStatus: LoginStatus
+  connectionStatus: ConnectionStatus
   availabilityStatus: AvailabilityStatus
   resolvedPlatformProfile: ResolvedPlatformProfileRecord
-  hasActiveToken: boolean
-  isConsumable: boolean
+  hasCurrentCredential: boolean
   updatedAt: string
   updatedAtLabel: string
   state: AccountStateView
 }
 
 export interface AccountDetailRecord extends AccountRecord {
-  loginStatusReason: string | null
+  connectionStatusReason: string | null
   availabilityStatusReason: string | null
   platformMetadata: JsonObject
-  activeToken: ActiveTokenSummaryRecord
-  latestConnectionAttempt: LatestConnectionAttemptSummaryRecord | null
+  currentCredential: CurrentCredentialSummaryRecord
+  currentAccessSession: CurrentAccessSessionSummaryRecord | null
   lastConnectedAt: string | null
   lastConnectedAtLabel: string | null
-  lastValidatedAt: string | null
-  lastValidatedAtLabel: string | null
+  lastVerifiedAt: string | null
+  lastVerifiedAtLabel: string | null
   createdAt: string
   createdAtLabel: string | null
   deletedAt: string | null
   deletedAtLabel: string | null
 }
 
-export interface AccountConnectionAttemptDetailRecord extends AccountConnectionAttemptDetailDto {
+export interface AccessSessionDetailRecord extends AccessSessionDetailDto {
   stateLabel: string
   stateTone: AccountStateTone
   challengeImageUrl: string | null
   challengeMessage: string | null
   createdAtLabel: string | null
   updatedAtLabel: string | null
-  validatedAtLabel: string | null
+  verifiedAtLabel: string | null
   appliedAtLabel: string | null
   expiresAtLabel: string | null
 }
 
-export interface ConnectionAttemptLogEntryRecord extends ConnectionAttemptLogEntryDto {
+export interface AccessSessionLogEntryRecord extends AccessSessionLogEntryDto {
   timestampLabel: string | null
 }
 
-export interface ConnectionAttemptLogsRecord {
+export interface AccessSessionLogsRecord {
   accountId: string
-  attemptId: string
-  entries: ConnectionAttemptLogEntryRecord[]
+  sessionId: string
+  entries: AccessSessionLogEntryRecord[]
 }

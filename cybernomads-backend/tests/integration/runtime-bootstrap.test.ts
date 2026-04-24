@@ -49,8 +49,7 @@ describe.sequential("runtime bootstrap", () => {
       "004-accounts.sql",
       "005-strategies.sql",
       "006-traffic-works.sql",
-      "007-account-connection-attempts.sql",
-      "008-rebuild-account-pool-wrapper-model.sql",
+      "007-account-access-sessions.sql",
       "008-tasks.sql",
     ]);
     expect(result.skippedScripts).toEqual([]);
@@ -89,7 +88,17 @@ describe.sequential("runtime bootstrap", () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
       .get("traffic_works") as { name: string } | undefined;
-    const accountConnectionAttemptsTable = database
+    const accountAccessSessionsTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("account_access_sessions") as { name: string } | undefined;
+    const legacyPlatformAccountsTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("platform_accounts") as { name: string } | undefined;
+    const legacyConnectionAttemptsTable = database
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
@@ -107,15 +116,15 @@ describe.sequential("runtime bootstrap", () => {
     database.close();
 
     expect(bootstrapTable?.name).toBe("runtime_sql_scripts");
-    expect(recordedScripts?.count).toBe(9);
+    expect(recordedScripts?.count).toBe(8);
     expect(productsTable?.name).toBe("products");
     expect(agentServicesTable?.name).toBe("agent_service_connections");
     expect(accountsTable?.name).toBe("accounts");
     expect(strategiesTable?.name).toBe("strategies");
     expect(trafficWorksTable?.name).toBe("traffic_works");
-    expect(accountConnectionAttemptsTable?.name).toBe(
-      "account_connection_attempts",
-    );
+    expect(accountAccessSessionsTable?.name).toBe("account_access_sessions");
+    expect(legacyPlatformAccountsTable).toBeUndefined();
+    expect(legacyConnectionAttemptsTable).toBeUndefined();
     expect(tasksTable?.name).toBe("tasks");
     expect(taskOutputRecordsTable?.name).toBe("task_output_records");
   });
@@ -136,8 +145,7 @@ describe.sequential("runtime bootstrap", () => {
       "004-accounts.sql",
       "005-strategies.sql",
       "006-traffic-works.sql",
-      "007-account-connection-attempts.sql",
-      "008-rebuild-account-pool-wrapper-model.sql",
+      "007-account-access-sessions.sql",
       "008-tasks.sql",
     ]);
 
@@ -147,7 +155,7 @@ describe.sequential("runtime bootstrap", () => {
       .get() as { count: number } | undefined;
     database.close();
 
-    expect(recordedScripts?.count).toBe(9);
+    expect(recordedScripts?.count).toBe(8);
   });
 
   it("fails startup explicitly when the SQLite runtime database cannot be opened", async () => {

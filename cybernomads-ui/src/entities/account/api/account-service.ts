@@ -1,28 +1,28 @@
 import {
-  mapAccountConnectionAttemptDetailDtoToRecord,
+  mapAccessSessionDetailDtoToRecord,
+  mapAccessSessionLogsResponseDtoToRecord,
   mapAccountDetailDtoToRecord,
   mapAccountSummaryDtoToRecord,
-  mapConnectionAttemptLogsResponseDtoToRecord,
   mapLegacyMockAccountToDetailRecord,
   mapLegacyMockAccountToRecord,
 } from '@/entities/account/model/mappers'
 import type {
-  AccountConnectionAttemptDetailDto,
-  AccountConnectionAttemptDetailRecord,
+  AccessSessionDetailDto,
+  AccessSessionDetailRecord,
+  AccessSessionLogsRecord,
+  AccessSessionLogsResponseDto,
   AccountDetailDto,
   AccountDetailRecord,
   AccountRecord,
-  AvailabilityCheckResultDto,
-  ConnectionAttemptLogsRecord,
-  ConnectionAttemptLogsResponseDto,
   CreateAccountInput,
   ListAccountsQuery,
   ListAccountsResultDto,
-  ResolveConnectionAttemptInput,
-  StartConnectionAttemptInput,
+  PollAccessSessionInput,
+  StartQrAccessSessionInput,
+  StartTokenAccessSessionInput,
   UpdateAccountInput,
-  ValidateConnectionAttemptInput,
-  ValidateConnectionAttemptResponseDto,
+  VerifyAccessSessionInput,
+  VerifyAccessSessionResponseDto,
 } from '@/entities/account/model/types'
 import { HttpClientError, requestJson } from '@/shared/api/http-client'
 import { getAccountData, listAccountsData } from '@/shared/mocks/runtime'
@@ -39,10 +39,6 @@ export interface ListAccountsOptions extends ListAccountsQuery {
 
 const ACCOUNT_API_ROOT = '/accounts'
 
-export function isRealAccountApiEnabled() {
-  return true
-}
-
 function resolveSource(source?: AccountDataSource): AccountDataSource {
   return source ?? 'real'
 }
@@ -52,7 +48,7 @@ function assertRealAccountApi(source: AccountDataSource) {
     return
   }
 
-  throw new Error('当前未启用账号模块真实后端，请开启 VITE_USE_REAL_ACCOUNT_API 后重试。')
+  throw new Error('当前未启用账号模块真实后端，请开启真实账号接口后重试。')
 }
 
 export async function listAccounts(options: ListAccountsOptions = {}): Promise<AccountRecord[]> {
@@ -66,10 +62,10 @@ export async function listAccounts(options: ListAccountsOptions = {}): Promise<A
     platform: options.platform,
     keyword: options.keyword,
     lifecycleStatus: options.lifecycleStatus,
-    loginStatus: options.loginStatus,
+    connectionStatus: options.connectionStatus,
     availabilityStatus: options.availabilityStatus,
     includeDeleted: options.includeDeleted,
-    onlyConsumable: options.onlyConsumable,
+    onlyConnected: options.onlyConnected,
   }
   const result = await requestJson<ListAccountsResultDto>(ACCOUNT_API_ROOT, {
     query,
@@ -164,75 +160,95 @@ export async function restoreAccount(
   return mapAccountDetailDtoToRecord(dto)
 }
 
-export async function startConnectionAttempt(
+export async function startTokenAccessSession(
   accountId: string,
-  input: StartConnectionAttemptInput,
+  input: StartTokenAccessSessionInput,
   options: AccountRequestOptions = {},
-): Promise<AccountConnectionAttemptDetailRecord> {
+): Promise<AccessSessionDetailRecord> {
   const source = resolveSource(options.source)
 
   assertRealAccountApi(source)
 
-  const dto = await requestJson<AccountConnectionAttemptDetailDto>(
-    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/connection-attempts`,
+  const dto = await requestJson<AccessSessionDetailDto>(
+    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/access-sessions/token`,
     {
       method: 'POST',
       body: input,
     },
   )
 
-  return mapAccountConnectionAttemptDetailDtoToRecord(dto)
+  return mapAccessSessionDetailDtoToRecord(dto)
 }
 
-export async function getConnectionAttempt(
+export async function startQrAccessSession(
   accountId: string,
-  attemptId: string,
+  input: StartQrAccessSessionInput = {},
   options: AccountRequestOptions = {},
-): Promise<AccountConnectionAttemptDetailRecord> {
+): Promise<AccessSessionDetailRecord> {
   const source = resolveSource(options.source)
 
   assertRealAccountApi(source)
 
-  const dto = await requestJson<AccountConnectionAttemptDetailDto>(
-    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/connection-attempts/${encodeURIComponent(attemptId)}`,
-  )
-
-  return mapAccountConnectionAttemptDetailDtoToRecord(dto)
-}
-
-export async function resolveConnectionAttempt(
-  accountId: string,
-  attemptId: string,
-  input: ResolveConnectionAttemptInput,
-  options: AccountRequestOptions = {},
-): Promise<AccountConnectionAttemptDetailRecord> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
-
-  const dto = await requestJson<AccountConnectionAttemptDetailDto>(
-    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/connection-attempts/${encodeURIComponent(attemptId)}/resolve`,
+  const dto = await requestJson<AccessSessionDetailDto>(
+    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/access-sessions/qr`,
     {
       method: 'POST',
       body: input,
     },
   )
 
-  return mapAccountConnectionAttemptDetailDtoToRecord(dto)
+  return mapAccessSessionDetailDtoToRecord(dto)
 }
 
-export async function validateConnectionAttempt(
+export async function getAccessSession(
   accountId: string,
-  attemptId: string,
-  input: ValidateConnectionAttemptInput,
+  sessionId: string,
   options: AccountRequestOptions = {},
-): Promise<ValidateConnectionAttemptResponseDto> {
+): Promise<AccessSessionDetailRecord> {
   const source = resolveSource(options.source)
 
   assertRealAccountApi(source)
 
-  return requestJson<ValidateConnectionAttemptResponseDto>(
-    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/connection-attempts/${encodeURIComponent(attemptId)}/validate`,
+  const dto = await requestJson<AccessSessionDetailDto>(
+    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/access-sessions/${encodeURIComponent(sessionId)}`,
+  )
+
+  return mapAccessSessionDetailDtoToRecord(dto)
+}
+
+export async function pollAccessSession(
+  accountId: string,
+  sessionId: string,
+  input: PollAccessSessionInput = {},
+  options: AccountRequestOptions = {},
+): Promise<AccessSessionDetailRecord> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  const dto = await requestJson<AccessSessionDetailDto>(
+    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/access-sessions/${encodeURIComponent(sessionId)}/poll`,
+    {
+      method: 'POST',
+      body: input,
+    },
+  )
+
+  return mapAccessSessionDetailDtoToRecord(dto)
+}
+
+export async function verifyAccessSession(
+  accountId: string,
+  sessionId: string,
+  input: VerifyAccessSessionInput = {},
+  options: AccountRequestOptions = {},
+): Promise<VerifyAccessSessionResponseDto> {
+  const source = resolveSource(options.source)
+
+  assertRealAccountApi(source)
+
+  return requestJson<VerifyAccessSessionResponseDto>(
+    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/access-sessions/${encodeURIComponent(sessionId)}/verify`,
     {
       method: 'POST',
       body: input,
@@ -240,34 +256,18 @@ export async function validateConnectionAttempt(
   )
 }
 
-export async function getConnectionAttemptLogs(
+export async function getAccessSessionLogs(
   accountId: string,
-  attemptId: string,
+  sessionId: string,
   options: AccountRequestOptions = {},
-): Promise<ConnectionAttemptLogsRecord> {
+): Promise<AccessSessionLogsRecord> {
   const source = resolveSource(options.source)
 
   assertRealAccountApi(source)
 
-  const dto = await requestJson<ConnectionAttemptLogsResponseDto>(
-    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/connection-attempts/${encodeURIComponent(attemptId)}/logs`,
+  const dto = await requestJson<AccessSessionLogsResponseDto>(
+    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/access-sessions/${encodeURIComponent(sessionId)}/logs`,
   )
 
-  return mapConnectionAttemptLogsResponseDtoToRecord(dto)
-}
-
-export async function runAvailabilityCheck(
-  accountId: string,
-  options: AccountRequestOptions = {},
-): Promise<AvailabilityCheckResultDto> {
-  const source = resolveSource(options.source)
-
-  assertRealAccountApi(source)
-
-  return requestJson<AvailabilityCheckResultDto>(
-    `${ACCOUNT_API_ROOT}/${encodeURIComponent(accountId)}/availability-checks`,
-    {
-      method: 'POST',
-    },
-  )
+  return mapAccessSessionLogsResponseDtoToRecord(dto)
 }

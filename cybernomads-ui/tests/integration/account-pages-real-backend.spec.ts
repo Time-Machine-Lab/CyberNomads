@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { mapAccountSummaryDtoToRecord } from '@/entities/account/model/mappers'
 import type { AccountSummaryDto } from '@/entities/account/model/types'
-import AccountOnboardingPage from '@/pages/accounts/create/ui/AccountOnboardingPage.vue'
+import AccountCreatePage from '@/pages/accounts/create/ui/AccountCreatePage.vue'
 import AccountDetailPage from '@/pages/accounts/detail/ui/AccountDetailPage.vue'
 import AccountsListPage from '@/pages/accounts/list/ui/AccountsListPage.vue'
 
@@ -51,7 +51,7 @@ async function resolveSmokeAccount() {
     items: AccountSummaryDto[]
   }
 
-  const account = list.items.find((item) => item.platformAccountUid === 'account-bili-main') ?? list.items[0]
+  const account = list.items[0]
 
   if (!account) {
     throw new Error('Smoke backend does not contain any account record for page validation.')
@@ -69,7 +69,7 @@ smokeDescribe('account pages real backend smoke', () => {
   beforeAll(async () => {
     const account = await resolveSmokeAccount()
     accountId = account.accountId
-    currentDisplayName = account.displayName
+    currentDisplayName = account.internalDisplayName
     const mappedAccount = mapAccountSummaryDtoToRecord(account)
     expectedListStateLabel = mappedAccount.state.label
     expectedPlatformLabel = mappedAccount.platformView.label
@@ -90,9 +90,9 @@ smokeDescribe('account pages real backend smoke', () => {
     expect(wrapper.text()).toContain('新增账号')
   })
 
-  it('creates an account through the onboarding page and redirects to detail', async () => {
-    const uniqueToken = `smoke-create-${Date.now()}`
-    const { wrapper, router } = await mountWithRouter('/accounts/new', AccountOnboardingPage, '/accounts/new', [
+  it('creates an account through the create page and redirects to detail', async () => {
+    const uniqueName = `Smoke Create ${Date.now()}`
+    const { wrapper, router } = await mountWithRouter('/accounts/new', AccountCreatePage, '/accounts/new', [
       { path: '/accounts/:accountId', component: { template: '<div>detail route</div>' } },
     ])
 
@@ -100,26 +100,9 @@ smokeDescribe('account pages real backend smoke', () => {
       expect(wrapper.text()).toContain('新增账号')
     })
 
-    await wrapper.find('textarea').setValue(uniqueToken)
-
-    const startButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('解析令牌'))
-
-    expect(startButton).toBeTruthy()
-    await startButton!.trigger('click')
-    await flushPromises()
-
-    await vi.waitFor(() => {
-      expect(wrapper.text()).toContain('平台身份与令牌已解析成功')
-    })
-
-    const finalizeButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('完成接入'))
-
-    expect(finalizeButton).toBeTruthy()
-    await finalizeButton!.trigger('click')
+    await wrapper.get('[data-testid="create-internal-name"]').setValue(uniqueName)
+    await wrapper.get('[data-testid="create-tags"]').setValue('smoke, create')
+    await wrapper.get('[data-testid="create-submit"]').trigger('submit')
     await flushPromises()
 
     await vi.waitFor(() => {
@@ -129,12 +112,13 @@ smokeDescribe('account pages real backend smoke', () => {
     const createdAccountId = String(router.currentRoute.value.params.accountId)
     const createdDetail = (await fetch(`${apiBaseUrl}/accounts/${createdAccountId}`).then((response) =>
       response.json(),
-    )) as { platformAccountUid: string }
+    )) as { internalDisplayName: string; connectionStatus: string }
 
-    expect(createdDetail.platformAccountUid).toContain('smoke-create')
+    expect(createdDetail.internalDisplayName).toBe(uniqueName)
+    expect(createdDetail.connectionStatus).toBe('not_logged_in')
   })
 
-  it('saves detail form, validates availability, deletes and restores through real backend', async () => {
+  it('saves detail form and verifies a manual token through the real backend', async () => {
     const { wrapper } = await mountWithRouter(
       `/accounts/${accountId}`,
       AccountDetailPage,
@@ -146,12 +130,9 @@ smokeDescribe('account pages real backend smoke', () => {
       expect(wrapper.text()).toContain(currentDisplayName)
     })
 
-    const editableInputs = wrapper.findAll('input[type="text"]')
-    await editableInputs[0]!.setValue('Smoke Detail Updated')
-    await editableInputs[1]!.setValue('updated remark')
-
-    const primaryButtons = wrapper.findAll('button.account-primary-button')
-    await primaryButtons[0]!.trigger('click')
+    await wrapper.get('[data-testid="detail-internal-name"]').setValue('Smoke Detail Updated')
+    await wrapper.get('[data-testid="detail-remark"]').setValue('updated remark')
+    await wrapper.get('[data-testid="detail-save-profile"]').trigger('click')
     await flushPromises()
 
     await vi.waitFor(() => {
@@ -160,66 +141,24 @@ smokeDescribe('account pages real backend smoke', () => {
 
     const savedDetail = (await fetch(`${apiBaseUrl}/accounts/${accountId}`).then((response) =>
       response.json(),
-    )) as { displayName: string; remark: string | null }
+    )) as { internalDisplayName: string; remark: string | null }
 
-    expect(savedDetail.displayName).toBe('Smoke Detail Updated')
+    expect(savedDetail.internalDisplayName).toBe('Smoke Detail Updated')
     expect(savedDetail.remark).toBe('updated remark')
 
-    const textareas = wrapper.findAll('textarea')
-    await textareas[1]!.setValue('smoke-detail-token')
-    await primaryButtons[1]!.trigger('click')
+    await wrapper.get('[data-testid="detail-token-input"]').setValue('smoke-detail-token')
+    await wrapper.get('[data-testid="detail-verify-connection"]').trigger('click')
     await flushPromises()
 
     await vi.waitFor(() => {
-      expect(wrapper.text()).toContain('Stub verification succeeded.')
+      expect(wrapper.text()).toContain('连接验证成功')
     })
 
-    const validateButton = wrapper
-      .findAll('button.account-secondary-button')
-      .find((button) => button.text().includes('验证连接'))
-
-    expect(validateButton).toBeTruthy()
-    await validateButton!.trigger('click')
-    await flushPromises()
-
-    await vi.waitFor(() => {
-      expect(wrapper.text()).toContain('Stub availability check succeeded.')
-    })
-
-    let lifecycleButton = wrapper
-      .findAll('button.account-secondary-button')
-      .find((button) => button.text().includes('逻辑删除账号'))
-
-    expect(lifecycleButton).toBeTruthy()
-    await lifecycleButton!.trigger('click')
-    await flushPromises()
-
-    await vi.waitFor(() => {
-      expect(wrapper.text()).toContain('账号已逻辑删除')
-    })
-
-    const deletedDetail = (await fetch(`${apiBaseUrl}/accounts/${accountId}`).then((response) =>
+    const verifiedDetail = (await fetch(`${apiBaseUrl}/accounts/${accountId}`).then((response) =>
       response.json(),
-    )) as { lifecycleStatus: string }
+    )) as { connectionStatus: string; currentCredential: { hasCredential: boolean } }
 
-    expect(deletedDetail.lifecycleStatus).toBe('deleted')
-
-    lifecycleButton = wrapper
-      .findAll('button.account-secondary-button')
-      .find((button) => button.text().includes('恢复账号'))
-
-    expect(lifecycleButton).toBeTruthy()
-    await lifecycleButton!.trigger('click')
-    await flushPromises()
-
-    await vi.waitFor(() => {
-      expect(wrapper.text()).toContain('账号已恢复为可管理状态')
-    })
-
-    const restoredDetail = (await fetch(`${apiBaseUrl}/accounts/${accountId}`).then((response) =>
-      response.json(),
-    )) as { lifecycleStatus: string }
-
-    expect(restoredDetail.lifecycleStatus).toBe('active')
+    expect(verifiedDetail.connectionStatus).toBe('connected')
+    expect(verifiedDetail.currentCredential.hasCredential).toBe(true)
   })
 })

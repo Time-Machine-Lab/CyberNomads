@@ -1,30 +1,20 @@
 openapi: 3.1.0
 info:
   title: Cybernomads Accounts API
-  version: 1.0.0
+  version: 2.0.0
+  summary: 账号包装对象管理契约
   description: >
-    账号模块首版 API 契约。当前阶段对外只暴露稳定账号对象的管理接口，
-    包括创建、列表、详情、更新、授权尝试、授权验证、可用性检查、逻辑删除和恢复。
-    新增账号的主流程应优先通过账号接入会话 API 完成“令牌接入 -> 平台身份解析 -> 新建/恢复”；
-    `POST /api/accounts` 仍保留为补充型直接创建入口。
-    普通详情接口只返回脱敏管理视图，不返回原始凭证 payload；当前生效凭证解析属于受控内部运行时能力，
-    不在本契约中公开 HTTP 接口。
-  summary: 账号模块 MVP 对外契约
-
+    账号模块 V2 对外契约。账号对象已经重构为系统内部的包装对象，
+    创建时不再要求平台 UID 或已完成登录。账号 CRUD 只负责稳定对象本身，
+    令牌接入、二维码登录、轮询、验证与日志读取统一由 access session 资源承载。
 tags:
   - name: Accounts
-    description: 账号模块接口
-
+    description: 账号包装对象管理
 paths:
   /api/accounts:
     post:
-      tags:
-        - Accounts
+      tags: [Accounts]
       summary: 创建账号
-      description: >
-        创建一个新的稳定平台账号对象。`platform + platformAccountUid` 承担平台业务身份语义，
-        不以 `displayName` 作为唯一键。若同一平台身份对应的账号此前已被逻辑删除，
-        运行时应恢复原对象而不是创建重复账号。
       operationId: createAccount
       requestBody:
         required: true
@@ -39,32 +29,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AccountDetail'
-        '200':
-          description: 已恢复同一平台身份的逻辑删除账号
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AccountDetail'
         '400':
-          description: 请求参数不合法
-        '409':
-          description: 同一平台身份的账号已存在且未删除
+          description: 参数不合法
     get:
-      tags:
-        - Accounts
+      tags: [Accounts]
       summary: 查询账号列表
-      description: >
-        返回用于管理和选择的账号摘要列表。列表只返回摘要与状态信息，
-        不返回原始凭证内容或授权尝试原始 payload。
       operationId: listAccounts
       parameters:
         - $ref: '#/components/parameters/PlatformFilter'
         - $ref: '#/components/parameters/KeywordFilter'
         - $ref: '#/components/parameters/LifecycleStatusFilter'
-        - $ref: '#/components/parameters/AuthorizationStatusFilter'
+        - $ref: '#/components/parameters/ConnectionStatusFilter'
         - $ref: '#/components/parameters/AvailabilityStatusFilter'
         - $ref: '#/components/parameters/IncludeDeletedFilter'
-        - $ref: '#/components/parameters/OnlyConsumableFilter'
+        - $ref: '#/components/parameters/OnlyConnectedFilter'
       responses:
         '200':
           description: 查询成功
@@ -72,17 +50,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListAccountsResponse'
-
+        '400':
+          description: 查询参数不合法
   /api/accounts/{accountId}:
     parameters:
       - $ref: '#/components/parameters/AccountId'
     get:
-      tags:
-        - Accounts
+      tags: [Accounts]
       summary: 查询账号详情
-      description: >
-        返回单个账号的脱敏管理视图，包含基础资料、三维状态、当前生效凭证摘要和当前/最近一次授权尝试摘要，
-        但不暴露原始凭证 payload 或授权尝试 payload。
       operationId: getAccountDetail
       responses:
         '200':
@@ -94,12 +69,8 @@ paths:
         '404':
           description: 账号不存在
     put:
-      tags:
-        - Accounts
+      tags: [Accounts]
       summary: 更新账号资料
-      description: >
-        更新账号可管理资料，包括显示名、备注、标签和平台扩展字段。
-        更新资料不会改变账号稳定身份，也不会直接变更当前生效凭证。
       operationId: updateAccount
       requestBody:
         required: true
@@ -115,16 +86,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/AccountDetail'
         '400':
-          description: 请求参数不合法
+          description: 参数不合法
         '404':
           description: 账号不存在
+        '409':
+          description: 当前状态不允许更新
     delete:
-      tags:
-        - Accounts
+      tags: [Accounts]
       summary: 逻辑删除账号
-      description: >
-        将账号标记为逻辑删除。逻辑删除后的账号仍可读取，
-        但不再进入默认活跃管理集合和默认可消费集合。
       operationId: softDeleteAccount
       responses:
         '200':
@@ -135,17 +104,12 @@ paths:
                 $ref: '#/components/schemas/AccountDetail'
         '404':
           description: 账号不存在
-
   /api/accounts/{accountId}/restore:
     parameters:
       - $ref: '#/components/parameters/AccountId'
     post:
-      tags:
-        - Accounts
+      tags: [Accounts]
       summary: 恢复账号
-      description: >
-        恢复一个已经逻辑删除的账号对象。恢复后应继续复用原有 `accountId`
-        与平台业务身份，而不是创建新对象。
       operationId: restoreAccount
       responses:
         '200':
@@ -157,289 +121,339 @@ paths:
         '404':
           description: 账号不存在
         '409':
-          description: 当前账号未处于可恢复状态
-
-  /api/accounts/{accountId}/authorization-attempts:
-    parameters:
-      - $ref: '#/components/parameters/AccountId'
-    post:
-      tags:
-        - Accounts
-      summary: 发起授权尝试
-      description: >
-        为账号发起一轮新的授权尝试。待验证授权尝试与当前生效凭证严格分离；
-        在验证成功前，旧的当前生效凭证必须保持不变。
-        当授权方式需要二维码等交互式 challenge 时，启动结果可以返回 challenge 摘要。
-      operationId: startAuthorizationAttempt
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StartAuthorizationAttemptRequest'
-      responses:
-        '202':
-          description: 已记录授权尝试
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthorizationAttemptSummary'
-        '400':
-          description: 请求参数不合法
-        '404':
-          description: 账号不存在
-        '409':
-          description: 当前账号状态不允许发起授权尝试
-
-  /api/accounts/{accountId}/authorization-attempts/{attemptId}/verify:
-    parameters:
-      - $ref: '#/components/parameters/AccountId'
-      - $ref: '#/components/parameters/AttemptId'
-    post:
-      tags:
-        - Accounts
-      summary: 验证授权尝试
-      description: >
-        校验一轮待验证授权尝试。验证成功后才允许切换当前生效凭证；
-        验证失败时必须保持旧的当前生效凭证不变。
-      operationId: verifyAuthorizationAttempt
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VerifyAuthorizationAttemptRequest'
-      responses:
-        '200':
-          description: 验证流程已完成
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VerifyAuthorizationAttemptResponse'
-        '400':
-          description: 请求参数不合法
-        '404':
-          description: 账号或授权尝试不存在
-        '409':
-          description: 授权尝试不处于可验证状态
-
-  /api/accounts/{accountId}/availability-checks:
-    parameters:
-      - $ref: '#/components/parameters/AccountId'
-    post:
-      tags:
-        - Accounts
-      summary: 执行可用性检查
-      description: >
-        触发账号可用性检查，并返回最新可用性结果与最低消费条件判断。
-        该接口只返回状态快照，不返回原始凭证数据。
-      operationId: runAvailabilityCheck
-      responses:
-        '200':
-          description: 检查完成
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AvailabilityCheckResult'
-        '404':
-          description: 账号不存在
-        '409':
-          description: 当前账号状态不允许执行可用性检查
-
+          description: 当前状态不允许恢复
 components:
   parameters:
     AccountId:
       name: accountId
       in: path
       required: true
-      description: 账号稳定标识
       schema:
         type: string
-
-    AttemptId:
-      name: attemptId
-      in: path
-      required: true
-      description: 授权尝试稳定标识
-      schema:
-        type: string
-
     PlatformFilter:
       name: platform
       in: query
-      required: false
-      description: 按平台类型筛选
       schema:
         type: string
-
     KeywordFilter:
       name: keyword
       in: query
-      required: false
-      description: >
-        关键字筛选，供运行时在 `displayName`、`remark`、`platformAccountUid`
-        等可管理字段上执行模糊匹配
       schema:
         type: string
-
     LifecycleStatusFilter:
       name: lifecycleStatus
       in: query
-      required: false
-      description: 按生命周期状态筛选
       schema:
         $ref: '#/components/schemas/LifecycleStatus'
-
-    AuthorizationStatusFilter:
-      name: authorizationStatus
+    ConnectionStatusFilter:
+      name: connectionStatus
       in: query
-      required: false
-      description: 按授权状态筛选
       schema:
-        $ref: '#/components/schemas/AuthorizationStatus'
-
+        $ref: '#/components/schemas/ConnectionStatus'
     AvailabilityStatusFilter:
       name: availabilityStatus
       in: query
-      required: false
-      description: 按可用状态筛选
       schema:
         $ref: '#/components/schemas/AvailabilityStatus'
-
     IncludeDeletedFilter:
       name: includeDeleted
       in: query
-      required: false
-      description: 是否包含已逻辑删除账号，默认不包含
       schema:
         type: boolean
-        default: false
-
-    OnlyConsumableFilter:
-      name: onlyConsumable
+    OnlyConnectedFilter:
+      name: onlyConnected
       in: query
-      required: false
-      description: >
-        是否只返回满足最低消费条件的账号。最低消费条件为：
-        `lifecycleStatus = active`、`authorizationStatus = authorized`、
-        `availabilityStatus = healthy` 且存在当前生效凭证。
       schema:
         type: boolean
-        default: false
-
   schemas:
+    LifecycleStatus:
+      type: string
+      enum: [active, disabled, deleted]
+    ConnectionStatus:
+      type: string
+      enum: [not_logged_in, connecting, connected, connect_failed, expired]
+    AvailabilityStatus:
+      type: string
+      enum: [unknown, healthy, risk, restricted, offline]
     CreateAccountRequest:
       type: object
       required:
         - platform
-        - platformAccountUid
-        - displayName
+        - internalDisplayName
       properties:
         platform:
           type: string
-          description: 平台类型，对应 SQL 契约中的 `platform`
-          minLength: 1
-        platformAccountUid:
+        internalDisplayName:
           type: string
-          description: >
-            平台侧稳定账号标识，对应 SQL 契约中的 `platform_account_uid`。
-            与 `platform` 共同承担业务身份语义。
-          minLength: 1
-        displayName:
-          type: string
-          description: >
-            账号可读显示名，对应 SQL 契约中的 `display_name`。
-            仅承担展示语义，不要求全局唯一。
-          minLength: 1
         remark:
           type:
             - string
             - 'null'
-          description: 账号备注，对应 SQL 契约中的 `remark`
         tags:
           type: array
-          description: 账号标签集合，对应 SQL 契约中的 `tags_json`
           items:
             type: string
+          default: []
         platformMetadata:
           type: object
           additionalProperties: true
-          description: >
-            平台扩展字段，对应 SQL 契约中的 `platform_metadata_json`。
-            允许自由扩展，但不得替代核心通用属性。
-
+          default: {}
     UpdateAccountRequest:
       type: object
       required:
-        - displayName
+        - internalDisplayName
         - remark
         - tags
         - platformMetadata
       properties:
-        displayName:
+        internalDisplayName:
           type: string
-          description: 更新后的显示名，对应 SQL 契约中的 `display_name`
-          minLength: 1
         remark:
           type:
             - string
             - 'null'
-          description: 更新后的备注，对应 SQL 契约中的 `remark`
         tags:
           type: array
-          description: 更新后的标签集合，对应 SQL 契约中的 `tags_json`
           items:
             type: string
         platformMetadata:
           type: object
           additionalProperties: true
-          description: 更新后的平台扩展字段，对应 SQL 契约中的 `platform_metadata_json`
-
-    StartAuthorizationAttemptRequest:
+    ResolvedPlatformProfile:
       type: object
       required:
-        - authorizationMethod
-        - payload
+        - resolvedPlatformAccountUid
+        - resolvedDisplayName
+        - resolvedAvatarUrl
+        - resolvedProfileMetadata
       properties:
-        authorizationMethod:
-          type: string
-          description: >
-            授权方式标签，例如 `token_input`、`cookie_input`、`qr_authorization`。
-            对应 SQL 契约中的 `authorization_attempt_method`
-          minLength: 1
-        expectedCredentialType:
+        resolvedPlatformAccountUid:
           type:
             - string
             - 'null'
-          description: >
-            若本次授权验证成功，预期切换出的生效凭证类型，
-            对应 SQL 契约中的 `authorization_attempt_expected_credential_type`
-        payload:
+        resolvedDisplayName:
+          type:
+            - string
+            - 'null'
+        resolvedAvatarUrl:
+          type:
+            - string
+            - 'null'
+        resolvedProfileMetadata:
           type: object
           additionalProperties: true
-          writeOnly: true
-          description: >
-            本次授权尝试提交的原始输入。字段结构允许按平台与授权方式自由扩展；
-            运行时应将其转化为安全存储中的稳定引用，而不是直接回显。
+    CurrentCredentialSummary:
+      type: object
+      required:
+        - hasCredential
+        - expiresAt
+        - updatedAt
+      properties:
+        hasCredential:
+          type: boolean
         expiresAt:
           type:
             - string
             - 'null'
           format: date-time
-          description: >
-            本次授权尝试的预计过期时间，对应 SQL 契约中的 `authorization_attempt_expires_at`
-
-    VerifyAuthorizationAttemptRequest:
+        updatedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    CurrentAccessSessionSummary:
       type: object
+      required:
+        - sessionId
+        - accessMode
+        - sessionStatus
+        - sessionStatusReason
+        - challenge
+        - hasCandidateCredential
+        - credentialApplied
+        - hasLogs
+        - expiresAt
+        - verifiedAt
+        - appliedAt
+        - createdAt
+        - updatedAt
       properties:
-        verificationPayload:
+        sessionId:
+          type: string
+        accessMode:
+          $ref: '#/components/schemas/AccessMode'
+        sessionStatus:
+          $ref: '#/components/schemas/AccessSessionStatus'
+        sessionStatusReason:
+          type:
+            - string
+            - 'null'
+        challenge:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: 'null'
+        hasCandidateCredential:
+          type: boolean
+        credentialApplied:
+          type: boolean
+        hasLogs:
+          type: boolean
+        expiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        verifiedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        appliedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AccountSummary:
+      type: object
+      required:
+        - accountId
+        - platform
+        - internalDisplayName
+        - tags
+        - lifecycleStatus
+        - connectionStatus
+        - availabilityStatus
+        - resolvedPlatformProfile
+        - hasCurrentCredential
+        - updatedAt
+      properties:
+        accountId:
+          type: string
+        platform:
+          type: string
+        internalDisplayName:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        lifecycleStatus:
+          $ref: '#/components/schemas/LifecycleStatus'
+        connectionStatus:
+          $ref: '#/components/schemas/ConnectionStatus'
+        availabilityStatus:
+          $ref: '#/components/schemas/AvailabilityStatus'
+        resolvedPlatformProfile:
+          $ref: '#/components/schemas/ResolvedPlatformProfile'
+        hasCurrentCredential:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+    AccountDetail:
+      type: object
+      required:
+        - accountId
+        - platform
+        - internalDisplayName
+        - remark
+        - tags
+        - platformMetadata
+        - lifecycleStatus
+        - connectionStatus
+        - connectionStatusReason
+        - availabilityStatus
+        - availabilityStatusReason
+        - resolvedPlatformProfile
+        - currentCredential
+        - currentAccessSession
+        - lastConnectedAt
+        - lastVerifiedAt
+        - deletedAt
+        - createdAt
+        - updatedAt
+      properties:
+        accountId:
+          type: string
+        platform:
+          type: string
+        internalDisplayName:
+          type: string
+        remark:
+          type:
+            - string
+            - 'null'
+        tags:
+          type: array
+          items:
+            type: string
+        platformMetadata:
           type: object
           additionalProperties: true
-          writeOnly: true
-          description: >
-            验证授权尝试所需的补充输入，例如确认码、轮询参数或平台回调字段。
-            允许为空对象，以兼容无需额外输入的验证场景。
-
+        lifecycleStatus:
+          $ref: '#/components/schemas/LifecycleStatus'
+        connectionStatus:
+          $ref: '#/components/schemas/ConnectionStatus'
+        connectionStatusReason:
+          type:
+            - string
+            - 'null'
+        availabilityStatus:
+          $ref: '#/components/schemas/AvailabilityStatus'
+        availabilityStatusReason:
+          type:
+            - string
+            - 'null'
+        resolvedPlatformProfile:
+          $ref: '#/components/schemas/ResolvedPlatformProfile'
+        currentCredential:
+          $ref: '#/components/schemas/CurrentCredentialSummary'
+        currentAccessSession:
+          oneOf:
+            - $ref: '#/components/schemas/CurrentAccessSessionSummary'
+            - type: 'null'
+        lastConnectedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        lastVerifiedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        deletedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AccessMode:
+      type: string
+      enum: [manual_token, qr_login]
+    AccessSessionStatus:
+      type: string
+      enum:
+        - waiting_for_scan
+        - waiting_for_confirmation
+        - ready_for_verification
+        - verifying
+        - verified
+        - verify_failed
+        - expired
+        - canceled
     ListAccountsResponse:
       type: object
       required:
@@ -449,363 +463,3 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AccountSummary'
-
-    AccountSummary:
-      type: object
-      description: 用于账号列表、筛选和选择的摘要模型，不返回敏感凭证内容。
-      required:
-        - accountId
-        - platform
-        - platformAccountUid
-        - displayName
-        - tags
-        - lifecycleStatus
-        - authorizationStatus
-        - availabilityStatus
-        - hasActiveCredential
-        - hasPendingAuthorizationAttempt
-        - isConsumable
-        - updatedAt
-      properties:
-        accountId:
-          type: string
-          description: 账号稳定标识，对应 SQL 契约中的 `account_id`
-        platform:
-          type: string
-          description: 平台类型，对应 SQL 契约中的 `platform`
-        platformAccountUid:
-          type: string
-          description: 平台侧稳定账号标识，对应 SQL 契约中的 `platform_account_uid`
-        displayName:
-          type: string
-          description: 账号显示名，对应 SQL 契约中的 `display_name`
-        tags:
-          type: array
-          description: 账号标签集合，对应 SQL 契约中的 `tags_json`
-          items:
-            type: string
-        lifecycleStatus:
-          $ref: '#/components/schemas/LifecycleStatus'
-        authorizationStatus:
-          $ref: '#/components/schemas/AuthorizationStatus'
-        availabilityStatus:
-          $ref: '#/components/schemas/AvailabilityStatus'
-        hasActiveCredential:
-          type: boolean
-          description: >
-            是否存在当前生效凭证引用。对外只暴露布尔结果，不返回 `active_credential_ref`
-            或任何原始凭证数据。
-        hasPendingAuthorizationAttempt:
-          type: boolean
-          description: 是否存在状态为 `pending_verification` 的当前授权尝试
-        isConsumable:
-          type: boolean
-          description: >
-            当前是否满足最低消费条件。只有 `active + authorized + healthy`
-            且存在当前生效凭证时才为 `true`
-        updatedAt:
-          type: string
-          format: date-time
-          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
-
-    AccountDetail:
-      type: object
-      description: >
-        用于单账号查看与管理的脱敏详情模型。该模型只返回管理所需摘要，不返回原始凭证 payload，
-        也不承担受控凭证解析能力。
-      required:
-        - accountId
-        - platform
-        - platformAccountUid
-        - displayName
-        - remark
-        - tags
-        - platformMetadata
-        - lifecycleStatus
-        - authorizationStatus
-        - availabilityStatus
-        - hasPendingAuthorizationAttempt
-        - isConsumable
-        - activeCredential
-        - authorizationAttempt
-        - createdAt
-        - updatedAt
-      properties:
-        accountId:
-          type: string
-          description: 账号稳定标识，对应 SQL 契约中的 `account_id`
-        platform:
-          type: string
-          description: 平台类型，对应 SQL 契约中的 `platform`
-        platformAccountUid:
-          type: string
-          description: 平台侧稳定账号标识，对应 SQL 契约中的 `platform_account_uid`
-        displayName:
-          type: string
-          description: 账号显示名，对应 SQL 契约中的 `display_name`
-        remark:
-          type:
-            - string
-            - 'null'
-          description: 账号备注，对应 SQL 契约中的 `remark`
-        tags:
-          type: array
-          description: 账号标签集合，对应 SQL 契约中的 `tags_json`
-          items:
-            type: string
-        platformMetadata:
-          type: object
-          additionalProperties: true
-          description: 平台扩展字段，对应 SQL 契约中的 `platform_metadata_json`
-        lifecycleStatus:
-          $ref: '#/components/schemas/LifecycleStatus'
-        authorizationStatus:
-          $ref: '#/components/schemas/AuthorizationStatus'
-        authorizationStatusReason:
-          type:
-            - string
-            - 'null'
-          description: 最近一次授权状态变化原因，对应 SQL 契约中的 `authorization_status_reason`
-        availabilityStatus:
-          $ref: '#/components/schemas/AvailabilityStatus'
-        availabilityStatusReason:
-          type:
-            - string
-            - 'null'
-          description: 最近一次可用状态变化原因，对应 SQL 契约中的 `availability_status_reason`
-        hasPendingAuthorizationAttempt:
-          type: boolean
-          description: 是否存在状态为 `pending_verification` 的当前授权尝试
-        isConsumable:
-          type: boolean
-          description: >
-            当前是否满足最低消费条件。只有 `active + authorized + healthy`
-            且存在当前生效凭证时才为 `true`
-        activeCredential:
-          $ref: '#/components/schemas/ActiveCredentialSummary'
-        authorizationAttempt:
-          oneOf:
-            - $ref: '#/components/schemas/AuthorizationAttemptSummary'
-            - type: 'null'
-          description: 当前或最近一次授权尝试摘要，不包含原始 payload
-        lastAuthorizedAt:
-          type:
-            - string
-            - 'null'
-          format: date-time
-          description: 最近一次授权成功并切换当前生效凭证的时间，对应 SQL 契约中的 `last_authorized_at`
-        lastAvailabilityCheckedAt:
-          type:
-            - string
-            - 'null'
-          format: date-time
-          description: 最近一次可用性检查完成时间，对应 SQL 契约中的 `last_availability_checked_at`
-        deletedAt:
-          type:
-            - string
-            - 'null'
-          format: date-time
-          description: 逻辑删除时间，对应 SQL 契约中的 `deleted_at`
-        createdAt:
-          type: string
-          format: date-time
-          description: 创建时间，对应 SQL 契约中的 `created_at`
-        updatedAt:
-          type: string
-          format: date-time
-          description: 最近更新时间，对应 SQL 契约中的 `updated_at`
-
-    ActiveCredentialSummary:
-      type: object
-      description: 当前生效凭证的脱敏摘要，对外不返回引用目标或原始 payload。
-      required:
-        - hasCredential
-      properties:
-        hasCredential:
-          type: boolean
-          description: 是否存在当前生效凭证
-        credentialType:
-          type:
-            - string
-            - 'null'
-          description: 当前生效凭证类型，对应 SQL 契约中的 `active_credential_type`
-        expiresAt:
-          type:
-            - string
-            - 'null'
-          format: date-time
-          description: 当前生效凭证预计过期时间，对应 SQL 契约中的 `active_credential_expires_at`
-        updatedAt:
-          type:
-            - string
-            - 'null'
-          format: date-time
-          description: 当前生效凭证最近一次切换或更新时间，对应 SQL 契约中的 `active_credential_updated_at`
-
-    AuthorizationAttemptSummary:
-      type: object
-      description: 当前或最近一次授权尝试的脱敏摘要，不返回原始 payload。
-      required:
-        - attemptId
-        - authorizationMethod
-        - attemptStatus
-        - createdAt
-        - updatedAt
-      properties:
-        attemptId:
-          type: string
-          description: 授权尝试稳定标识，对应 SQL 契约中的 `authorization_attempt_id`
-        authorizationMethod:
-          type: string
-          description: 授权方式标签，对应 SQL 契约中的 `authorization_attempt_method`
-        expectedCredentialType:
-          type:
-            - string
-            - 'null'
-          description: 验证成功后预期切换出的凭证类型，对应 SQL 契约中的 `authorization_attempt_expected_credential_type`
-        attemptStatus:
-          $ref: '#/components/schemas/AuthorizationAttemptStatus'
-        attemptStatusReason:
-          type:
-            - string
-            - 'null'
-          description: 授权尝试最近一次状态变化原因，对应 SQL 契约中的 `authorization_attempt_status_reason`
-        expiresAt:
-          type:
-            - string
-            - 'null'
-          format: date-time
-          description: 授权尝试预计过期时间，对应 SQL 契约中的 `authorization_attempt_expires_at`
-        createdAt:
-          type: string
-          format: date-time
-          description: 授权尝试创建时间，对应 SQL 契约中的 `authorization_attempt_created_at`
-        updatedAt:
-          type: string
-          format: date-time
-          description: 授权尝试最近更新时间，对应 SQL 契约中的 `authorization_attempt_updated_at`
-        challenge:
-          $ref: '#/components/schemas/ChallengeSummary'
-
-    VerifyAuthorizationAttemptResponse:
-      type: object
-      description: 授权尝试验证结果以及验证后最新账号详情。
-      required:
-        - attemptId
-        - verificationResult
-        - activeCredentialSwitched
-        - account
-      properties:
-        attemptId:
-          type: string
-          description: 本次验证的授权尝试标识
-        verificationResult:
-          $ref: '#/components/schemas/VerificationResult'
-        verificationReason:
-          type:
-            - string
-            - 'null'
-          description: 验证结果说明；失败时可作为上层提示信息
-        activeCredentialSwitched:
-          type: boolean
-          description: 本次验证是否已触发当前生效凭证切换
-        account:
-          $ref: '#/components/schemas/AccountDetail'
-
-    ChallengeSummary:
-      type:
-        - object
-        - 'null'
-      additionalProperties: true
-      description: >
-        provider-neutral 的 challenge 摘要，用于二维码、一次性授权票据或其他交互式令牌接入材料展示。
-        普通接口只返回可展示摘要，不返回脚本实现细节或敏感原始载荷。
-
-    AvailabilityCheckResult:
-      type: object
-      description: 可用性检查执行后的状态快照与最低消费条件判断结果。
-      required:
-        - accountId
-        - lifecycleStatus
-        - authorizationStatus
-        - availabilityStatus
-        - hasActiveCredential
-        - isConsumable
-        - checkedAt
-      properties:
-        accountId:
-          type: string
-          description: 账号稳定标识
-        lifecycleStatus:
-          $ref: '#/components/schemas/LifecycleStatus'
-        authorizationStatus:
-          $ref: '#/components/schemas/AuthorizationStatus'
-        availabilityStatus:
-          $ref: '#/components/schemas/AvailabilityStatus'
-        availabilityStatusReason:
-          type:
-            - string
-            - 'null'
-          description: 最近一次可用性判断原因
-        hasActiveCredential:
-          type: boolean
-          description: 是否存在当前生效凭证引用
-        isConsumable:
-          type: boolean
-          description: 是否满足最低消费条件
-        consumabilityReason:
-          type:
-            - string
-            - 'null'
-          description: 不可消费时的摘要原因；可消费时可为空
-        checkedAt:
-          type: string
-          format: date-time
-          description: 本次可用性检查完成时间
-
-    LifecycleStatus:
-      type: string
-      enum:
-        - active
-        - disabled
-        - deleted
-      description: 账号生命周期状态
-
-    AuthorizationStatus:
-      type: string
-      enum:
-        - unauthorized
-        - authorizing
-        - authorized
-        - expired
-        - revoked
-      description: 账号授权状态
-
-    AvailabilityStatus:
-      type: string
-      enum:
-        - unknown
-        - healthy
-        - risk
-        - restricted
-        - offline
-      description: 账号可用状态
-
-    AuthorizationAttemptStatus:
-      type: string
-      enum:
-        - pending_verification
-        - verification_succeeded
-        - verification_failed
-        - expired
-        - canceled
-      description: 当前或最近一次授权尝试状态
-
-    VerificationResult:
-      type: string
-      enum:
-        - succeeded
-        - failed
-      description: 授权尝试验证结果
-
-  securitySchemes: {}

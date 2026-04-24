@@ -1,38 +1,37 @@
 import { DatabaseSync } from "node:sqlite";
 
-import type { AccountConnectionAttemptStateStore } from "../../../ports/account-connection-attempt-state-store-port.js";
-import type { AccountConnectionAttemptRecord } from "../../../modules/account-connection-attempts/types.js";
+import type { AccountAccessSessionStateStore } from "../../../ports/account-access-session-state-store-port.js";
+import type { AccountAccessSessionRecord } from "../../../modules/account-access-sessions/types.js";
 import type {
-  ConnectionAttemptStatus,
-  ConnectionMethod,
+  AccessMode,
+  AccessSessionStatus,
   JsonObject,
 } from "../../../modules/accounts/types.js";
 
-interface AccountConnectionAttemptRow {
-  attempt_id: string;
+interface AccountAccessSessionRow {
+  session_id: string;
   account_id: string;
   platform: string;
-  connection_method: ConnectionMethod;
-  attempt_status: ConnectionAttemptStatus;
-  attempt_status_reason: string | null;
+  access_mode: AccessMode;
+  session_status: AccessSessionStatus;
+  session_status_reason: string | null;
   challenge_json: string;
-  input_token_ref: string | null;
-  platform_session_ref: string | null;
-  candidate_token_ref: string | null;
+  provider_session_ref: string | null;
+  candidate_credential_ref: string | null;
   resolved_platform_account_uid: string | null;
   resolved_display_name: string | null;
   resolved_avatar_url: string | null;
   resolved_profile_metadata_json: string;
   log_ref: string | null;
   expires_at: string | null;
-  validated_at: string | null;
+  verified_at: string | null;
   applied_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export class SqliteAccountConnectionAttemptsRepository
-  implements AccountConnectionAttemptStateStore
+export class SqliteAccountAccessSessionsRepository
+  implements AccountAccessSessionStateStore
 {
   private readonly database: DatabaseSync;
 
@@ -41,80 +40,77 @@ export class SqliteAccountConnectionAttemptsRepository
     this.database.exec("PRAGMA foreign_keys = ON;");
   }
 
-  async createAttempt(record: AccountConnectionAttemptRecord): Promise<void> {
+  async createSession(record: AccountAccessSessionRecord): Promise<void> {
     this.database
       .prepare(
         `
-          INSERT INTO account_connection_attempts (
-            attempt_id,
+          INSERT INTO account_access_sessions (
+            session_id,
             account_id,
             platform,
-            connection_method,
-            attempt_status,
-            attempt_status_reason,
+            access_mode,
+            session_status,
+            session_status_reason,
             challenge_json,
-            input_token_ref,
-            platform_session_ref,
-            candidate_token_ref,
+            provider_session_ref,
+            candidate_credential_ref,
             resolved_platform_account_uid,
             resolved_display_name,
             resolved_avatar_url,
             resolved_profile_metadata_json,
             log_ref,
             expires_at,
-            validated_at,
+            verified_at,
             applied_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(...toRowValues(record));
   }
 
-  async saveAttempt(record: AccountConnectionAttemptRecord): Promise<void> {
+  async saveSession(record: AccountAccessSessionRecord): Promise<void> {
     this.database
       .prepare(
         `
-          INSERT INTO account_connection_attempts (
-            attempt_id,
+          INSERT INTO account_access_sessions (
+            session_id,
             account_id,
             platform,
-            connection_method,
-            attempt_status,
-            attempt_status_reason,
+            access_mode,
+            session_status,
+            session_status_reason,
             challenge_json,
-            input_token_ref,
-            platform_session_ref,
-            candidate_token_ref,
+            provider_session_ref,
+            candidate_credential_ref,
             resolved_platform_account_uid,
             resolved_display_name,
             resolved_avatar_url,
             resolved_profile_metadata_json,
             log_ref,
             expires_at,
-            validated_at,
+            verified_at,
             applied_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(attempt_id) DO UPDATE SET
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(session_id) DO UPDATE SET
             account_id = excluded.account_id,
             platform = excluded.platform,
-            connection_method = excluded.connection_method,
-            attempt_status = excluded.attempt_status,
-            attempt_status_reason = excluded.attempt_status_reason,
+            access_mode = excluded.access_mode,
+            session_status = excluded.session_status,
+            session_status_reason = excluded.session_status_reason,
             challenge_json = excluded.challenge_json,
-            input_token_ref = excluded.input_token_ref,
-            platform_session_ref = excluded.platform_session_ref,
-            candidate_token_ref = excluded.candidate_token_ref,
+            provider_session_ref = excluded.provider_session_ref,
+            candidate_credential_ref = excluded.candidate_credential_ref,
             resolved_platform_account_uid = excluded.resolved_platform_account_uid,
             resolved_display_name = excluded.resolved_display_name,
             resolved_avatar_url = excluded.resolved_avatar_url,
             resolved_profile_metadata_json = excluded.resolved_profile_metadata_json,
             log_ref = excluded.log_ref,
             expires_at = excluded.expires_at,
-            validated_at = excluded.validated_at,
+            verified_at = excluded.verified_at,
             applied_at = excluded.applied_at,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at
@@ -123,79 +119,113 @@ export class SqliteAccountConnectionAttemptsRepository
       .run(...toRowValues(record));
   }
 
-  async getAttemptById(
+  async getSessionById(
     accountId: string,
-    attemptId: string,
-  ): Promise<AccountConnectionAttemptRecord | undefined> {
+    sessionId: string,
+  ): Promise<AccountAccessSessionRecord | undefined> {
     const row = this.database
       .prepare(
         `
           SELECT
-            attempt_id,
+            session_id,
             account_id,
             platform,
-            connection_method,
-            attempt_status,
-            attempt_status_reason,
+            access_mode,
+            session_status,
+            session_status_reason,
             challenge_json,
-            input_token_ref,
-            platform_session_ref,
-            candidate_token_ref,
+            provider_session_ref,
+            candidate_credential_ref,
             resolved_platform_account_uid,
             resolved_display_name,
             resolved_avatar_url,
             resolved_profile_metadata_json,
             log_ref,
             expires_at,
-            validated_at,
+            verified_at,
             applied_at,
             created_at,
             updated_at
-          FROM account_connection_attempts
-          WHERE account_id = ? AND attempt_id = ?
+          FROM account_access_sessions
+          WHERE account_id = ? AND session_id = ?
         `,
       )
-      .get(accountId, attemptId) as AccountConnectionAttemptRow | undefined;
+      .get(accountId, sessionId) as AccountAccessSessionRow | undefined;
 
-    return row ? mapAttemptRow(row) : undefined;
+    return row ? mapSessionRow(row) : undefined;
   }
 
-  async getLatestAttemptForAccount(
+  async getLatestSessionForAccount(
     accountId: string,
-  ): Promise<AccountConnectionAttemptRecord | undefined> {
+  ): Promise<AccountAccessSessionRecord | undefined> {
     const row = this.database
       .prepare(
         `
           SELECT
-            attempt_id,
+            session_id,
             account_id,
             platform,
-            connection_method,
-            attempt_status,
-            attempt_status_reason,
+            access_mode,
+            session_status,
+            session_status_reason,
             challenge_json,
-            input_token_ref,
-            platform_session_ref,
-            candidate_token_ref,
+            provider_session_ref,
+            candidate_credential_ref,
             resolved_platform_account_uid,
             resolved_display_name,
             resolved_avatar_url,
             resolved_profile_metadata_json,
             log_ref,
             expires_at,
-            validated_at,
+            verified_at,
             applied_at,
             created_at,
             updated_at
-          FROM account_connection_attempts
+          FROM account_access_sessions
           WHERE account_id = ?
           ORDER BY updated_at DESC, created_at DESC
           LIMIT 1
         `,
       )
-      .get(accountId) as AccountConnectionAttemptRow | undefined;
+      .get(accountId) as AccountAccessSessionRow | undefined;
 
-    return row ? mapAttemptRow(row) : undefined;
+    return row ? mapSessionRow(row) : undefined;
+  }
+
+  async listSessionsForAccount(
+    accountId: string,
+  ): Promise<AccountAccessSessionRecord[]> {
+    const rows = this.database
+      .prepare(
+        `
+          SELECT
+            session_id,
+            account_id,
+            platform,
+            access_mode,
+            session_status,
+            session_status_reason,
+            challenge_json,
+            provider_session_ref,
+            candidate_credential_ref,
+            resolved_platform_account_uid,
+            resolved_display_name,
+            resolved_avatar_url,
+            resolved_profile_metadata_json,
+            log_ref,
+            expires_at,
+            verified_at,
+            applied_at,
+            created_at,
+            updated_at
+          FROM account_access_sessions
+          WHERE account_id = ?
+          ORDER BY updated_at DESC, created_at DESC
+        `,
+      )
+      .all(accountId) as unknown as AccountAccessSessionRow[];
+
+    return rows.map(mapSessionRow);
   }
 
   close(): void {
@@ -204,53 +234,51 @@ export class SqliteAccountConnectionAttemptsRepository
 }
 
 function toRowValues(
-  record: AccountConnectionAttemptRecord,
+  record: AccountAccessSessionRecord,
 ): Array<string | null> {
   return [
-    record.attemptId,
+    record.sessionId,
     record.accountId,
     record.platform,
-    record.connectionMethod,
-    record.attemptStatus,
-    record.attemptStatusReason,
+    record.accessMode,
+    record.sessionStatus,
+    record.sessionStatusReason,
     JSON.stringify(record.challenge),
-    record.inputTokenRef,
     record.platformSessionRef,
-    record.candidateTokenRef,
+    record.candidateCredentialRef,
     record.resolvedPlatformAccountUid,
     record.resolvedDisplayName,
     record.resolvedAvatarUrl,
     JSON.stringify(record.resolvedProfileMetadata),
     record.logRef,
     record.expiresAt,
-    record.validatedAt,
+    record.verifiedAt,
     record.appliedAt,
     record.createdAt,
     record.updatedAt,
   ];
 }
 
-function mapAttemptRow(
-  row: AccountConnectionAttemptRow,
-): AccountConnectionAttemptRecord {
+function mapSessionRow(
+  row: AccountAccessSessionRow,
+): AccountAccessSessionRecord {
   return {
-    attemptId: row.attempt_id,
+    sessionId: row.session_id,
     accountId: row.account_id,
     platform: row.platform,
-    connectionMethod: row.connection_method,
-    attemptStatus: row.attempt_status,
-    attemptStatusReason: row.attempt_status_reason,
+    accessMode: row.access_mode,
+    sessionStatus: row.session_status,
+    sessionStatusReason: row.session_status_reason,
     challenge: parseNullableJsonObject(row.challenge_json),
-    inputTokenRef: row.input_token_ref,
-    platformSessionRef: row.platform_session_ref,
-    candidateTokenRef: row.candidate_token_ref,
+    platformSessionRef: row.provider_session_ref,
+    candidateCredentialRef: row.candidate_credential_ref,
     resolvedPlatformAccountUid: row.resolved_platform_account_uid,
     resolvedDisplayName: row.resolved_display_name,
     resolvedAvatarUrl: row.resolved_avatar_url,
     resolvedProfileMetadata: parseJsonObject(row.resolved_profile_metadata_json),
     logRef: row.log_ref,
     expiresAt: row.expires_at,
-    validatedAt: row.validated_at,
+    verifiedAt: row.verified_at,
     appliedAt: row.applied_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

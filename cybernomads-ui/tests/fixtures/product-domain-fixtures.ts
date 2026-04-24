@@ -29,15 +29,18 @@ export const agentService: CurrentAgentServiceDto = {
 export const accountSummary: AccountSummaryDto = {
   accountId: 'account-bili-main',
   platform: 'bilibili',
-  platformAccountUid: 'bili-main',
-  displayName: 'Bilibili Main',
+  internalDisplayName: 'Bilibili Main',
   tags: ['primary'],
   lifecycleStatus: 'active',
-  authorizationStatus: 'authorized',
+  connectionStatus: 'connected',
   availabilityStatus: 'healthy',
-  hasActiveCredential: true,
-  hasPendingAuthorizationAttempt: false,
-  isConsumable: true,
+  resolvedPlatformProfile: {
+    resolvedPlatformAccountUid: 'bili-main',
+    resolvedDisplayName: 'Bilibili Main',
+    resolvedAvatarUrl: null,
+    resolvedProfileMetadata: {},
+  },
+  hasCurrentCredential: true,
   updatedAt: now,
 }
 
@@ -84,7 +87,7 @@ export const trafficWorkDetail: TrafficWorkDetailDto = {
       objectType: 'account',
       objectKey: 'primary-account',
       resourceId: accountSummary.accountId,
-      resourceLabel: accountSummary.displayName,
+      resourceLabel: accountSummary.internalDisplayName,
     },
   ],
   lifecycleStatus: 'ready',

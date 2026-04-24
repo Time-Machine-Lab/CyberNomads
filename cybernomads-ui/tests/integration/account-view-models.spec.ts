@@ -8,61 +8,66 @@ import {
 import type { AccountDetailDto, AccountSummaryDto, LegacyMockAccountRecord } from '@/entities/account/model/types'
 
 describe('account view model mappers', () => {
-  it('maps backend account summary into consumable list presentation', () => {
+  it('maps backend account summary into the rebuilt account list presentation', () => {
     const summary: AccountSummaryDto = {
       accountId: 'acc-001',
       platform: 'bilibili',
-      platformAccountUid: 'bili-main-001',
-      displayName: 'Bili Main',
+      internalDisplayName: 'Bili Main',
       tags: ['主账号', '种子'],
       lifecycleStatus: 'active',
-      authorizationStatus: 'authorized',
+      connectionStatus: 'connected',
       availabilityStatus: 'healthy',
-      hasActiveCredential: true,
-      hasPendingAuthorizationAttempt: false,
-      isConsumable: true,
+      resolvedPlatformProfile: {
+        resolvedPlatformAccountUid: 'bili-main-001',
+        resolvedDisplayName: 'Bili Main',
+        resolvedAvatarUrl: null,
+        resolvedProfileMetadata: {},
+      },
+      hasCurrentCredential: true,
       updatedAt: '2026-04-21T12:30:00.000Z',
     }
 
     const record = mapAccountSummaryDtoToRecord(summary)
 
     expect(record.id).toBe('acc-001')
-    expect(record.displayName).toBe('Bili Main')
-    expect(record.platformAccountUid).toBe('bili-main-001')
+    expect(record.internalDisplayName).toBe('Bili Main')
+    expect(record.resolvedPlatformProfile.resolvedPlatformAccountUid).toBe('bili-main-001')
     expect(record.platformView.label).toBe('Bilibili')
     expect(record.platformView.icon).toBe('play_circle')
-    expect(record.state.label).toBe('可用')
-    expect(record.status).toBe('connected')
-    expect(record.isConsumable).toBe(true)
+    expect(record.state.label).toBe('已连接')
+    expect(record.connectionStatus).toBe('connected')
+    expect(record.hasCurrentCredential).toBe(true)
   })
 
   it('maps backend account detail into deleted read model without leaking raw credential payload', () => {
     const detail: AccountDetailDto = {
       accountId: 'acc-deleted',
       platform: 'bilibili',
-      platformAccountUid: 'bili-deleted-001',
-      displayName: 'Deleted Account',
+      internalDisplayName: 'Deleted Account',
       remark: 'to restore',
       tags: ['回收'],
       platformMetadata: {
         region: 'cn',
       },
       lifecycleStatus: 'deleted',
-      authorizationStatus: 'authorized',
-      authorizationStatusReason: 'Authorized before deletion.',
+      connectionStatus: 'connected',
+      connectionStatusReason: 'Authorized before deletion.',
       availabilityStatus: 'unknown',
       availabilityStatusReason: 'Availability must be rechecked.',
-      hasPendingAuthorizationAttempt: false,
-      isConsumable: false,
-      activeCredential: {
+      resolvedPlatformProfile: {
+        resolvedPlatformAccountUid: 'bili-deleted-001',
+        resolvedDisplayName: 'Deleted Account',
+        resolvedAvatarUrl: null,
+        resolvedProfileMetadata: {},
+      },
+      currentCredential: {
         hasCredential: true,
-        credentialType: 'token',
         expiresAt: '2026-05-01T00:00:00.000Z',
         updatedAt: '2026-04-21T12:00:00.000Z',
       },
-      authorizationAttempt: null,
-      lastAuthorizedAt: '2026-04-21T12:00:00.000Z',
-      lastAvailabilityCheckedAt: null,
+      currentAccessSession: null,
+      lastConnectedAt: '2026-04-21T12:00:00.000Z',
+      lastVerifiedAt: '2026-04-21T12:00:00.000Z',
       deletedAt: '2026-04-21T13:00:00.000Z',
       createdAt: '2026-04-20T08:00:00.000Z',
       updatedAt: '2026-04-21T13:00:00.000Z',
@@ -72,8 +77,8 @@ describe('account view model mappers', () => {
 
     expect(record.lifecycleStatus).toBe('deleted')
     expect(record.state.label).toBe('已删除')
-    expect(record.platformAccountUid).toBe('bili-deleted-001')
-    expect(record.activeCredential.credentialType).toBe('token')
+    expect(record.resolvedPlatformProfile.resolvedPlatformAccountUid).toBe('bili-deleted-001')
+    expect(record.currentCredential.hasCredential).toBe(true)
     expect(record.deletedAtLabel).toContain('2026')
     expect(record.platformMetadata).toEqual({ region: 'cn' })
   })
@@ -94,10 +99,10 @@ describe('account view model mappers', () => {
 
     const record = mapLegacyMockAccountToRecord(legacy)
 
-    expect(record.authorizationStatus).toBe('expired')
+    expect(record.connectionStatus).toBe('expired')
     expect(record.availabilityStatus).toBe('unknown')
-    expect(record.state.label).toBe('授权过期')
-    expect(record.status).toBe('needs-auth')
-    expect(record.isConsumable).toBe(false)
+    expect(record.state.label).toBe('令牌过期')
+    expect(record.hasCurrentCredential).toBe(false)
+    expect(record.platformView.label).toBe('小红书')
   })
 })

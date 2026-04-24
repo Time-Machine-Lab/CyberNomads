@@ -24,6 +24,10 @@ const errorMessage = ref('')
 const pendingActionId = ref<string | null>(null)
 const accountPendingDeletion = ref<AccountRecord | null>(null)
 
+function isConnectedAccount(account: AccountRecord) {
+  return account.lifecycleStatus === 'active' && account.connectionStatus === 'connected' && account.hasCurrentCredential
+}
+
 const overviewCard = computed<PlatformSummaryCard>(() => ({
   platform: '全部账号',
   icon: 'group',
@@ -45,8 +49,8 @@ const platformSummary = computed<PlatformSummaryCard[]>(() => {
 
     if (current) {
       current.count += 1
-      current.consumableCount += account.isConsumable ? 1 : 0
-      current.attentionCount += account.isConsumable ? 0 : 1
+      current.consumableCount += isConnectedAccount(account) ? 1 : 0
+      current.attentionCount += isConnectedAccount(account) ? 0 : 1
       continue
     }
 
@@ -55,8 +59,8 @@ const platformSummary = computed<PlatformSummaryCard[]>(() => {
       icon: account.platformView.icon,
       tone: resolveSummaryTone(account.platformView.color),
       count: 1,
-      consumableCount: account.isConsumable ? 1 : 0,
-      attentionCount: account.isConsumable ? 0 : 1,
+      consumableCount: isConnectedAccount(account) ? 1 : 0,
+      attentionCount: isConnectedAccount(account) ? 0 : 1,
     })
   }
 
@@ -67,8 +71,7 @@ const platformSummary = computed<PlatformSummaryCard[]>(() => {
       platform: item.label,
       icon: item.icon,
       count: item.count,
-      detail:
-        item.attentionCount > 0 ? `${item.attentionCount} 个待处理` : `${item.consumableCount} 个可消费`,
+      detail: item.attentionCount > 0 ? `${item.attentionCount} 个待接入` : `${item.consumableCount} 个已连接`,
       tone: item.tone,
       signal: item.attentionCount > 0 ? 'error' : item.count ? 'primary' : 'muted',
     }))
@@ -284,7 +287,12 @@ async function confirmDeleteAccount() {
 
           <div class="accounts-row__identity">
             <div class="accounts-row__avatar">
-              <img v-if="resolveIdentityAvatar(account)" :src="resolveIdentityAvatar(account)!" :alt="account.internalDisplayName" />
+              <img
+                v-if="resolveIdentityAvatar(account)"
+                :src="resolveIdentityAvatar(account)!"
+                :alt="account.internalDisplayName"
+                referrerpolicy="no-referrer"
+              />
               <span v-else>{{ resolveIdentityFallback(account) }}</span>
             </div>
             <div class="accounts-row__identity-copy">

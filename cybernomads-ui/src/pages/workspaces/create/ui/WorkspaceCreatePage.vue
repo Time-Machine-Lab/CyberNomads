@@ -31,6 +31,10 @@ const backLabel = computed(() => String(route.meta.backLabel ?? '返回工作区
 const selectedAsset = computed(() => assets.value.find((asset) => asset.id === selectedAssetId.value) ?? null)
 const selectedStrategy = computed(() => strategies.value.find((strategy) => strategy.id === selectedStrategyId.value) ?? null)
 
+function isConnectedAccount(account: AccountRecord) {
+  return account.lifecycleStatus === 'active' && account.connectionStatus === 'connected' && account.hasCurrentCredential
+}
+
 const workspaceName = computed(() => {
   if (!selectedAsset.value || !selectedStrategy.value) {
     return '增长编排工作区'
@@ -51,14 +55,14 @@ async function loadPage() {
   ;[assets.value, strategies.value, accounts.value, agentNodes.value] = await Promise.all([
     listAssets(),
     listStrategies(),
-    listAccounts({ onlyConsumable: true }),
+    listAccounts({ onlyConnected: true }),
     listAgentNodes(),
   ])
 
   selectedAssetId.value ||= assets.value[0]?.id ?? ''
   selectedStrategyId.value ||= strategies.value[1]?.id ?? strategies.value[0]?.id ?? ''
   if (!selectedAccountIds.value.length) {
-    selectedAccountIds.value = accounts.value.filter((account) => account.isConsumable).slice(0, 1).map((account) => account.id)
+    selectedAccountIds.value = accounts.value.filter(isConnectedAccount).slice(0, 1).map((account) => account.id)
   }
 }
 
@@ -92,13 +96,13 @@ function resolveStrategyTag(strategy: StrategyRecord) {
 
 function resolveAccountVisualState(account: AccountRecord) {
   if (account.availabilityStatus === 'risk' || account.availabilityStatus === 'restricted' || account.availabilityStatus === 'offline') return 'risk'
-  if (account.loginStatus === 'expired' || account.loginStatus === 'login_failed') return 'expired'
-  if (account.loginStatus === 'connecting') return 'standby'
+  if (account.connectionStatus === 'expired' || account.connectionStatus === 'connect_failed') return 'expired'
+  if (account.connectionStatus === 'connecting') return 'standby'
   return 'healthy'
 }
 
 function isSelectableAccount(account: AccountRecord) {
-  return account.isConsumable
+  return isConnectedAccount(account)
 }
 
 function toggleAccount(accountId: string) {
@@ -289,6 +293,7 @@ async function handleSubmit() {
                       v-if="account.resolvedPlatformProfile.resolvedAvatarUrl"
                       :src="account.resolvedPlatformProfile.resolvedAvatarUrl"
                       :alt="account.internalDisplayName"
+                      referrerpolicy="no-referrer"
                     />
                     <span v-else class="material-symbols-outlined">robot_2</span>
                   </div>

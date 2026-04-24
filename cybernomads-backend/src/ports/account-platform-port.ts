@@ -1,11 +1,11 @@
 import type {
+  AccessMode,
   AvailabilityStatus,
-  ConnectionMethod,
   JsonObject,
   ResolvedPlatformProfile,
-  ValidationResult,
+  VerificationResult,
 } from "../modules/accounts/types.js";
-import type { ConnectionAttemptLogEntry } from "../modules/account-connection-attempts/types.js";
+import type { AccessSessionLogEntry } from "../modules/account-access-sessions/types.js";
 
 export interface AccountPlatformAccountSnapshot {
   accountId: string;
@@ -15,58 +15,57 @@ export interface AccountPlatformAccountSnapshot {
   resolvedPlatformProfile: ResolvedPlatformProfile;
 }
 
-export interface AccountPlatformStartConnectionAttemptInput {
+export interface AccountPlatformStartQrSessionInput {
   account: AccountPlatformAccountSnapshot;
-  connectionMethod: ConnectionMethod;
-  tokenValue: string | null;
-  context: JsonObject;
   requestedExpiresAt: string | null;
 }
 
-export interface AccountPlatformStartConnectionAttemptResult {
-  challenge: JsonObject | null;
-  platformSession: JsonObject | null;
-  candidateToken: JsonObject | null;
+export interface AccountPlatformStartQrSessionResult {
+  challenge: JsonObject;
+  providerSession: JsonObject | null;
   expiresAt: string | null;
-  logs: ConnectionAttemptLogEntry[];
+  logs: AccessSessionLogEntry[];
 }
 
-export interface AccountPlatformResolveConnectionAttemptInput {
+export type AccountPlatformQrProgressStatus =
+  | "waiting_for_scan"
+  | "waiting_for_confirmation"
+  | "ready_for_verification"
+  | "expired";
+
+export interface AccountPlatformPollQrSessionInput {
   account: AccountPlatformAccountSnapshot;
-  connectionMethod: ConnectionMethod;
-  context: JsonObject;
-  platformSession: JsonObject;
-  resolutionPayload: JsonObject;
+  providerSession: JsonObject;
 }
 
-export interface AccountPlatformResolveConnectionAttemptResult {
-  platformSession: JsonObject | null;
-  candidateToken: JsonObject | null;
+export interface AccountPlatformPollQrSessionResult {
+  progressStatus: AccountPlatformQrProgressStatus;
+  providerSession: JsonObject | null;
+  candidateCredential: JsonObject | null;
   reason: string | null;
   expiresAt: string | null;
-  logs: ConnectionAttemptLogEntry[];
+  logs: AccessSessionLogEntry[];
 }
 
-export interface AccountPlatformValidateConnectionAttemptInput {
+export interface AccountPlatformVerifyCredentialInput {
   account: AccountPlatformAccountSnapshot;
-  connectionMethod: ConnectionMethod;
-  candidateToken: JsonObject;
-  context: JsonObject;
-  validationPayload: JsonObject;
+  accessMode: AccessMode;
+  candidateCredential: JsonObject;
+  providerSession: JsonObject;
 }
 
-export interface AccountPlatformValidateConnectionAttemptResult {
-  validationResult: ValidationResult;
+export interface AccountPlatformVerifyCredentialResult {
+  verificationResult: VerificationResult;
   reason: string | null;
   resolvedPlatformProfile: ResolvedPlatformProfile | null;
-  token: JsonObject | null;
-  tokenExpiresAt: string | null;
-  logs: ConnectionAttemptLogEntry[];
+  credential: JsonObject | null;
+  credentialExpiresAt: string | null;
+  logs: AccessSessionLogEntry[];
 }
 
 export interface AccountPlatformAvailabilityCheckInput {
   account: AccountPlatformAccountSnapshot;
-  activeToken: JsonObject;
+  activeCredential: JsonObject;
 }
 
 export interface AccountPlatformAvailabilityCheckResult {
@@ -76,16 +75,16 @@ export interface AccountPlatformAvailabilityCheckResult {
 
 export interface AccountPlatformPort {
   platformCode: string;
-  startConnectionAttempt(
-    input: AccountPlatformStartConnectionAttemptInput,
-  ): Promise<AccountPlatformStartConnectionAttemptResult>;
-  resolveConnectionAttempt(
-    input: AccountPlatformResolveConnectionAttemptInput,
-  ): Promise<AccountPlatformResolveConnectionAttemptResult>;
-  validateConnectionAttempt(
-    input: AccountPlatformValidateConnectionAttemptInput,
-  ): Promise<AccountPlatformValidateConnectionAttemptResult>;
-  checkAvailability(
+  startQrSession(
+    input: AccountPlatformStartQrSessionInput,
+  ): Promise<AccountPlatformStartQrSessionResult>;
+  pollQrSession(
+    input: AccountPlatformPollQrSessionInput,
+  ): Promise<AccountPlatformPollQrSessionResult>;
+  verifyCredential(
+    input: AccountPlatformVerifyCredentialInput,
+  ): Promise<AccountPlatformVerifyCredentialResult>;
+  checkAvailability?(
     input: AccountPlatformAvailabilityCheckInput,
   ): Promise<AccountPlatformAvailabilityCheckResult>;
 }

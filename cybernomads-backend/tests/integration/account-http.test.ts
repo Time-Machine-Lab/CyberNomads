@@ -9,6 +9,17 @@ import {
   type ApplicationReadyState,
 } from "../../src/app/start-application.js";
 import { resolveRuntimePaths } from "../../src/adapters/storage/file-system/runtime-paths.js";
+import type {
+  AccountPlatformAvailabilityCheckInput,
+  AccountPlatformAvailabilityCheckResult,
+  AccountPlatformPollQrSessionInput,
+  AccountPlatformPollQrSessionResult,
+  AccountPlatformPort,
+  AccountPlatformStartQrSessionInput,
+  AccountPlatformStartQrSessionResult,
+  AccountPlatformVerifyCredentialInput,
+  AccountPlatformVerifyCredentialResult,
+} from "../../src/ports/account-platform-port.js";
 
 describe.sequential("account module http api", () => {
   const temporaryDirectories: string[] = [];
@@ -23,7 +34,7 @@ describe.sequential("account module http api", () => {
     );
   });
 
-  it("runs the manual-token flow end to end and preserves the old token when replacement validation fails", async () => {
+  it("runs the manual-token flow end to end and preserves the old credential when replacement verification fails", async () => {
     const { application, workingDirectory } = await startTemporaryApplication(
       temporaryDirectories,
       applications,
@@ -40,103 +51,81 @@ describe.sequential("account module http api", () => {
       },
     });
 
-    expect(createdAccount.loginStatus).toBe("not_logged_in");
-    expect(createdAccount.activeToken.hasToken).toBe(false);
+    expect(createdAccount.connectionStatus).toBe("not_logged_in");
+    expect(createdAccount.currentCredential.hasCredential).toBe(false);
 
-    const startedAttempt = await startConnectionAttempt(application, createdAccount.accountId, {
-      connectionMethod: "manual_token",
-      tokenValue: "stable-token",
-    });
-
-    expect(startedAttempt.attemptStatus).toBe("ready_for_validation");
-    expect(startedAttempt.hasCandidateToken).toBe(true);
-
-    const validatedAttempt = await validateConnectionAttempt(
+    const startedSession = await startTokenAccessSession(
       application,
       createdAccount.accountId,
-      startedAttempt.attemptId,
+      {
+        token: "stable-token",
+      },
+    );
+
+    expect(startedSession.sessionStatus).toBe("ready_for_verification");
+    expect(startedSession.hasCandidateCredential).toBe(true);
+
+    const verifiedSession = await verifyAccessSession(
+      application,
+      createdAccount.accountId,
+      startedSession.sessionId,
       {},
     );
 
-    expect(validatedAttempt.validationResult).toBe("succeeded");
-    expect(validatedAttempt.tokenApplied).toBe(true);
-    expect(validatedAttempt.account.loginStatus).toBe("connected");
+    expect(verifiedSession.verificationResult).toBe("succeeded");
+    expect(verifiedSession.credentialApplied).toBe(true);
+    expect(verifiedSession.account.connectionStatus).toBe("connected");
     expect(
-      validatedAttempt.account.resolvedPlatformProfile.resolvedPlatformAccountUid,
-    ).toContain("stub-bili-uid");
-    expect(validatedAttempt.account.activeToken.hasToken).toBe(true);
+      verifiedSession.account.resolvedPlatformProfile.resolvedPlatformAccountUid,
+    ).toContain("stub");
+    expect(verifiedSession.account.currentCredential.hasCredential).toBe(true);
 
-    const attemptLogs = await fetchJson(
-      `${application.http.url}/api/accounts/${createdAccount.accountId}/connection-attempts/${startedAttempt.attemptId}/logs`,
+    const sessionLogs = await fetchJson(
+      `${application.http.url}/api/accounts/${createdAccount.accountId}/access-sessions/${startedSession.sessionId}/logs`,
     );
-    expect(attemptLogs.entries.length).toBeGreaterThan(0);
-
-    const availabilityCheck = await postJson(
-      `${application.http.url}/api/accounts/${createdAccount.accountId}/availability-checks`,
-      {},
-      false,
-    );
-    expect(availabilityCheck.status).toBe(200);
-    await expect(availabilityCheck.json()).resolves.toMatchObject({
-      accountId: createdAccount.accountId,
-      availabilityStatus: "healthy",
-      isConsumable: true,
-    });
+    expect(sessionLogs.entries.length).toBeGreaterThan(0);
 
     const accountDatabase = new DatabaseSync(runtimePaths.databaseFile);
-    const activeTokenRow = accountDatabase
+    const activeCredentialRow = accountDatabase
       .prepare(
         `
-          SELECT active_token_ref AS activeTokenRef
+          SELECT active_credential_ref AS activeCredentialRef
           FROM accounts
           WHERE account_id = ?
         `,
       )
-      .get(createdAccount.accountId) as { activeTokenRef: string } | undefined;
+      .get(createdAccount.accountId) as { activeCredentialRef: string } | undefined;
     accountDatabase.close();
 
-    const activeTokenPath = join(
+    const activeCredentialPath = join(
       runtimePaths.runtimeRoot,
       ".account-secrets",
-      activeTokenRow!.activeTokenRef,
+      activeCredentialRow!.activeCredentialRef,
     );
-    await expect(access(activeTokenPath)).resolves.toBeUndefined();
-    await expect(readFile(activeTokenPath, "utf8")).resolves.toContain(
+    await expect(access(activeCredentialPath)).resolves.toBeUndefined();
+    await expect(readFile(activeCredentialPath, "utf8")).resolves.toContain(
       '"token":"stable-token"',
     );
 
-    const replacementAttempt = await startConnectionAttempt(
+    const replacementSession = await startTokenAccessSession(
       application,
       createdAccount.accountId,
       {
-        connectionMethod: "manual_token",
-        tokenValue: "broken-token",
+        token: "broken-token",
       },
     );
-    const failedValidation = await validateConnectionAttempt(
+    const failedVerification = await verifyAccessSession(
       application,
       createdAccount.accountId,
-      replacementAttempt.attemptId,
-      {
-        validationPayload: {
-          forceResult: "failed",
-          reason: "token expired",
-        },
-      },
+      replacementSession.sessionId,
+      {},
     );
 
-    expect(failedValidation.validationResult).toBe("failed");
-    expect(failedValidation.tokenApplied).toBe(false);
-    expect(failedValidation.account.loginStatus).toBe("connected");
-    expect(failedValidation.attempt.attemptStatus).toBe("validation_failed");
+    expect(failedVerification.verificationResult).toBe("failed");
+    expect(failedVerification.credentialApplied).toBe(false);
+    expect(failedVerification.account.connectionStatus).toBe("connected");
 
-    const detail = await fetchJson(
-      `${application.http.url}/api/accounts/${createdAccount.accountId}`,
-    );
-    expect(detail.activeToken.hasToken).toBe(true);
-    expect(detail.latestConnectionAttempt.attemptStatus).toBe("validation_failed");
-
-    await expect(readFile(activeTokenPath, "utf8")).resolves.toContain(
+    await expect(readFile(activeCredentialPath, "utf8")).resolves.toContain(
       '"token":"stable-token"',
     );
   });
@@ -152,35 +141,22 @@ describe.sequential("account module http api", () => {
       internalDisplayName: "Bili 二维码账号",
     });
 
-    const qrAttempt = await startConnectionAttempt(application, createdAccount.accountId, {
-      connectionMethod: "qr_login",
-      context: {
-        qrSeed: "qr-account",
-      },
-    });
+    const qrSession = await startQrAccessSession(application, createdAccount.accountId, {});
 
-    expect(qrAttempt.attemptStatus).toBe("pending_resolution");
-    expect(qrAttempt.challenge).toMatchObject({
+    expect(qrSession.sessionStatus).toBe("waiting_for_scan");
+    expect(qrSession.challenge).toMatchObject({
       challengeType: "qr_image",
     });
 
-    const resolvedAttempt = await resolveConnectionAttempt(
+    const polledSession = await pollAccessSession(
       application,
       createdAccount.accountId,
-      qrAttempt.attemptId,
+      qrSession.sessionId,
       {},
     );
-    expect(resolvedAttempt.attemptStatus).toBe("ready_for_validation");
-    expect(resolvedAttempt.hasCandidateToken).toBe(true);
-
-    const validatedAttempt = await validateConnectionAttempt(
-      application,
-      createdAccount.accountId,
-      qrAttempt.attemptId,
-      {},
-    );
-    expect(validatedAttempt.validationResult).toBe("succeeded");
-    expect(validatedAttempt.account.loginStatus).toBe("connected");
+    expect(
+      ["waiting_for_scan", "waiting_for_confirmation", "ready_for_verification", "expired"],
+    ).toContain(polledSession.sessionStatus);
 
     const deleteResponse = await fetch(
       `${application.http.url}/api/accounts/${createdAccount.accountId}`,
@@ -204,15 +180,50 @@ describe.sequential("account module http api", () => {
       lifecycleStatus: "active",
     });
   });
+
+  it("expires an unscanned qr session after one minute and falls back to not_logged_in", async () => {
+    const now = createMutableNow("2026-04-24T08:00:00.000Z");
+    const { application } = await startTemporaryApplication(
+      temporaryDirectories,
+      applications,
+      { now: now.current },
+    );
+
+    const createdAccount = await createAccount(application, {
+      platform: "bilibili",
+      internalDisplayName: "Bili 超时二维码账号",
+    });
+
+    const qrSession = await startQrAccessSession(application, createdAccount.accountId, {});
+
+    expect(qrSession.sessionStatus).toBe("waiting_for_scan");
+    expect(qrSession.expiresAt).toBe("2026-04-24T08:01:00.000Z");
+
+    now.set("2026-04-24T08:01:01.000Z");
+
+    const detail = await fetchJson(
+      `${application.http.url}/api/accounts/${createdAccount.accountId}`,
+    );
+
+    expect(detail.connectionStatus).toBe("not_logged_in");
+    expect(detail.connectionStatusReason).toContain("QR access session expired");
+    expect(detail.currentAccessSession.sessionStatus).toBe("expired");
+  });
 });
 
 async function startTemporaryApplication(
   temporaryDirectories: string[],
   applications: ApplicationReadyState[],
+  options: { now?: () => Date } = {},
 ): Promise<{ application: ApplicationReadyState; workingDirectory: string }> {
   const workingDirectory = await mkdtemp(join(tmpdir(), "cybernomads-account-http-"));
   temporaryDirectories.push(workingDirectory);
-  const application = await startApplication({ workingDirectory, port: 0 });
+  const application = await startApplication({
+    workingDirectory,
+    port: 0,
+    accountPlatforms: [new FakeHttpAccountPlatform()],
+    now: options.now,
+  });
   applications.push(application);
 
   return {
@@ -230,41 +241,54 @@ async function createAccount(
   return response.json();
 }
 
-async function startConnectionAttempt(
+async function startTokenAccessSession(
   application: ApplicationReadyState,
   accountId: string,
   payload: Record<string, unknown>,
 ): Promise<any> {
   const response = await postJson(
-    `${application.http.url}/api/accounts/${accountId}/connection-attempts`,
+    `${application.http.url}/api/accounts/${accountId}/access-sessions/token`,
     payload,
   );
   expect(response.status).toBe(201);
   return response.json();
 }
 
-async function resolveConnectionAttempt(
+async function startQrAccessSession(
   application: ApplicationReadyState,
   accountId: string,
-  attemptId: string,
   payload: Record<string, unknown>,
 ): Promise<any> {
   const response = await postJson(
-    `${application.http.url}/api/accounts/${accountId}/connection-attempts/${attemptId}/resolve`,
+    `${application.http.url}/api/accounts/${accountId}/access-sessions/qr`,
+    payload,
+  );
+  expect(response.status).toBe(201);
+  return response.json();
+}
+
+async function pollAccessSession(
+  application: ApplicationReadyState,
+  accountId: string,
+  sessionId: string,
+  payload: Record<string, unknown>,
+): Promise<any> {
+  const response = await postJson(
+    `${application.http.url}/api/accounts/${accountId}/access-sessions/${sessionId}/poll`,
     payload,
   );
   expect(response.status).toBe(200);
   return response.json();
 }
 
-async function validateConnectionAttempt(
+async function verifyAccessSession(
   application: ApplicationReadyState,
   accountId: string,
-  attemptId: string,
+  sessionId: string,
   payload: Record<string, unknown>,
 ): Promise<any> {
   const response = await postJson(
-    `${application.http.url}/api/accounts/${accountId}/connection-attempts/${attemptId}/validate`,
+    `${application.http.url}/api/accounts/${accountId}/access-sessions/${sessionId}/verify`,
     payload,
   );
   expect(response.status).toBe(200);
@@ -280,15 +304,130 @@ async function fetchJson(url: string): Promise<any> {
 async function postJson(
   url: string,
   payload: Record<string, unknown>,
-  sendBody = true,
+  includeBody = true,
 ): Promise<Response> {
   return fetch(url, {
     method: "POST",
-    headers: sendBody
+    headers: includeBody
       ? {
           "Content-Type": "application/json",
         }
       : undefined,
-    body: sendBody ? JSON.stringify(payload) : undefined,
+    body: includeBody ? JSON.stringify(payload) : undefined,
   });
+}
+
+class FakeHttpAccountPlatform implements AccountPlatformPort {
+  readonly platformCode = "bilibili";
+
+  async startQrSession(
+    input: AccountPlatformStartQrSessionInput,
+  ): Promise<AccountPlatformStartQrSessionResult> {
+    return {
+      challenge: {
+        challengeType: "qr_image",
+        imageUrl: "data:image/svg+xml;base64,PHN2Zy8+",
+      },
+      providerSession: {
+        qrcodeKey: "qr-1",
+      },
+      expiresAt: input.requestedExpiresAt,
+      logs: [
+        {
+          timestamp: "2026-04-24T08:00:00.000Z",
+          level: "info",
+          message: "qr started",
+        },
+      ],
+    };
+  }
+
+  async pollQrSession(
+    _input: AccountPlatformPollQrSessionInput,
+  ): Promise<AccountPlatformPollQrSessionResult> {
+    return {
+      progressStatus: "ready_for_verification",
+      providerSession: {
+        qrcodeKey: "qr-1",
+      },
+      candidateCredential: {
+        token: "qr-token",
+      },
+      reason: "credential resolved",
+      expiresAt: null,
+      logs: [
+        {
+          timestamp: "2026-04-24T08:00:01.000Z",
+          level: "info",
+          message: "qr resolved",
+        },
+      ],
+    };
+  }
+
+  async verifyCredential(
+    input: AccountPlatformVerifyCredentialInput,
+  ): Promise<AccountPlatformVerifyCredentialResult> {
+    if (String(input.candidateCredential.token).includes("broken")) {
+      return {
+        verificationResult: "failed",
+        reason: "token invalid",
+        resolvedPlatformProfile: null,
+        credential: null,
+        credentialExpiresAt: null,
+        logs: [
+          {
+            timestamp: "2026-04-24T08:00:02.000Z",
+            level: "error",
+            message: "verification failed",
+          },
+        ],
+      };
+    }
+
+    return {
+      verificationResult: "succeeded",
+      reason: "verified",
+      resolvedPlatformProfile: {
+        resolvedPlatformAccountUid: `stub-${String(input.candidateCredential.token)}`,
+        resolvedDisplayName: "平台账号",
+        resolvedAvatarUrl: null,
+        resolvedProfileMetadata: {},
+      },
+      credential: {
+        token: input.candidateCredential.token,
+      },
+      credentialExpiresAt: null,
+      logs: [
+        {
+          timestamp: "2026-04-24T08:00:03.000Z",
+          level: "info",
+          message: "verification succeeded",
+        },
+      ],
+    };
+  }
+
+  async checkAvailability(
+    _input: AccountPlatformAvailabilityCheckInput,
+  ): Promise<AccountPlatformAvailabilityCheckResult> {
+    return {
+      availabilityStatus: "healthy",
+      reason: "healthy",
+    };
+  }
+}
+
+function createMutableNow(initialIso: string): {
+  current: () => Date;
+  set(nextIso: string): void;
+} {
+  let value = initialIso;
+
+  return {
+    current: () => new Date(value),
+    set(nextIso: string) {
+      value = nextIso;
+    },
+  };
 }

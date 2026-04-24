@@ -1,6 +1,5 @@
-import type { AccountPlatformAccountSnapshot } from "../../ports/account-platform-port.js";
-import { toLatestConnectionAttemptSummary } from "../account-connection-attempts/model.js";
-import type { AccountConnectionAttemptRecord } from "../account-connection-attempts/types.js";
+import { toCurrentAccessSessionSummary } from "../account-access-sessions/model.js";
+import type { AccountAccessSessionRecord } from "../account-access-sessions/types.js";
 import type {
   AccountDetail,
   AccountRecord,
@@ -15,18 +14,17 @@ export function toAccountSummary(record: AccountRecord): AccountSummary {
     internalDisplayName: record.internalDisplayName,
     tags: [...record.tags],
     lifecycleStatus: record.lifecycleStatus,
-    loginStatus: record.loginStatus,
+    connectionStatus: record.connectionStatus,
     availabilityStatus: record.availabilityStatus,
     resolvedPlatformProfile: toResolvedPlatformProfile(record),
-    hasActiveToken: record.activeTokenRef !== null,
-    isConsumable: isAccountConsumable(record),
+    hasCurrentCredential: record.activeCredentialRef !== null,
     updatedAt: record.updatedAt,
   };
 }
 
 export function toAccountDetail(
   record: AccountRecord,
-  latestAttempt?: AccountConnectionAttemptRecord | null,
+  latestAccessSession?: AccountAccessSessionRecord | null,
 ): AccountDetail {
   return {
     accountId: record.accountId,
@@ -36,22 +34,21 @@ export function toAccountDetail(
     tags: [...record.tags],
     platformMetadata: { ...record.platformMetadata },
     lifecycleStatus: record.lifecycleStatus,
-    loginStatus: record.loginStatus,
-    loginStatusReason: record.loginStatusReason,
+    connectionStatus: record.connectionStatus,
+    connectionStatusReason: record.connectionStatusReason,
     availabilityStatus: record.availabilityStatus,
     availabilityStatusReason: record.availabilityStatusReason,
     resolvedPlatformProfile: toResolvedPlatformProfile(record),
-    activeToken: {
-      hasToken: record.activeTokenRef !== null,
-      expiresAt: record.activeTokenExpiresAt,
-      updatedAt: record.activeTokenUpdatedAt,
+    currentCredential: {
+      hasCredential: record.activeCredentialRef !== null,
+      expiresAt: record.activeCredentialExpiresAt,
+      updatedAt: record.activeCredentialUpdatedAt,
     },
-    latestConnectionAttempt: latestAttempt
-      ? toLatestConnectionAttemptSummary(latestAttempt)
+    currentAccessSession: latestAccessSession
+      ? toCurrentAccessSessionSummary(latestAccessSession)
       : null,
-    isConsumable: isAccountConsumable(record),
     lastConnectedAt: record.lastConnectedAt,
-    lastValidatedAt: record.lastValidatedAt,
+    lastVerifiedAt: record.lastVerifiedAt,
     deletedAt: record.deletedAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -75,37 +72,21 @@ export function toResolvedPlatformProfile(
   };
 }
 
-export function toAccountPlatformSnapshot(
-  record: AccountRecord,
-): AccountPlatformAccountSnapshot {
-  return {
-    accountId: record.accountId,
-    platform: record.platform,
-    internalDisplayName: record.internalDisplayName,
-    platformMetadata: { ...record.platformMetadata },
-    resolvedPlatformProfile: toResolvedPlatformProfile(record),
-  };
+export function isAccountResolvable(record: AccountRecord): boolean {
+  return deriveResolvableReason(record) === null;
 }
 
-export function isAccountConsumable(record: AccountRecord): boolean {
-  return deriveConsumabilityReason(record) === null;
-}
-
-export function deriveConsumabilityReason(record: AccountRecord): string | null {
+export function deriveResolvableReason(record: AccountRecord): string | null {
   if (record.lifecycleStatus !== "active") {
     return `Account lifecycle status is ${record.lifecycleStatus}.`;
   }
 
-  if (record.loginStatus !== "connected") {
-    return `Account login status is ${record.loginStatus}.`;
+  if (record.connectionStatus !== "connected") {
+    return `Account connection status is ${record.connectionStatus}.`;
   }
 
-  if (record.availabilityStatus !== "healthy") {
-    return `Account availability status is ${record.availabilityStatus}.`;
-  }
-
-  if (record.activeTokenRef === null) {
-    return "Account has no active token.";
+  if (record.activeCredentialRef === null) {
+    return "Account has no active credential.";
   }
 
   return null;

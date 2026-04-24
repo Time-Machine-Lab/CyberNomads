@@ -23,7 +23,7 @@ The system SHALL land first-time users on the Console module and guide them thro
 
 #### Scenario: Missing account blocks traffic work creation path
 - **WHEN** a user attempts to create or prepare a traffic work without an account returned by `GET /api/accounts?onlyConsumable=true`
-- **THEN** the frontend MUST provide a clear path to the Accounts module so the user can complete account onboarding and return
+- **THEN** the frontend MUST provide a clear path to the Accounts module so the user can complete account setup and return
 
 ### Requirement: Frontend SHALL support the workspace execution workflow
 The system SHALL allow a user to enter the Workspaces module as the TrafficWork management surface, launch the create-work flow, bind a product, strategy, and account object binding, create a backend TrafficWork, enter the runtime view, inspect task state, inspect task output records, and open a full-page task intervention view. The execution experience SHALL preserve the approved runtime shell while displaying only backend contract-backed TrafficWork and Task data.

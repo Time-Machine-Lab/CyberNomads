@@ -11,7 +11,7 @@ import { FileSystemProductContentStore } from "../adapters/storage/file-system/p
 import { FileSystemTrafficWorkContextStore } from "../adapters/storage/file-system/traffic-work-context-store.js";
 import { FileSystemStrategyContentStore } from "../adapters/storage/file-system/strategy-content-store.js";
 import { OpenClawAgentProvider } from "../adapters/agent/openclaw/openclaw-adapter.js";
-import { SqliteAccountConnectionAttemptsRepository } from "../adapters/storage/sqlite/account-connection-attempts-sqlite-repository.js";
+import { SqliteAccountAccessSessionsRepository } from "../adapters/storage/sqlite/account-access-sessions-sqlite-repository.js";
 import { SqliteAccountsRepository } from "../adapters/storage/sqlite/accounts-sqlite-repository.js";
 import { SqliteAgentServiceStateRepository } from "../adapters/storage/sqlite/agent-services-sqlite-repository.js";
 import { SqliteProductRepository } from "../adapters/storage/sqlite/products-sqlite-repository.js";
@@ -21,7 +21,7 @@ import {
 } from "../adapters/storage/sqlite/strategies-sqlite-repository.js";
 import { SqliteTaskRepository } from "../adapters/storage/sqlite/tasks-sqlite-repository.js";
 import { SqliteTrafficWorkRepository } from "../adapters/storage/sqlite/traffic-works-sqlite-repository.js";
-import { AccountConnectionAttemptService } from "../modules/account-connection-attempts/service.js";
+import { AccountAccessSessionService } from "../modules/account-access-sessions/service.js";
 import { AgentAccessService } from "../modules/agent-access/service.js";
 import { AccountService } from "../modules/accounts/service.js";
 import { ProductService } from "../modules/products/service.js";
@@ -71,7 +71,7 @@ export async function startApplication(
   const accountRepository = new SqliteAccountsRepository(
     runtime.paths.databaseFile,
   );
-  const accountConnectionAttemptRepository = new SqliteAccountConnectionAttemptsRepository(
+  const accountAccessSessionRepository = new SqliteAccountAccessSessionsRepository(
     runtime.paths.databaseFile,
   );
   const agentServiceStateRepository = new SqliteAgentServiceStateRepository(
@@ -109,21 +109,23 @@ export async function startApplication(
   });
   const accountService = new AccountService({
     stateStore: accountRepository,
-    connectionAttemptStateStore: accountConnectionAttemptRepository,
+    accessSessionStateStore: accountAccessSessionRepository,
     secretStore: accountSecretStore,
     platforms: [
       new BilibiliStubAccountPlatformAdapter(),
       ...(options.accountPlatforms ?? []),
     ],
+    now: options.now,
   });
-  const accountConnectionAttemptService = new AccountConnectionAttemptService({
+  const accountAccessSessionService = new AccountAccessSessionService({
     accountStateStore: accountRepository,
-    attemptStateStore: accountConnectionAttemptRepository,
+    sessionStateStore: accountAccessSessionRepository,
     secretStore: accountSecretStore,
     platforms: [
       new BilibiliStubAccountPlatformAdapter(),
       ...(options.accountPlatforms ?? []),
     ],
+    now: options.now,
   });
   const agentAccessService = new AgentAccessService({
     stateStore: agentServiceStateRepository,
@@ -164,7 +166,7 @@ export async function startApplication(
       productService,
       strategyService,
       accountService,
-      accountConnectionAttemptService,
+      accountAccessSessionService,
       agentAccessService,
       trafficWorkService,
       taskService,
@@ -185,7 +187,7 @@ export async function startApplication(
         productService.close();
         strategyService.close();
         accountService.close();
-        accountConnectionAttemptService.close();
+        accountAccessSessionService.close();
         agentAccessService.close();
         trafficWorkService.close();
         taskService.close();
@@ -197,7 +199,7 @@ export async function startApplication(
     productService.close();
     strategyService.close();
     accountService.close();
-    accountConnectionAttemptService.close();
+    accountAccessSessionService.close();
     agentAccessService.close();
     trafficWorkService.close();
     taskService.close();
