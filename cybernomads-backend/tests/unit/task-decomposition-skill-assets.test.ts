@@ -15,15 +15,14 @@ describe("task decomposition skill assets", () => {
     "cybernomads-task-decomposition",
   );
 
-  it("keeps the skill body structured, step-based, and linked to tool references", async () => {
+  it("keeps the skill body modular, step-based, and linked to tool references", async () => {
     const skill = await readFile(join(skillDirectory, "SKILL.md"), "utf8");
 
     expect(skill).toContain("name: cybernomads-task-decomposition");
-    expect(skill).toContain("scripts/copy-runtime-resource.js");
-    expect(skill).toContain("scripts/batch-save-tasks.js");
-    expect(skill).toContain("scripts/run-self-check.js");
-    expect(skill).toContain("references/available-tools.md");
-    expect(skill).toContain("references/self-checklist.md");
+    expect(skill).toContain("references/module-1-overview.md");
+    expect(skill).toContain("references/module-7-self-check.md");
+    expect(skill).toContain("references/module-3-task-contract.md");
+    expect(skill).toContain("references/module-6-persist-task-set.md");
   });
 
   it("documents controlled tools, keeps one real traffic-work sample, and bundles executable script helpers", async () => {
@@ -33,6 +32,10 @@ describe("task decomposition skill assets", () => {
     );
     const examples = await readFile(
       join(skillDirectory, "references", "examples.md"),
+      "utf8",
+    );
+    const moduleOverview = await readFile(
+      join(skillDirectory, "references", "module-1-overview.md"),
       "utf8",
     );
 
@@ -45,6 +48,9 @@ describe("task decomposition skill assets", () => {
     expect(examples).toContain("bilibili-web-api");
     expect(examples).toContain('mode = "create"');
     expect(examples).toContain("search-candidate-videos");
+    expect(moduleOverview).toContain("scripts/copy-runtime-resource.js");
+    expect(moduleOverview).toContain("scripts/batch-save-tasks.js");
+    expect(moduleOverview).toContain("scripts/run-self-check.js");
 
     for (const scriptName of [
       "copy-runtime-resource.js",
