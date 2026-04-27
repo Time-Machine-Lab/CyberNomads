@@ -1,5 +1,6 @@
 import type { TaskSetTaskResult, TaskSetWriteInput } from "../tasks/types.js";
 import type { RuntimeAgentResourceType } from "../../ports/runtime-agent-resource-store-port.js";
+import type { TrafficWorkContextPreparationStatus } from "../traffic-works/types.js";
 
 export interface CopyRuntimeAgentResourceToolInput {
   trafficWorkId: string;
@@ -27,6 +28,20 @@ export interface BatchSaveTasksToolResult {
   trafficWorkId: string;
   taskCount: number;
   tasks: TaskSetTaskResult[];
+}
+
+export interface ReportTrafficWorkPreparationStatusToolInput {
+  trafficWorkId: string;
+  status: Extract<TrafficWorkContextPreparationStatus, "prepared" | "failed">;
+  reason?: string | null;
+}
+
+export interface ReportTrafficWorkPreparationStatusToolResult {
+  trafficWorkId: string;
+  status: Extract<TrafficWorkContextPreparationStatus, "prepared" | "failed">;
+  reason: string | null;
+  contextPreparedAt: string | null;
+  updatedAt: string;
 }
 
 export interface TaskDecompositionSupportToolValidationIssue {

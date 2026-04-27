@@ -8,7 +8,6 @@ import type {
   StrategyContentStore,
   StrategyMetadataStore,
 } from "../strategies/types.js";
-import type { TaskSetWriteInput, TaskSetWriteResult } from "../tasks/types.js";
 import type { StrategyReferenceStore } from "../../ports/strategy-reference-store-port.js";
 import type { TrafficWorkContextPreparationPort } from "../../ports/traffic-work-context-preparation-port.js";
 import type { TrafficWorkContextStore } from "../../ports/traffic-work-context-store-port.js";
@@ -42,20 +41,8 @@ export interface TrafficWorkServiceOptions {
   productContentStore: ProductContentStore;
   strategyStore: StrategyReferenceStore & StrategyMetadataStore;
   strategyContentStore: StrategyContentStore;
-  taskSetPersistence: TrafficWorkTaskSetPersistence;
   now?: () => Date;
   createTrafficWorkId?: () => string;
-}
-
-export interface TrafficWorkTaskSetPersistence {
-  createTaskSetForTrafficWork(
-    trafficWorkId: string,
-    input: TaskSetWriteInput,
-  ): Promise<TaskSetWriteResult>;
-  replaceTaskSetForTrafficWork(
-    trafficWorkId: string,
-    input: TaskSetWriteInput,
-  ): Promise<TaskSetWriteResult>;
 }
 
 interface TrafficWorkProductSnapshot {
@@ -332,7 +319,7 @@ export class TrafficWorkService {
       const context = await this.options.contextStore.ensureWorkContext(
         record.trafficWorkId,
       );
-      const taskSet = await this.options.contextPreparation.prepareContext({
+      const submission = await this.options.contextPreparation.prepareContext({
         trafficWorkId: record.trafficWorkId,
         displayName: record.displayName,
         product: product.summary,
@@ -344,25 +331,16 @@ export class TrafficWorkService {
         context,
       });
 
-      if (taskSetMode === "create") {
-        await this.options.taskSetPersistence.createTaskSetForTrafficWork(
-          record.trafficWorkId,
-          taskSet,
-        );
-      } else {
-        await this.options.taskSetPersistence.replaceTaskSetForTrafficWork(
-          record.trafficWorkId,
-          taskSet,
-        );
-      }
-
-      const preparedAt = this.now().toISOString();
+      const submittedAt = this.now().toISOString();
       const nextRecord: TrafficWorkRecord = {
         ...record,
-        contextPreparationStatus: "prepared",
-        contextPreparationStatusReason: "Traffic work context prepared.",
-        contextPreparedAt: preparedAt,
-        updatedAt: preparedAt,
+        contextPreparationStatus: "pending",
+        contextPreparationStatusReason:
+          taskSetMode === "create"
+            ? `Task decomposition request submitted to agent service. sessionId=${submission.sessionId}; messageId=${submission.messageId}`
+            : `Task decomposition replace request submitted to agent service. sessionId=${submission.sessionId}; messageId=${submission.messageId}`,
+        contextPreparedAt: null,
+        updatedAt: submittedAt,
       };
       await this.options.stateStore.saveTrafficWork(nextRecord);
       return nextRecord;
@@ -738,7 +716,7 @@ function renderTrafficWorkContextMarkdown(
               `- ${item.objectType}:${item.objectKey} -> ${item.resourceId}${
                 item.resourceLabel ? ` (${item.resourceLabel})` : ""
               }`,
-            )
+          )
           .join("\n")
       : "- none";
 

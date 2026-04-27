@@ -6,6 +6,7 @@ import type {
   AgentProviderContext,
   AgentProviderPort,
   AgentProviderSendMessageInput,
+  AgentProviderSubmitMessageResult,
   AgentProviderSendMessageResult,
   AgentProviderSession,
   AgentProviderSessionCreateInput,
@@ -102,9 +103,13 @@ describe("agent access service", () => {
     expect(provider.sendMessageCalls[0]?.message).toContain(
       "Plan tasks for the launch.",
     );
+    expect(provider.sendMessageCalls[0]?.message).toContain(
+      "$cybernomads-task-decomposition",
+    );
     expect(provider.sendMessageCalls[1]?.message).toContain(
       "Execute the first task.",
     );
+    expect(provider.submitMessageCalls).toEqual([]);
   });
 
   it("rejects upper-layer access until the current agent service is connected", async () => {
@@ -131,6 +136,50 @@ describe("agent access service", () => {
     ).rejects.toMatchObject({
       code: "AGENT_SERVICE_OPERATION_NOT_ALLOWED",
     });
+  });
+
+  it("submits task decomposition requests without waiting for agent completion", async () => {
+    const stateStore = new InMemoryAgentServiceStateStore();
+    const credentialStore = new InMemoryAgentServiceCredentialStore();
+    const provider = new FakeAgentProvider("openclaw");
+    const service = new AgentAccessService({
+      stateStore,
+      credentialStore,
+      providers: [provider],
+      now: () => new Date("2026-04-21T08:00:00.000Z"),
+      createAgentServiceId: () => "agent-service-1",
+    });
+
+    await service.configureCurrentService({
+      providerCode: "openclaw",
+      endpointUrl: "http://agent.local:3001",
+      authentication: {
+        kind: "bearer-token",
+        secret: "secret-token",
+      },
+    });
+    await service.verifyCurrentServiceConnection();
+    await service.prepareCurrentAgentServiceCapabilities();
+
+    const result = await service.submitTaskDecompositionRequest({
+      prompt: "Decompose the current traffic work.",
+      context: "traffic-work context",
+      title: "traffic-work:1",
+    });
+
+    expect(result).toEqual({
+      sessionId: "session-1",
+      messageId: "message-1",
+    });
+    expect(provider.submitMessageCalls).toEqual([
+      {
+        sessionId: "session-1",
+        message: expect.stringContaining("$cybernomads-task-decomposition"),
+      },
+    ]);
+    expect(provider.submitMessageCalls[0]?.message).toContain(
+      "Decompose the current traffic work.",
+    );
   });
 });
 
@@ -182,6 +231,7 @@ class InMemoryAgentServiceCredentialStore implements AgentServiceCredentialStore
 
 class FakeAgentProvider implements AgentProviderPort {
   readonly createSessionCalls: AgentProviderSessionCreateInput[] = [];
+  readonly submitMessageCalls: AgentProviderSendMessageInput[] = [];
   readonly sendMessageCalls: AgentProviderSendMessageInput[] = [];
   private readonly sessionMessages = new Map<
     string,
@@ -261,6 +311,26 @@ class FakeAgentProvider implements AgentProviderPort {
     return {
       messageId: `message-${this.messageCounter}`,
       outputText: `handled:${input.message}`,
+    };
+  }
+
+  async submitMessage(
+    _context: AgentProviderContext,
+    input: AgentProviderSendMessageInput,
+  ): Promise<AgentProviderSubmitMessageResult> {
+    void _context;
+
+    this.submitMessageCalls.push(input);
+    this.messageCounter += 1;
+    const messages = this.sessionMessages.get(input.sessionId) ?? [];
+    messages.push({
+      role: "user",
+      content: input.message,
+    });
+    this.sessionMessages.set(input.sessionId, messages);
+
+    return {
+      messageId: `message-${this.messageCounter}`,
     };
   }
 

@@ -74,8 +74,21 @@ describe("openclaw agent provider", () => {
       params: {
         message: "Plan the launch tasks.",
         label: "Roadmap",
+        timeout: 300000,
         extraSystemPrompt:
           "Session title: Roadmap\n\nSession purpose: task planning.\n\nSession context:\nworkspace alpha",
+      },
+    });
+    expect(wsClient.calls[0]?.options).toEqual({
+      timeoutMs: 330000,
+    });
+    expect(wsClient.calls[1]).toMatchObject({
+      method: "agent.wait",
+      params: {
+        timeoutMs: 300000,
+      },
+      options: {
+        timeoutMs: 310000,
       },
     });
   });
@@ -247,6 +260,9 @@ class FakeOpenClawWsClient {
   readonly calls: Array<{
     method: string;
     params: Record<string, unknown>;
+    options?: {
+      timeoutMs?: number;
+    };
   }> = [];
   private readonly messages = new Map<string, Array<Record<string, unknown>>>();
 
@@ -260,8 +276,11 @@ class FakeOpenClawWsClient {
     _context: AgentProviderContext,
     method: string,
     params: Record<string, unknown>,
+    options?: {
+      timeoutMs?: number;
+    },
   ): Promise<unknown> {
-    this.calls.push({ method, params });
+    this.calls.push({ method, params, options });
 
     if (method === "agent") {
       const sessionKey = String(params.sessionKey);

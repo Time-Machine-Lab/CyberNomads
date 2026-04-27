@@ -21,27 +21,34 @@ describe("traffic work context preparation adapter", () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     await Promise.all(
-      temporaryDirectories.splice(0).map((directory) =>
-        rm(directory, { recursive: true, force: true }),
-      ),
+      temporaryDirectories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
     );
   });
 
-  it("builds the structured task decomposition prompt with runtime root and relative paths", async () => {
+  it("builds and submits the decomposition prompt with template and async workflow rules", async () => {
     const runtimeRootDirectory = await createTemporaryDirectory(
       "cybernomads-prompt-",
       temporaryDirectories,
     );
-    const runtimeSkillsDirectory = join(runtimeRootDirectory, "agent", "skills");
+    const runtimeSkillsDirectory = join(
+      runtimeRootDirectory,
+      "agent",
+      "skills",
+    );
+    const runtimeKnowledgeDirectory = join(
+      runtimeRootDirectory,
+      "agent",
+      "knowledge",
+    );
     const workDirectory = join(runtimeRootDirectory, "work", "traffic-work-1");
 
     await mkdir(
-      join(
-        runtimeSkillsDirectory,
-        "cybernomads-task-decomposition",
-      ),
+      join(runtimeSkillsDirectory, "cybernomads-task-decomposition"),
       { recursive: true },
     );
+    await mkdir(runtimeKnowledgeDirectory, { recursive: true });
     await mkdir(workDirectory, { recursive: true });
     await writeFile(
       join(
@@ -52,16 +59,16 @@ describe("traffic work context preparation adapter", () => {
       "# task decomposition skill",
       "utf8",
     );
+    await writeFile(
+      join(runtimeKnowledgeDirectory, "引流任务文档模板.md"),
+      "# task template",
+      "utf8",
+    );
 
     const submitTaskDecompositionRequest = vi.fn(
       async (_request: TaskDecompositionRequestLike) => ({
         sessionId: "session-1",
-        outputText: "{}",
-        history: [],
-        taskSet: {
-          source: { kind: "agent-decomposition" as const },
-          tasks: [],
-        },
+        messageId: "message-1",
       }),
     );
     const adapter = new AgentAccessTrafficWorkContextPreparationAdapter({
@@ -72,8 +79,12 @@ describe("traffic work context preparation adapter", () => {
       runtimeSkillsDirectory,
     });
 
-    await adapter.prepareContext(createInput(workDirectory));
+    const result = await adapter.prepareContext(createInput(workDirectory));
 
+    expect(result).toEqual({
+      sessionId: "session-1",
+      messageId: "message-1",
+    });
     expect(submitTaskDecompositionRequest).toHaveBeenCalledTimes(1);
     const request = submitTaskDecompositionRequest.mock.calls[0]?.[0];
     expect(request).toBeDefined();
@@ -82,32 +93,19 @@ describe("traffic work context preparation adapter", () => {
       throw new Error("Expected task decomposition request to be defined.");
     }
 
-    expect(request.context).toContain("Main Growth Work");
-    expect(request.prompt).toContain("[引流工作信息]");
-    expect(request.prompt).toContain("[产品信息]");
-    expect(request.prompt).toContain("[策略信息]");
     expect(request.prompt).toContain("[任务拆分Skill信息]");
-    expect(request.prompt).toContain("[基础路径信息]");
-    expect(request.prompt).toContain("[规则]");
-    expect(request.prompt).toContain("引流工作ID: traffic-work-1");
-    expect(request.prompt).toContain("产品ID: product-1");
-    expect(request.prompt).toContain("策略ID: strategy-1");
-    expect(request.prompt).toContain("# CyberNomads Product");
-    expect(request.prompt).toContain("# Growth Strategy");
+    expect(request.prompt).toContain("[任务文档模板信息]");
     expect(request.prompt).toContain(
-      `Cybernomads目录绝对路径: ${runtimeRootDirectory}`,
+      "任务文档模板位置: ./agent/knowledge/引流任务文档模板.md",
+    );
+    expect(request.prompt).toContain("你不需要等待后端创建任务或创建任务文档");
+    expect(request.prompt).toContain(
+      "你必须先使用受控工具把任务元数据保存到 task 表",
+    );
+    expect(request.prompt).toContain(
+      "当任务元数据、任务文档、资源准备和自检全部完成后，你必须通过受控工具回写当前引流工作的 contextPreparationStatus",
     );
     expect(request.prompt).toContain("引流工作目录: ./work/traffic-work-1");
-    expect(request.prompt).toContain(
-      "任务拆分Skill位置: ./agent/skills/cybernomads-task-decomposition/SKILL.md",
-    );
-    expect(request.prompt).toContain(
-      "- account:primary-account -> account-1 (Main Account)",
-    );
-    expect(request.prompt).not.toContain("Work context root:");
-    expect(request.prompt).not.toContain(
-      'Return a task set with source.kind = "agent-decomposition"',
-    );
   });
 
   it("fails before agent invocation when the Cybernomads root directory is missing", async () => {
@@ -121,7 +119,9 @@ describe("traffic work context preparation adapter", () => {
     });
 
     await expect(
-      adapter.prepareContext(createInput(join(tmpdir(), "work", "traffic-work-1"))),
+      adapter.prepareContext(
+        createInput(join(tmpdir(), "work", "traffic-work-1")),
+      ),
     ).rejects.toThrow("Missing Cybernomads root directory.");
     expect(submitTaskDecompositionRequest).not.toHaveBeenCalled();
   });
@@ -131,11 +131,26 @@ describe("traffic work context preparation adapter", () => {
       "cybernomads-missing-skill-",
       temporaryDirectories,
     );
-    const runtimeSkillsDirectory = join(runtimeRootDirectory, "agent", "skills");
+    const runtimeSkillsDirectory = join(
+      runtimeRootDirectory,
+      "agent",
+      "skills",
+    );
+    const runtimeKnowledgeDirectory = join(
+      runtimeRootDirectory,
+      "agent",
+      "knowledge",
+    );
     const workDirectory = join(runtimeRootDirectory, "work", "traffic-work-1");
 
     await mkdir(runtimeSkillsDirectory, { recursive: true });
+    await mkdir(runtimeKnowledgeDirectory, { recursive: true });
     await mkdir(workDirectory, { recursive: true });
+    await writeFile(
+      join(runtimeKnowledgeDirectory, "引流任务文档模板.md"),
+      "# task template",
+      "utf8",
+    );
 
     const submitTaskDecompositionRequest = vi.fn();
     const adapter = new AgentAccessTrafficWorkContextPreparationAdapter({
@@ -146,7 +161,9 @@ describe("traffic work context preparation adapter", () => {
       runtimeSkillsDirectory,
     });
 
-    await expect(adapter.prepareContext(createInput(workDirectory))).rejects.toThrow(
+    await expect(
+      adapter.prepareContext(createInput(workDirectory)),
+    ).rejects.toThrow(
       'Failed to locate installed runtime Skill file "cybernomads-task-decomposition".',
     );
     expect(submitTaskDecompositionRequest).not.toHaveBeenCalled();
@@ -157,15 +174,22 @@ describe("traffic work context preparation adapter", () => {
       "cybernomads-invalid-work-",
       temporaryDirectories,
     );
-    const runtimeSkillsDirectory = join(runtimeRootDirectory, "agent", "skills");
+    const runtimeSkillsDirectory = join(
+      runtimeRootDirectory,
+      "agent",
+      "skills",
+    );
+    const runtimeKnowledgeDirectory = join(
+      runtimeRootDirectory,
+      "agent",
+      "knowledge",
+    );
 
     await mkdir(
-      join(
-        runtimeSkillsDirectory,
-        "cybernomads-task-decomposition",
-      ),
+      join(runtimeSkillsDirectory, "cybernomads-task-decomposition"),
       { recursive: true },
     );
+    await mkdir(runtimeKnowledgeDirectory, { recursive: true });
     await writeFile(
       join(
         runtimeSkillsDirectory,
@@ -173,6 +197,11 @@ describe("traffic work context preparation adapter", () => {
         "SKILL.md",
       ),
       "# task decomposition skill",
+      "utf8",
+    );
+    await writeFile(
+      join(runtimeKnowledgeDirectory, "引流任务文档模板.md"),
+      "# task template",
       "utf8",
     );
 

@@ -1,18 +1,20 @@
-import { access, mkdir, writeFile } from "node:fs/promises";
-import { dirname, relative, resolve, sep } from "node:path";
+import { access } from "node:fs/promises";
+import { relative, resolve, sep } from "node:path";
 
 import type { AgentAccessService } from "../../modules/agent-access/service.js";
-import type { TaskSetWriteInput } from "../../modules/tasks/types.js";
 import type {
   PrepareTrafficWorkContextInput,
   TrafficWorkContextPreparationPort,
 } from "../../ports/traffic-work-context-preparation-port.js";
 import { CYBERNOMADS_TASK_DECOMPOSITION_SKILL } from "../../shared/agent-task-skill-instructions.js";
-import { resolveRuntimeInstalledSkillFile } from "../skill/local/runtime-skill-assets.js";
+import {
+  resolveRuntimeInstalledKnowledgeFile,
+  resolveRuntimeInstalledSkillFile,
+} from "../skill/local/runtime-skill-assets.js";
 
-export class AgentAccessTrafficWorkContextPreparationAdapter
-  implements TrafficWorkContextPreparationPort
-{
+const TRAFFIC_TASK_DOCUMENT_TEMPLATE_FILE = "引流任务文档模板.md";
+
+export class AgentAccessTrafficWorkContextPreparationAdapter implements TrafficWorkContextPreparationPort {
   constructor(
     private readonly options: {
       agentAccessService: AgentAccessService;
@@ -40,9 +42,22 @@ export class AgentAccessTrafficWorkContextPreparationAdapter
       this.options.runtimeSkillsDirectory,
       CYBERNOMADS_TASK_DECOMPOSITION_SKILL,
     );
+    const runtimeKnowledgeDirectory = resolve(
+      runtimeRootDirectory,
+      "agent",
+      "knowledge",
+    );
+    const taskDocumentTemplateFile = await resolveRuntimeInstalledKnowledgeFile(
+      runtimeKnowledgeDirectory,
+      TRAFFIC_TASK_DOCUMENT_TEMPLATE_FILE,
+    );
     await ensurePathExists(
       taskDecompositionSkillFile,
       "task decomposition Skill file",
+    );
+    await ensurePathExists(
+      taskDocumentTemplateFile,
+      "traffic task document template file",
     );
 
     const trafficWorkDirectoryRelativePath = toRuntimeRelativePath(
@@ -55,22 +70,23 @@ export class AgentAccessTrafficWorkContextPreparationAdapter
       taskDecompositionSkillFile,
       "task decomposition Skill file",
     );
+    const taskDocumentTemplateRelativePath = toRuntimeRelativePath(
+      runtimeRootDirectory,
+      taskDocumentTemplateFile,
+      "traffic task document template file",
+    );
 
-    const result =
-      await this.options.agentAccessService.submitTaskDecompositionRequest({
-        title: `traffic-work:${input.trafficWorkId}`,
-        context: input.contextMarkdown,
-        prompt: buildTaskDecompositionPrompt({
-          input,
-          runtimeRootDirectory,
-          trafficWorkDirectoryRelativePath,
-          taskDecompositionSkillRelativePath,
-        }),
-      });
-
-    await materializeTaskDocuments(input.context.workDirectory, result.taskSet);
-
-    return result.taskSet;
+    return this.options.agentAccessService.submitTaskDecompositionRequest({
+      title: `traffic-work:${input.trafficWorkId}`,
+      context: input.contextMarkdown,
+      prompt: buildTaskDecompositionPrompt({
+        input,
+        runtimeRootDirectory,
+        trafficWorkDirectoryRelativePath,
+        taskDecompositionSkillRelativePath,
+        taskDocumentTemplateRelativePath,
+      }),
+    });
   }
 }
 
@@ -79,6 +95,7 @@ function buildTaskDecompositionPrompt(input: {
   runtimeRootDirectory: string;
   trafficWorkDirectoryRelativePath: string;
   taskDecompositionSkillRelativePath: string;
+  taskDocumentTemplateRelativePath: string;
 }): string {
   const { input: request } = input;
   const objectBindings = renderObjectBindings(request);
@@ -122,6 +139,13 @@ function buildTaskDecompositionPrompt(input: {
     `- “任务拆分Skill位置”是本次任务拆分必须使用的 Skill 文件位置。`,
     `- 任务拆分的具体规则、输出要求和执行约束以该 Skill 为准。`,
     ``,
+    `[任务文档模板信息]`,
+    `任务文档模板位置: ${input.taskDocumentTemplateRelativePath}`,
+    ``,
+    `说明:`,
+    `- “任务文档模板位置”是本次任务 Markdown 文档的全局结构模板。`,
+    `- 你需要先理解该模板中要求的必要模块，再整理 taskSet 和后续任务文档内容。`,
+    ``,
     `[基础路径信息]`,
     `Cybernomads目录绝对路径: ${input.runtimeRootDirectory}`,
     `引流工作目录: ${input.trafficWorkDirectoryRelativePath}`,
@@ -133,13 +157,18 @@ function buildTaskDecompositionPrompt(input: {
     `[规则]`,
     `1. 请基于“Cybernomads目录绝对路径”解析本提示词中的所有相对路径。`,
     `2. 请先访问“任务拆分Skill位置”并读取其中内容。`,
-    `3. 在理解 Skill 内容后，再开始当前引流工作的任务拆分。`,
+    `3. 请再读取“任务文档模板位置”，并按模板要求理解每个任务文档必须具备的模块结构。`,
+    `4. 你不需要等待后端创建任务或创建任务文档，这两部分都由你在 Skill 流程中自行完成。`,
+    `5. 你必须先使用受控工具把任务元数据保存到 task 表；只有保存成功后，才能继续创建任务文档。`,
+    `6. 每个任务的 documentRef 必须是 ./<taskKey>.md，且任务文档必须位于当前引流工作目录根目录。`,
+    `7. 任务文档中出现的 Skill、Tools、Knowledge、Data 资源路径，必须采用以当前引流工作目录为根的相对路径。`,
+    `8. 当任务元数据、任务文档、资源准备和自检全部完成后，你必须通过受控工具回写当前引流工作的 contextPreparationStatus。`,
   ].join("\n");
 }
 
 function renderObjectBindings(input: PrepareTrafficWorkContextInput): string {
   if (input.objectBindings.length === 0) {
-    return `- 无`;
+    return `- none`;
   }
 
   return input.objectBindings
@@ -189,79 +218,4 @@ function toRuntimeRelativePath(
   }
 
   return `./${relativePath.split(sep).join("/")}`;
-}
-
-async function materializeTaskDocuments(
-  workDirectory: string,
-  taskSet: TaskSetWriteInput,
-): Promise<void> {
-  for (const task of taskSet.tasks) {
-    const taskDocumentRef = normalizeTaskDocumentRef(task);
-    const taskFilePath = resolve(workDirectory, taskDocumentRef);
-
-    ensurePathWithinDirectory(workDirectory, taskFilePath);
-    await mkdir(dirname(taskFilePath), { recursive: true });
-    await writeFile(taskFilePath, renderTaskDocument(task), "utf8");
-  }
-}
-
-function normalizeTaskDocumentRef(
-  task: TaskSetWriteInput["tasks"][number],
-): string {
-  const documentRef = task.documentRef?.trim();
-
-  if (documentRef) {
-    return documentRef;
-  }
-
-  return `task-${task.taskKey}.md`;
-}
-
-function ensurePathWithinDirectory(
-  rootDirectory: string,
-  targetPath: string,
-): void {
-  const normalizedRoot = resolve(rootDirectory);
-  const normalizedTarget = resolve(targetPath);
-  const relativePath = relative(normalizedRoot, normalizedTarget);
-
-  if (
-    relativePath.startsWith("..") ||
-    relativePath.includes("..\\") ||
-    relativePath.includes("../")
-  ) {
-    throw new Error("Task documentRef must stay within the work context.");
-  }
-}
-
-function renderTaskDocument(task: TaskSetWriteInput["tasks"][number]): string {
-  const relyOnTaskKeys =
-    task.condition.relyOnTaskKeys.length > 0
-      ? task.condition.relyOnTaskKeys.join(", ")
-      : "none";
-  const inputNeeds =
-    task.inputNeeds.length > 0
-      ? task.inputNeeds
-          .map(
-            (inputNeed) =>
-              `- ${inputNeed.name}: ${inputNeed.description} (${inputNeed.source})`,
-          )
-          .join("\n")
-      : "- none";
-
-  return [
-    `# ${task.name}`,
-    ``,
-    `- Task Key: ${task.taskKey}`,
-    `- Context Ref: ${task.contextRef}`,
-    `- Cron: ${task.condition.cron ?? "none"}`,
-    `- Rely On: ${relyOnTaskKeys}`,
-    ``,
-    `## Instruction`,
-    task.instruction,
-    ``,
-    `## Input Needs`,
-    inputNeeds,
-    ``,
-  ].join("\n");
 }

@@ -36,6 +36,10 @@ export interface AgentProviderSendMessageInput {
   message: string;
 }
 
+export interface AgentProviderSubmitMessageResult {
+  messageId: string;
+}
+
 export interface AgentProviderSendMessageResult {
   messageId: string;
   outputText: string;
@@ -72,6 +76,11 @@ export interface AgentProviderPort {
     context: AgentProviderContext,
     input: AgentProviderSessionCreateInput,
   ): Promise<AgentProviderSession>;
+
+  submitMessage(
+    context: AgentProviderContext,
+    input: AgentProviderSendMessageInput,
+  ): Promise<AgentProviderSubmitMessageResult>;
 
   sendMessage(
     context: AgentProviderContext,

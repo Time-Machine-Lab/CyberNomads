@@ -342,29 +342,20 @@ export class AgentAccessService {
         context: normalizedRequest.context,
       },
     );
-    const messageResult = await providerAccess.provider.sendMessage(
+    const messageResult = await providerAccess.provider.submitMessage(
       providerAccess.context,
       {
         sessionId: session.sessionId,
         message: [
           renderTaskDecompositionSkillInstruction(),
-          `Return only a JSON object that matches the Cybernomads TaskSetWriteInput contract.`,
           normalizedRequest.prompt,
         ].join("\n\n"),
-      },
-    );
-    const history = await providerAccess.provider.listSessionMessages(
-      providerAccess.context,
-      {
-        sessionId: session.sessionId,
       },
     );
 
     return {
       sessionId: session.sessionId,
-      outputText: messageResult.outputText,
-      history,
-      taskSet: parseTaskSetWriteInput(messageResult.outputText),
+      messageId: messageResult.messageId,
     };
   }
 
@@ -710,56 +701,4 @@ function toErrorMessage(error: unknown): string {
   }
 
   return "An unexpected provider error occurred.";
-}
-
-function parseTaskSetWriteInput(
-  outputText: string,
-): TaskDecompositionResult["taskSet"] {
-  const jsonText = extractJsonObjectText(outputText);
-
-  if (!jsonText) {
-    throw new AgentServiceValidationError(
-      "Agent task decomposition did not return a JSON task set.",
-    );
-  }
-
-  let parsedValue: unknown;
-
-  try {
-    parsedValue = JSON.parse(jsonText);
-  } catch (error) {
-    throw new AgentServiceValidationError(
-      "Agent task decomposition returned invalid JSON.",
-      { cause: error },
-    );
-  }
-
-  if (
-    !parsedValue ||
-    typeof parsedValue !== "object" ||
-    Array.isArray(parsedValue)
-  ) {
-    throw new AgentServiceValidationError(
-      "Agent task decomposition task set must be an object.",
-    );
-  }
-
-  return parsedValue as TaskDecompositionResult["taskSet"];
-}
-
-function extractJsonObjectText(outputText: string): string | null {
-  const fencedMatch = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(outputText);
-
-  if (fencedMatch?.[1]) {
-    return fencedMatch[1].trim();
-  }
-
-  const firstBrace = outputText.indexOf("{");
-  const lastBrace = outputText.lastIndexOf("}");
-
-  if (firstBrace < 0 || lastBrace <= firstBrace) {
-    return null;
-  }
-
-  return outputText.slice(firstBrace, lastBrace + 1).trim();
 }

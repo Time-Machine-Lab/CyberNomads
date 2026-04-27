@@ -3,8 +3,8 @@
 本模块解决三个问题：
 
 1. 什么是当前 Skill 可用的资源
-2. 这些资源分别是干嘛的
-3. 当前引流工作应该选哪些资源进入工作目录
+2. 这些资源分别是干什么的
+3. 当前引流工作应该选择哪些资源进入工作目录
 
 ## 资源分类
 
@@ -20,21 +20,23 @@
 开始前先读取当前运行时资源清单：
 
 - `./agent/knowledge/Agent资源清单.md`
+- `./agent/knowledge/引流任务文档模板.md`
 
-如果当前提示词给了 Cybernomads 根目录绝对路径，就以该目录为基准定位清单。
+如果当前提示词给了 Cybernomads 根目录绝对路径，就以该目录为基准定位这些文件。
 
 ## 选择原则
 
-- `cybernomads-task-execution` 默认必须复制，因为后续单任务执行要统一依赖它
-- 平台相关 Skill 按真实平台需求复制，例如 B 站场景复制 `bilibili-web-api`
-- 共享 Knowledge 只在多个任务都会重复使用时才复制
-- 某个任务专用的小脚本优先放在工作目录 `tools/`，不要误当成全局 Skill
+- `cybernomads-task-execution` 默认必须复制，因为后续单任务执行会统一依赖它。
+- 平台相关 Skill 按真实平台需求复制，例如 B 站场景复制 `bilibili-web-api`。
+- `./agent/knowledge/引流任务文档模板.md` 是任务文档的全局模板，在拆分任务前必须阅读。
+- 共享 Knowledge 只在多个任务都会重复使用时才复制。
+- 某个任务专用的小脚本优先放在工作目录 `tools/`，不要误当成全局 Skill。
 
 ## 动作边界
 
-- 只允许从全局 `agent/skills/` 或 `agent/knowledge/` 复制
-- 只能通过 `scripts/copy-runtime-resource.js` 执行复制
-- 每次复制结果都要保存到 `data/task-decomposition/`
+- 只允许从全局 `agent/skills/` 或 `agent/knowledge/` 复制。
+- 只能通过 `scripts/copy-runtime-resource.js` 执行复制。
+- 每次复制结果都要保存到 `data/task-decomposition/`。
 
 ## 深入细节
 

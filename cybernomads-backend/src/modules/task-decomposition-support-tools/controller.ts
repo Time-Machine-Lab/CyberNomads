@@ -61,6 +61,25 @@ export function createTaskDecompositionSupportToolsController(
         return true;
       }
 
+      if (
+        url.pathname ===
+        "/api/task-decomposition-support-tools/context-preparation-status"
+      ) {
+        if (method !== "POST") {
+          sendMethodNotAllowed(response, ["POST"]);
+          return true;
+        }
+
+        const payload = await readJsonBody(request);
+        const result = await service.reportTrafficWorkPreparationStatus(
+          payload as Parameters<
+            TaskDecompositionSupportToolsService["reportTrafficWorkPreparationStatus"]
+          >[0],
+        );
+        sendJson(response, 200, result);
+        return true;
+      }
+
       return false;
     } catch (error) {
       handleTaskDecompositionSupportToolsError(error, response);

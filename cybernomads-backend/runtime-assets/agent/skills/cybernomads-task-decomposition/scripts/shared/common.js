@@ -27,7 +27,10 @@ export function parseCliArgs(argv) {
 
     if (values.has(key)) {
       const current = values.get(key);
-      values.set(key, Array.isArray(current) ? [...current, next] : [current, next]);
+      values.set(
+        key,
+        Array.isArray(current) ? [...current, next] : [current, next],
+      );
     } else {
       values.set(key, next);
     }
@@ -43,7 +46,11 @@ export function hasFlag(parsedArgs, name) {
 }
 
 export function readOption(parsedArgs, name, options = {}) {
-  const { required = false, multiple = false, defaultValue = undefined } = options;
+  const {
+    required = false,
+    multiple = false,
+    defaultValue = undefined,
+  } = options;
   const rawValue = parsedArgs.values.get(name);
 
   if (rawValue === undefined) {
@@ -95,7 +102,12 @@ export function normalizeBackendUrl(value) {
   return new URL(candidate).toString().replace(/\/$/, "");
 }
 
-export async function requestJson({ backendUrl, pathname, method = "GET", body }) {
+export async function requestJson({
+  backendUrl,
+  pathname,
+  method = "GET",
+  body,
+}) {
   const endpoint = new URL(pathname, `${normalizeBackendUrl(backendUrl)}/`);
   const response = await fetch(endpoint, {
     method,
@@ -108,16 +120,41 @@ export async function requestJson({ backendUrl, pathname, method = "GET", body }
   const payload = text.trim().length === 0 ? {} : JSON.parse(text);
 
   if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && typeof payload.message === "string"
-        ? payload.message
-        : `Request failed with status ${response.status}.`;
+    const message = formatRequestErrorMessage(response.status, payload);
     throw new Error(message, {
       cause: payload,
     });
   }
 
   return payload;
+}
+
+function formatRequestErrorMessage(status, payload) {
+  if (!payload || typeof payload !== "object") {
+    return `Request failed with status ${status}.`;
+  }
+
+  const baseMessage =
+    typeof payload.message === "string"
+      ? payload.message
+      : `Request failed with status ${status}.`;
+  const issues = Array.isArray(payload.details?.issues)
+    ? payload.details.issues
+        .filter(
+          (issue) =>
+            issue &&
+            typeof issue === "object" &&
+            typeof issue.path === "string" &&
+            typeof issue.message === "string",
+        )
+        .map((issue) => `${issue.path}: ${issue.message}`)
+    : [];
+
+  if (issues.length === 0) {
+    return baseMessage;
+  }
+
+  return `${baseMessage} Details: ${issues.join("; ")}`;
 }
 
 export function failWithHelp(message, helpText) {

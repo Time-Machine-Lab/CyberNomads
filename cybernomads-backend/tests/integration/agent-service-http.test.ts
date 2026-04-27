@@ -14,6 +14,7 @@ import type {
   AgentProviderContext,
   AgentProviderPort,
   AgentProviderSendMessageInput,
+  AgentProviderSubmitMessageResult,
   AgentProviderSendMessageResult,
   AgentProviderSession,
   AgentProviderSessionCreateInput,
@@ -177,7 +178,9 @@ describe.sequential("agent service module http api", () => {
       isUsable: boolean;
     };
 
-    expect(currentService.agentServiceId).toBe(configuredService.agentServiceId);
+    expect(currentService.agentServiceId).toBe(
+      configuredService.agentServiceId,
+    );
     expect(currentService.connectionStatus).toBe("connected");
     expect(currentService.capabilityStatus).toBe("ready");
     expect(currentService.isUsable).toBe(true);
@@ -360,7 +363,10 @@ async function startTemporaryApplication(
 class FakeAgentProvider implements AgentProviderPort {
   readonly verifyCalls: AgentProviderContext[] = [];
   readonly prepareCalls: AgentProviderContext[] = [];
-  private readonly sessionMessages = new Map<string, AgentConversationMessage[]>();
+  private readonly sessionMessages = new Map<
+    string,
+    AgentConversationMessage[]
+  >();
   private sessionCounter = 0;
   private messageCounter = 0;
 
@@ -431,6 +437,25 @@ class FakeAgentProvider implements AgentProviderPort {
     return {
       messageId: `message-${this.messageCounter}`,
       outputText: `handled:${input.message}`,
+    };
+  }
+
+  async submitMessage(
+    _context: AgentProviderContext,
+    input: AgentProviderSendMessageInput,
+  ): Promise<AgentProviderSubmitMessageResult> {
+    void _context;
+
+    this.messageCounter += 1;
+    const messages = this.sessionMessages.get(input.sessionId) ?? [];
+    messages.push({
+      role: "user",
+      content: input.message,
+    });
+    this.sessionMessages.set(input.sessionId, messages);
+
+    return {
+      messageId: `message-${this.messageCounter}`,
     };
   }
 

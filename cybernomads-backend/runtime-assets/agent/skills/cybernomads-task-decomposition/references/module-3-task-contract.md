@@ -24,7 +24,7 @@
 - `condition`
 - `inputNeeds`
 
-建议具备：
+建议必须具备：
 
 - `documentRef`
 
@@ -39,14 +39,18 @@
   - 后续 subagent 的执行说明
 - `documentRef`
   - 任务文档在工作目录内的引用
+  - 必须写成 `./<taskKey>.md`
+  - 必须直接落在当前引流工作目录根目录，不允许写成 `./tasks/<taskKey>.md`
 - `contextRef`
   - 后续执行时优先加载的上下文入口
+  - 如果是资源路径，必须使用以当前引流工作目录为根的相对路径，例如 `./skills/bilibili-web-api`
 - `condition.cron`
-  - 定时触发条件，没有就写 `null`
+  - 定时触发条件，没有就填 `null`
 - `condition.relyOnTaskKeys`
   - 依赖哪些上游任务
 - `inputNeeds`
   - 每个输入都要说明名称、描述、来源
+  - 如果 `source` 是文件或目录，必须使用相对路径，不能写成绝对路径或 `work/<trafficWorkId>/...`
 
 ## 任务必须具备的质量
 

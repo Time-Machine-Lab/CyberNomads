@@ -163,12 +163,64 @@ describe("task decomposition support tools service", () => {
       },
     });
   });
+
+  it("reports traffic work preparation status after agent-side workflow completion", async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), "cybernomads-tools-"));
+    temporaryDirectories.push(runtimeRoot);
+
+    const agentSkillsDirectory = join(runtimeRoot, "agent", "skills");
+    const agentKnowledgeDirectory = join(runtimeRoot, "agent", "knowledge");
+    const workDirectory = join(runtimeRoot, "work");
+    await mkdir(agentSkillsDirectory, { recursive: true });
+    await mkdir(agentKnowledgeDirectory, { recursive: true });
+
+    const stateStore = new InMemoryTrafficWorkStateStore([
+      { trafficWorkId: "work-1" },
+    ]);
+    const service = createSupportToolsService({
+      trafficWorks: [{ trafficWorkId: "work-1" }],
+      contextStore: new InMemoryTrafficWorkContextStore(workDirectory),
+      runtimeAgentResourceStore: new FileSystemRuntimeAgentResourceStore({
+        runtimePaths: {
+          runtimeRoot,
+          agentSkillsDirectory,
+          agentKnowledgeDirectory,
+        },
+      }),
+      stateStore,
+    });
+
+    const prepared = await service.reportTrafficWorkPreparationStatus({
+      trafficWorkId: "work-1",
+      status: "prepared",
+    });
+    expect(prepared.status).toBe("prepared");
+    expect(prepared.reason).toBe("Traffic work context prepared by agent.");
+
+    const failed = await service.reportTrafficWorkPreparationStatus({
+      trafficWorkId: "work-1",
+      status: "failed",
+      reason: "Task document generation failed.",
+    });
+    expect(failed.status).toBe("failed");
+    expect(failed.reason).toBe("Task document generation failed.");
+
+    await expect(
+      service.reportTrafficWorkPreparationStatus({
+        trafficWorkId: "work-1",
+        status: "failed",
+      }),
+    ).rejects.toMatchObject({
+      code: "TASK_DECOMPOSITION_TOOL_VALIDATION_FAILED",
+    });
+  });
 });
 
 function createSupportToolsService(input: {
   trafficWorks: Array<{ trafficWorkId: string }>;
   contextStore: TrafficWorkContextStore;
   runtimeAgentResourceStore: FileSystemRuntimeAgentResourceStore;
+  stateStore?: InMemoryTrafficWorkStateStore;
 }) {
   const taskStore = new InMemoryTaskStore(
     input.trafficWorks.map((trafficWork) => ({
@@ -182,18 +234,18 @@ function createSupportToolsService(input: {
   });
 
   return new TaskDecompositionSupportToolsService({
-    trafficWorkStateStore: new InMemoryTrafficWorkStateStore(
-      input.trafficWorks,
-    ),
+    trafficWorkStateStore:
+      input.stateStore ?? new InMemoryTrafficWorkStateStore(input.trafficWorks),
     trafficWorkContextStore: input.contextStore,
     runtimeAgentResourceStore: input.runtimeAgentResourceStore,
     taskService,
+    now: () => new Date("2026-04-27T12:00:00.000Z"),
   });
 }
 
 class InMemoryTrafficWorkStateStore implements Pick<
   TrafficWorkStateStore,
-  "getTrafficWorkById"
+  "getTrafficWorkById" | "saveTrafficWork"
 > {
   private readonly trafficWorks = new Map<string, TrafficWorkRecord>();
 
@@ -225,6 +277,10 @@ class InMemoryTrafficWorkStateStore implements Pick<
   ): Promise<TrafficWorkRecord | undefined> {
     const trafficWork = this.trafficWorks.get(trafficWorkId);
     return trafficWork ? structuredClone(trafficWork) : undefined;
+  }
+
+  async saveTrafficWork(record: TrafficWorkRecord): Promise<void> {
+    this.trafficWorks.set(record.trafficWorkId, structuredClone(record));
   }
 }
 

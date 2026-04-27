@@ -14,7 +14,10 @@ export interface RuntimeSkillAsset {
 
 export interface RuntimeAgentAssetSyncOptions {
   bundledAgentDirectory?: string;
-  ensureDirectory?: (path: string, options: { recursive: boolean }) => Promise<unknown>;
+  ensureDirectory?: (
+    path: string,
+    options: { recursive: boolean },
+  ) => Promise<unknown>;
   copyDirectory?: (
     source: string,
     destination: string,
@@ -119,6 +122,28 @@ export async function resolveRuntimeInstalledSkillFile(
   }
 }
 
+export async function resolveRuntimeInstalledKnowledgeFile(
+  runtimeKnowledgeDirectory: string,
+  knowledgeRelativePath: string,
+): Promise<string> {
+  const knowledgeFile = resolve(
+    runtimeKnowledgeDirectory,
+    knowledgeRelativePath,
+  );
+
+  try {
+    await access(knowledgeFile);
+    return knowledgeFile;
+  } catch (error) {
+    throw new Error(
+      `Failed to locate installed runtime knowledge file "${knowledgeRelativePath}".`,
+      {
+        cause: error,
+      },
+    );
+  }
+}
+
 export async function syncBundledRuntimeAgentAssets(
   runtimePaths: Pick<
     RuntimePaths,
@@ -148,10 +173,14 @@ export async function syncBundledRuntimeAgentAssets(
   await ensureDirectory(runtimePaths.agentKnowledgeDirectory, {
     recursive: true,
   });
-  await copyDirectory(bundledSkillsDirectory, runtimePaths.agentSkillsDirectory, {
-    recursive: true,
-    force: true,
-  });
+  await copyDirectory(
+    bundledSkillsDirectory,
+    runtimePaths.agentSkillsDirectory,
+    {
+      recursive: true,
+      force: true,
+    },
+  );
   await copyDirectory(
     bundledKnowledgeDirectory,
     runtimePaths.agentKnowledgeDirectory,
@@ -219,7 +248,10 @@ function getDefaultRuntimeKnowledgeCandidates(): string[] {
   const currentModuleDirectory = dirname(fileURLToPath(import.meta.url));
 
   return [
-    resolve(currentModuleDirectory, "../../../../runtime-assets/agent/knowledge"),
+    resolve(
+      currentModuleDirectory,
+      "../../../../runtime-assets/agent/knowledge",
+    ),
     resolve(currentModuleDirectory, "../../../runtime-assets/agent/knowledge"),
   ];
 }

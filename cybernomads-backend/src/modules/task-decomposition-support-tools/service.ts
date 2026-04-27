@@ -10,6 +10,8 @@ import type {
   BatchSaveTasksToolResult,
   CopyRuntimeAgentResourceToolInput,
   CopyRuntimeAgentResourceToolResult,
+  ReportTrafficWorkPreparationStatusToolInput,
+  ReportTrafficWorkPreparationStatusToolResult,
   TaskDecompositionSupportToolValidationIssue,
 } from "./types.js";
 import type { RuntimeAgentResourceStorePort } from "../../ports/runtime-agent-resource-store-port.js";
@@ -17,19 +19,27 @@ import type { TrafficWorkContextStore } from "../../ports/traffic-work-context-s
 import type { TrafficWorkStateStore } from "../../ports/traffic-work-state-store-port.js";
 
 export interface TaskDecompositionSupportToolsServiceOptions {
-  trafficWorkStateStore: Pick<TrafficWorkStateStore, "getTrafficWorkById">;
+  trafficWorkStateStore: Pick<
+    TrafficWorkStateStore,
+    "getTrafficWorkById" | "saveTrafficWork"
+  >;
   trafficWorkContextStore: TrafficWorkContextStore;
   runtimeAgentResourceStore: RuntimeAgentResourceStorePort;
   taskService: Pick<
     TaskService,
     "createTaskSetForTrafficWork" | "replaceTaskSetForTrafficWork"
   >;
+  now?: () => Date;
 }
 
 export class TaskDecompositionSupportToolsService {
+  private readonly now: () => Date;
+
   constructor(
     private readonly options: TaskDecompositionSupportToolsServiceOptions,
-  ) {}
+  ) {
+    this.now = options.now ?? (() => new Date());
+  }
 
   async copyRuntimeAgentResource(
     input: CopyRuntimeAgentResourceToolInput,
@@ -150,6 +160,54 @@ export class TaskDecompositionSupportToolsService {
       tasks: result.tasks,
     };
   }
+
+  async reportTrafficWorkPreparationStatus(
+    input: ReportTrafficWorkPreparationStatusToolInput,
+  ): Promise<ReportTrafficWorkPreparationStatusToolResult> {
+    const trafficWorkId = normalizeRequiredString(
+      input.trafficWorkId,
+      "Traffic work ID is required.",
+      "trafficWorkId",
+    );
+    const status = ensurePreparationStatus(input.status);
+    const trafficWork =
+      await this.options.trafficWorkStateStore.getTrafficWorkById(
+        trafficWorkId,
+      );
+
+    if (!trafficWork) {
+      throw new TaskDecompositionSupportToolsTrafficWorkNotFoundError(
+        trafficWorkId,
+      );
+    }
+
+    const updatedAt = this.now().toISOString();
+    const nextRecord = {
+      ...trafficWork,
+      contextPreparationStatus: status,
+      contextPreparationStatusReason:
+        status === "prepared"
+          ? (normalizeOptionalString(input.reason, "reason") ??
+            "Traffic work context prepared by agent.")
+          : normalizeRequiredString(
+              input.reason,
+              "Failure reason is required when reporting failed preparation.",
+              "reason",
+            ),
+      contextPreparedAt: status === "prepared" ? updatedAt : null,
+      updatedAt,
+    };
+
+    await this.options.trafficWorkStateStore.saveTrafficWork(nextRecord);
+
+    return {
+      trafficWorkId,
+      status,
+      reason: nextRecord.contextPreparationStatusReason,
+      contextPreparedAt: nextRecord.contextPreparedAt,
+      updatedAt,
+    };
+  }
 }
 
 function normalizeRequiredString(
@@ -220,4 +278,33 @@ function ensureBatchSaveMode(value: unknown): BatchSaveTasksToolInput["mode"] {
       ],
     },
   );
+}
+
+function ensurePreparationStatus(
+  value: unknown,
+): ReportTrafficWorkPreparationStatusToolInput["status"] {
+  if (value === "prepared" || value === "failed") {
+    return value;
+  }
+
+  throw new TaskDecompositionSupportToolsValidationError(
+    "Traffic work preparation status is invalid.",
+    {
+      issues: [
+        {
+          path: "status",
+          message:
+            'Traffic work preparation status must be "prepared" or "failed".',
+        },
+      ],
+    },
+  );
+}
+
+function normalizeOptionalString(value: unknown, path: string): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return normalizeRequiredString(value, "Expected a non-empty string.", path);
 }

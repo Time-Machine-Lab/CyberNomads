@@ -1,6 +1,6 @@
 # 可用工具
 
-本 Skill 提供三类可直接执行的 JS 工具。默认使用 Node.js 22+ 执行。
+本 Skill 提供四类可直接执行的 JS 工具，默认使用 Node.js 22+ 执行。
 
 ## 通用约定
 
@@ -14,8 +14,6 @@
 - 路径：`scripts/copy-runtime-resource.js`
 - 作用：把全局 Skill 或 Knowledge 复制到当前引流工作目录
 
-示例：
-
 ```bash
 node scripts/copy-runtime-resource.js \
   --traffic-work-id traffic-work-123 \
@@ -27,9 +25,7 @@ node scripts/copy-runtime-resource.js \
 ## 任务批量保存工具
 
 - 路径：`scripts/batch-save-tasks.js`
-- 作用：读取本地 `task-set.json`，先做结构校验，再通过受控接口保存任务集
-
-示例：
+- 作用：读取本地 `task-set.json`，先做结构校验，再通过受控接口保存任务元数据
 
 ```bash
 node scripts/batch-save-tasks.js \
@@ -39,12 +35,32 @@ node scripts/batch-save-tasks.js \
   --output ./data/task-decomposition/save-result.json
 ```
 
+## 引流工作准备状态回写工具
+
+- 路径：`scripts/report-context-preparation.js`
+- 作用：在任务元数据保存、任务文档创建和自检完成后，回写引流工作的准备状态
+
+```bash
+node scripts/report-context-preparation.js \
+  --traffic-work-id traffic-work-123 \
+  --status prepared \
+  --output ./data/task-decomposition/preparation-status.json
+```
+
+失败场景示例：
+
+```bash
+node scripts/report-context-preparation.js \
+  --traffic-work-id traffic-work-123 \
+  --status failed \
+  --reason "Task document generation failed" \
+  --output ./data/task-decomposition/preparation-status.json
+```
+
 ## 自检工具
 
 - 路径：`scripts/run-self-check.js`
-- 作用：检查任务结构、资源复制结果和任务保存结果是否完整闭环
-
-示例：
+- 作用：检查任务结构、资源复制结果和任务保存结果是否形成完整闭环
 
 ```bash
 node scripts/run-self-check.js \
@@ -60,6 +76,7 @@ node scripts/run-self-check.js \
 
 - 需要复制全局 Skill 或 Knowledge 时：必须使用资源复制工具
 - 需要保存任务集时：必须使用任务批量保存工具
+- 需要回写引流工作准备状态时：必须使用准备状态回写工具
 - 结束前检查完整性时：必须使用自检工具
 
 ## 禁止事项

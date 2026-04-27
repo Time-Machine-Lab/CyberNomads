@@ -155,7 +155,6 @@ export async function startApplication(
     productContentStore,
     strategyStore: strategyReferenceRepository,
     strategyContentStore,
-    taskSetPersistence: taskService,
   });
 
   let threadTaskPlanner: ThreadTaskPlanner | null = null;

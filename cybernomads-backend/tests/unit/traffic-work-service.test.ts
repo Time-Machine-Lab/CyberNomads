@@ -11,10 +11,6 @@ import type { TrafficWorkContextPreparationPort } from "../../src/ports/traffic-
 import type { TrafficWorkContextStore } from "../../src/ports/traffic-work-context-store-port.js";
 import type { TrafficWorkStateStore } from "../../src/ports/traffic-work-state-store-port.js";
 import type {
-  TaskSetWriteInput,
-  TaskSetWriteResult,
-} from "../../src/modules/tasks/types.js";
-import type {
   ProductBindingSummary,
   StrategyBindingSummary,
   TrafficWorkContextSnapshot,
@@ -22,7 +18,7 @@ import type {
 } from "../../src/modules/traffic-works/types.js";
 
 describe("traffic work service", () => {
-  it("creates, starts, pauses, updates, ends, archives, and deletes a traffic work", async () => {
+  it("creates and updates a traffic work by asynchronously submitting decomposition to the agent service", async () => {
     const stateStore = new InMemoryTrafficWorkStateStore();
     const productStore = new InMemoryProductStore([
       {
@@ -50,7 +46,6 @@ describe("traffic work service", () => {
       productContentStore: productStore.asContentStore(),
       strategyStore,
       strategyContentStore: strategyStore.asContentStore(),
-      taskSetPersistence: new FakeTaskSetPersistence(),
       now: createSequentialNow(),
       createTrafficWorkId: () => "work-1",
     });
@@ -66,50 +61,18 @@ describe("traffic work service", () => {
           resourceId: "account-1",
           resourceLabel: "Main Account",
         },
-        {
-          objectType: "产品",
-          objectKey: "product_name",
-          resourceId: "CyberNomads",
-          resourceLabel: "CyberNomads",
-        },
-        {
-          objectType: "账号",
-          objectKey: "max_retry",
-          resourceId: "3",
-          resourceLabel: "3",
-        },
       ],
     });
 
     expect(created.trafficWorkId).toBe("work-1");
     expect(created.lifecycleStatus).toBe("ready");
-    expect(created.contextPreparationStatus).toBe("prepared");
-    expect(created.product.name).toBe("CyberNomads Product");
-    expect(created.strategy.name).toBe("Growth Strategy");
+    expect(created.contextPreparationStatus).toBe("pending");
+    expect(created.contextPreparationStatusReason).toContain(
+      "Task decomposition request submitted to agent service.",
+    );
+    expect(created.contextPreparedAt).toBeNull();
     expect(contextPreparation.inputs).toHaveLength(1);
     expect(contextPreparation.inputs[0]).toMatchObject({
-      productContentMarkdown: expect.stringContaining("# CyberNomads Product"),
-      strategyContentMarkdown: expect.stringContaining("# Growth Strategy"),
-      objectBindings: [
-        {
-          objectType: "account",
-          objectKey: "primary-account",
-          resourceId: "account-1",
-          resourceLabel: "Main Account",
-        },
-        {
-          objectType: "产品",
-          objectKey: "product_name",
-          resourceId: "CyberNomads",
-          resourceLabel: "CyberNomads",
-        },
-        {
-          objectType: "账号",
-          objectKey: "max_retry",
-          resourceId: "3",
-          resourceLabel: "3",
-        },
-      ],
       context: {
         workDirectory: "/tmp/work-1",
         skillsDirectory: "/tmp/work-1/skills",
@@ -127,13 +90,9 @@ describe("traffic work service", () => {
       dataDirectory: "/tmp/work-1/data",
     });
 
-    const started = await service.startTrafficWork("work-1");
-    expect(started.lifecycleStatus).toBe("running");
-    expect(started.lastStartedAt).not.toBeNull();
-
-    const paused = await service.pauseTrafficWork("work-1");
-    expect(paused.lifecycleStatus).toBe("ready");
-    expect(paused.contextPreparationStatus).toBe("prepared");
+    await expect(service.startTrafficWork("work-1")).rejects.toMatchObject({
+      code: "TRAFFIC_WORK_OPERATION_NOT_ALLOWED",
+    });
 
     const updated = await service.updateTrafficWork("work-1", {
       displayName: "Main Growth Work v2",
@@ -146,46 +105,25 @@ describe("traffic work service", () => {
           resourceId: "account-2",
           resourceLabel: "Backup Account",
         },
-        {
-          objectType: "产品",
-          objectKey: "product_name",
-          resourceId: "CyberNomads v2",
-          resourceLabel: "CyberNomads v2",
-        },
       ],
     });
 
-    expect(updated.trafficWorkId).toBe("work-1");
     expect(updated.displayName).toBe("Main Growth Work v2");
     expect(updated.strategy.name).toBe("Retention Strategy");
-    expect(updated.objectBindings).toEqual([
-      {
-        objectType: "account",
-        objectKey: "primary-account",
-        resourceId: "account-2",
-        resourceLabel: "Backup Account",
-      },
-      {
-        objectType: "产品",
-        objectKey: "product_name",
-        resourceId: "CyberNomads v2",
-        resourceLabel: "CyberNomads v2",
-      },
-    ]);
-    expect(updated.contextPreparationStatus).toBe("prepared");
+    expect(updated.contextPreparationStatus).toBe("pending");
+    expect(updated.contextPreparationStatusReason).toContain(
+      "Task decomposition replace request submitted to agent service.",
+    );
     expect(contextPreparation.inputs).toHaveLength(2);
 
     const ended = await service.endTrafficWork("work-1");
     expect(ended.lifecycleStatus).toBe("ended");
-    expect(ended.endedAt).not.toBeNull();
 
     const archived = await service.archiveTrafficWork("work-1");
     expect(archived.lifecycleStatus).toBe("archived");
-    expect(archived.archivedAt).not.toBeNull();
 
     const deleted = await service.deleteTrafficWork("work-1");
     expect(deleted.lifecycleStatus).toBe("deleted");
-    expect(deleted.deletedAt).not.toBeNull();
   });
 
   it("records failed context preparation during create and blocks start", async () => {
@@ -212,7 +150,6 @@ describe("traffic work service", () => {
       productContentStore: productStore.asContentStore(),
       strategyStore,
       strategyContentStore: strategyStore.asContentStore(),
-      taskSetPersistence: new FakeTaskSetPersistence(),
       now: createSequentialNow(),
       createTrafficWorkId: () => "work-1",
     });
@@ -238,13 +175,9 @@ describe("traffic work service", () => {
     await expect(service.startTrafficWork("work-1")).rejects.toMatchObject({
       code: "TRAFFIC_WORK_OPERATION_NOT_ALLOWED",
     });
-
-    expect(await stateStore.getTrafficWorkById("work-1")).toMatchObject({
-      contextPreparationStatus: "failed",
-    });
   });
 
-  it("records failed preparation when task set persistence fails", async () => {
+  it("records failed preparation when agent submission fails", async () => {
     const stateStore = new InMemoryTrafficWorkStateStore();
     const productStore = new InMemoryProductStore([
       {
@@ -261,14 +194,15 @@ describe("traffic work service", () => {
     const service = new TrafficWorkService({
       stateStore,
       contextStore: new InMemoryTrafficWorkContextStore(),
-      contextPreparation: new FakeTrafficWorkContextPreparation(),
+      contextPreparation: new FakeTrafficWorkContextPreparation(async () => {
+        throw new Error(
+          "Agent gateway rejected the task decomposition submission.",
+        );
+      }),
       productStore: productStore.asMetadataStore(),
       productContentStore: productStore.asContentStore(),
       strategyStore,
       strategyContentStore: strategyStore.asContentStore(),
-      taskSetPersistence: new FakeTaskSetPersistence(async () => {
-        throw new Error("Task set is invalid.");
-      }),
       now: createSequentialNow(),
       createTrafficWorkId: () => "work-1",
     });
@@ -290,7 +224,7 @@ describe("traffic work service", () => {
     expect(created.lifecycleStatus).toBe("ready");
     expect(created.contextPreparationStatus).toBe("failed");
     expect(created.contextPreparationStatusReason).toContain(
-      "Task set is invalid.",
+      "Agent gateway rejected the task decomposition submission.",
     );
   });
 
@@ -318,7 +252,6 @@ describe("traffic work service", () => {
       productContentStore: productStore.asContentStore(),
       strategyStore,
       strategyContentStore: strategyStore.asContentStore(),
-      taskSetPersistence: new FakeTaskSetPersistence(),
       now: createSequentialNow(),
       createTrafficWorkId: () => "work-1",
     });
@@ -332,7 +265,7 @@ describe("traffic work service", () => {
 
     expect(created.trafficWorkId).toBe("work-1");
     expect(created.objectBindings).toEqual([]);
-    expect(created.contextPreparationStatus).toBe("prepared");
+    expect(created.contextPreparationStatus).toBe("pending");
     expect(contextPreparation.inputs[0]).toMatchObject({
       objectBindings: [],
       contextMarkdown: expect.stringContaining("## Object Bindings"),
@@ -388,7 +321,7 @@ class FakeTrafficWorkContextPreparation implements TrafficWorkContextPreparation
 
   constructor(
     private readonly handler: TrafficWorkContextPreparationPort["prepareContext"] = async () =>
-      createTaskSetWriteInput("agent-task"),
+      createPreparationSubmissionResult(),
   ) {}
 
   async prepareContext(
@@ -525,74 +458,10 @@ class InMemoryStrategyStore
   }
 }
 
-class FakeTaskSetPersistence {
-  readonly createInputs: TaskSetWriteInput[] = [];
-  readonly replaceInputs: TaskSetWriteInput[] = [];
-
-  constructor(
-    private readonly handler: (
-      input: TaskSetWriteInput,
-    ) => Promise<void> = async () => {},
-  ) {}
-
-  async createTaskSetForTrafficWork(
-    trafficWorkId: string,
-    input: TaskSetWriteInput,
-  ): Promise<TaskSetWriteResult> {
-    this.createInputs.push(structuredClone(input));
-    await this.handler(input);
-    return toTaskSetWriteResult(trafficWorkId, input);
-  }
-
-  async replaceTaskSetForTrafficWork(
-    trafficWorkId: string,
-    input: TaskSetWriteInput,
-  ): Promise<TaskSetWriteResult> {
-    this.replaceInputs.push(structuredClone(input));
-    await this.handler(input);
-    return toTaskSetWriteResult(trafficWorkId, input);
-  }
-}
-
-function createTaskSetWriteInput(taskKey: string): TaskSetWriteInput {
+function createPreparationSubmissionResult() {
   return {
-    source: {
-      kind: "agent-decomposition",
-    },
-    tasks: [
-      {
-        taskKey,
-        name: "Collect candidates",
-        instruction: "Collect candidate data.",
-        documentRef: `${taskKey}.md`,
-        contextRef: `work/work-1/${taskKey}`,
-        condition: {
-          cron: null,
-          relyOnTaskKeys: [],
-        },
-        inputNeeds: [
-          {
-            name: "work-context",
-            description: "Use the prepared traffic work context.",
-            source: "work-context",
-          },
-        ],
-      },
-    ],
-  };
-}
-
-function toTaskSetWriteResult(
-  trafficWorkId: string,
-  input: TaskSetWriteInput,
-): TaskSetWriteResult {
-  return {
-    trafficWorkId,
-    taskCount: input.tasks.length,
-    tasks: input.tasks.map((task, index) => ({
-      taskKey: task.taskKey,
-      taskId: `task-${index + 1}`,
-    })),
+    sessionId: "session-1",
+    messageId: "message-1",
   };
 }
 

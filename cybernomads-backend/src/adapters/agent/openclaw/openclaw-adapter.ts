@@ -27,6 +27,11 @@ interface StoredSessionMetadata {
   context: string | null;
 }
 
+const DEFAULT_SEND_TIMEOUT_MS = 60_000;
+const DEFAULT_WAIT_TIMEOUT_MS = 60_000;
+const TASK_PLANNING_SEND_TIMEOUT_MS = 300_000;
+const TASK_PLANNING_WAIT_TIMEOUT_MS = 300_000;
+
 export interface OpenClawAgentProviderOptions {
   httpClient?: Pick<OpenClawHttpClient, "invokeTool">;
   wsClient?: Pick<OpenClawWsClient, "request">;
@@ -128,43 +133,17 @@ export class OpenClawAgentProvider implements AgentProviderPort {
     context: AgentProviderContext,
     input: AgentProviderSendMessageInput,
   ): Promise<AgentProviderSendMessageResult> {
-    const sessionId = normalizeSessionId(input.sessionId);
-    const metadata = this.sessionMetadata.get(sessionId);
-    const accepted = await this.wsClient.request(
-      context,
-      "agent",
-      {
-        sessionKey: sessionId,
-        message: input.message,
-        deliver: false,
-        timeout: 60_000,
-        idempotencyKey: this.createId(),
-        ...(metadata?.title ? { label: metadata.title } : {}),
-        ...(metadata?.context
-          ? {
-              extraSystemPrompt: buildExtraSystemPrompt(metadata),
-            }
-          : {}),
-      },
-      {
-        timeoutMs: 90_000,
-      },
-    );
-    const acceptedRecord = asRecord(accepted);
-    const runId = readRequiredString(
-      acceptedRecord?.runId,
-      "OpenClaw did not return a run id for the accepted request.",
-    );
-
+    const { sessionId, runId, waitTimeoutMs } =
+      await this.submitMessageInternal(context, input);
     const waitResult = await this.wsClient.request(
       context,
       "agent.wait",
       {
         runId,
-        timeoutMs: 60_000,
+        timeoutMs: waitTimeoutMs,
       },
       {
-        timeoutMs: 70_000,
+        timeoutMs: waitTimeoutMs + 10_000,
       },
     );
     const waitRecord = asRecord(waitResult);
@@ -184,14 +163,74 @@ export class OpenClawAgentProvider implements AgentProviderPort {
       sessionId,
     });
     const outputText =
-      [...history]
-        .reverse()
-        .find((message) => message.role === "assistant")
+      [...history].reverse().find((message) => message.role === "assistant")
         ?.content ?? "";
 
     return {
       messageId: runId,
       outputText,
+    };
+  }
+
+  async submitMessage(
+    context: AgentProviderContext,
+    input: AgentProviderSendMessageInput,
+  ): Promise<{ messageId: string }> {
+    const { runId } = await this.submitMessageInternal(context, input);
+
+    return {
+      messageId: runId,
+    };
+  }
+
+  private async submitMessageInternal(
+    context: AgentProviderContext,
+    input: AgentProviderSendMessageInput,
+  ): Promise<{
+    sessionId: string;
+    runId: string;
+    waitTimeoutMs: number;
+  }> {
+    const sessionId = normalizeSessionId(input.sessionId);
+    const metadata = this.sessionMetadata.get(sessionId);
+    const sendTimeoutMs =
+      metadata?.purpose === "task_planning"
+        ? TASK_PLANNING_SEND_TIMEOUT_MS
+        : DEFAULT_SEND_TIMEOUT_MS;
+    const waitTimeoutMs =
+      metadata?.purpose === "task_planning"
+        ? TASK_PLANNING_WAIT_TIMEOUT_MS
+        : DEFAULT_WAIT_TIMEOUT_MS;
+    const accepted = await this.wsClient.request(
+      context,
+      "agent",
+      {
+        sessionKey: sessionId,
+        message: input.message,
+        deliver: false,
+        timeout: sendTimeoutMs,
+        idempotencyKey: this.createId(),
+        ...(metadata?.title ? { label: metadata.title } : {}),
+        ...(metadata?.context
+          ? {
+              extraSystemPrompt: buildExtraSystemPrompt(metadata),
+            }
+          : {}),
+      },
+      {
+        timeoutMs: sendTimeoutMs + 30_000,
+      },
+    );
+    const acceptedRecord = asRecord(accepted);
+    const runId = readRequiredString(
+      acceptedRecord?.runId,
+      "OpenClaw did not return a run id for the accepted request.",
+    );
+
+    return {
+      sessionId,
+      runId,
+      waitTimeoutMs,
     };
   }
 
@@ -217,7 +256,9 @@ export class OpenClawAgentProvider implements AgentProviderPort {
       : [];
     const normalizedMessages = rawMessages
       .map((message) => normalizeConversationMessage(message))
-      .filter((message): message is AgentConversationMessage => message !== null);
+      .filter(
+        (message): message is AgentConversationMessage => message !== null,
+      );
     const metadata = this.sessionMetadata.get(sessionId);
 
     if (
@@ -535,11 +576,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value)
-  ) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
   }
 

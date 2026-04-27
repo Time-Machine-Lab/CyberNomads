@@ -14,6 +14,7 @@ import type {
   AgentProviderContext,
   AgentProviderPort,
   AgentProviderSendMessageInput,
+  AgentProviderSubmitMessageResult,
   AgentProviderSendMessageResult,
   AgentProviderSession,
   AgentProviderSessionCreateInput,
@@ -109,6 +110,7 @@ describe.sequential("traffic work module http api", () => {
       objectBindings: Array<Record<string, unknown>>;
       lifecycleStatus: string;
       contextPreparationStatus: string;
+      contextPreparationStatusReason: string | null;
     };
 
     expect(created.displayName).toBe("Main Growth Work");
@@ -138,23 +140,22 @@ describe.sequential("traffic work module http api", () => {
       },
     ]);
     expect(created.lifecycleStatus).toBe("ready");
-    expect(created.contextPreparationStatus).toBe("prepared");
-    expect(provider.sentMessages.at(-1)?.message).toContain("[引流工作信息]");
-    expect(provider.sentMessages.at(-1)?.message).toContain("[产品信息]");
-    expect(provider.sentMessages.at(-1)?.message).toContain("[策略信息]");
-    expect(provider.sentMessages.at(-1)?.message).toContain("[任务拆分Skill信息]");
-    expect(provider.sentMessages.at(-1)?.message).toContain("[基础路径信息]");
-    expect(provider.sentMessages.at(-1)?.message).toContain("[规则]");
-    expect(provider.sentMessages.at(-1)?.message).toContain(
+    expect(created.contextPreparationStatus).toBe("pending");
+    expect(created.contextPreparationStatusReason).toContain(
+      "Task decomposition request submitted to agent service.",
+    );
+    expect(provider.sentMessages).toHaveLength(0);
+    expect(provider.submittedMessages).toHaveLength(1);
+    expect(provider.submittedMessages.at(-1)?.message).toContain(
       `Cybernomads目录绝对路径: ${runtimePaths.runtimeRoot}`,
     );
-    expect(provider.sentMessages.at(-1)?.message).toContain(
+    expect(provider.submittedMessages.at(-1)?.message).toContain(
       `引流工作目录: ./work/${created.trafficWorkId}`,
     );
-    expect(provider.sentMessages.at(-1)?.message).toContain(
+    expect(provider.submittedMessages.at(-1)?.message).toContain(
       "任务拆分Skill位置: ./agent/skills/cybernomads-task-decomposition/SKILL.md",
     );
-    expect(provider.sentMessages.at(-1)?.message).not.toContain(
+    expect(provider.submittedMessages.at(-1)?.message).not.toContain(
       "Work context root:",
     );
 
@@ -162,7 +163,49 @@ describe.sequential("traffic work module http api", () => {
       `${application.http.url}/api/tasks?trafficWorkId=${created.trafficWorkId}`,
     );
     expect(createdTasksResponse.status).toBe(200);
-    await expect(createdTasksResponse.json()).resolves.toMatchObject({
+    await expect(createdTasksResponse.json()).resolves.toEqual({
+      items: [],
+    });
+
+    const workDirectory = join(
+      runtimePaths.workDirectory,
+      created.trafficWorkId,
+    );
+    await expect(
+      access(join(workDirectory, "skills")),
+    ).resolves.toBeUndefined();
+    await expect(access(join(workDirectory, "tools"))).resolves.toBeUndefined();
+    await expect(
+      access(join(workDirectory, "knowledge")),
+    ).resolves.toBeUndefined();
+    await expect(access(join(workDirectory, "data"))).resolves.toBeUndefined();
+    await expect(access(join(workDirectory, "task.md"))).rejects.toBeDefined();
+    await expect(
+      access(join(workDirectory, "collect-1.md")),
+    ).rejects.toBeDefined();
+
+    const blockedStartResponse = await fetch(
+      `${application.http.url}/api/traffic-works/${created.trafficWorkId}/start`,
+      { method: "POST" },
+    );
+    expect(blockedStartResponse.status).toBe(409);
+
+    await simulateAgentPreparedTaskSet({
+      application,
+      runtimePaths,
+      trafficWorkId: created.trafficWorkId,
+      mode: "create",
+      taskKey: "collect-1",
+      taskName: "Collect candidates 1",
+    });
+
+    const createdTasksAfterPreparationResponse = await fetch(
+      `${application.http.url}/api/tasks?trafficWorkId=${created.trafficWorkId}`,
+    );
+    expect(createdTasksAfterPreparationResponse.status).toBe(200);
+    await expect(
+      createdTasksAfterPreparationResponse.json(),
+    ).resolves.toMatchObject({
       items: [
         {
           trafficWorkId: created.trafficWorkId,
@@ -171,18 +214,6 @@ describe.sequential("traffic work module http api", () => {
         },
       ],
     });
-
-    const workDirectory = join(
-      runtimePaths.workDirectory,
-      created.trafficWorkId,
-    );
-    await expect(access(join(workDirectory, "skills"))).resolves.toBeUndefined();
-    await expect(access(join(workDirectory, "tools"))).resolves.toBeUndefined();
-    await expect(
-      access(join(workDirectory, "knowledge")),
-    ).resolves.toBeUndefined();
-    await expect(access(join(workDirectory, "data"))).resolves.toBeUndefined();
-    await expect(access(join(workDirectory, "task.md"))).rejects.toBeDefined();
     await expect(
       readFile(join(workDirectory, "collect-1.md"), "utf8"),
     ).resolves.toContain("Collect candidates 1");
@@ -213,6 +244,7 @@ describe.sequential("traffic work module http api", () => {
         strategyId: "strategy-1",
         name: "Growth Strategy",
       },
+      contextPreparationStatus: "prepared",
       objectBindings: [
         {
           objectType: "account",
@@ -304,7 +336,23 @@ describe.sequential("traffic work module http api", () => {
           resourceLabel: "CyberNomads v2",
         },
       ],
-      contextPreparationStatus: "prepared",
+      contextPreparationStatus: "pending",
+    });
+    expect(provider.submittedMessages).toHaveLength(2);
+    expect(provider.submittedMessages.at(-1)?.message).toContain(
+      `引流工作目录: ./work/${created.trafficWorkId}`,
+    );
+    expect(provider.submittedMessages.at(-1)?.message).toContain(
+      "任务拆分Skill位置: ./agent/skills/cybernomads-task-decomposition/SKILL.md",
+    );
+
+    await simulateAgentPreparedTaskSet({
+      application,
+      runtimePaths,
+      trafficWorkId: created.trafficWorkId,
+      mode: "replace",
+      taskKey: "collect-2",
+      taskName: "Collect candidates 2",
     });
 
     const replacedTasksResponse = await fetch(
@@ -323,13 +371,6 @@ describe.sequential("traffic work module http api", () => {
     await expect(
       readFile(join(workDirectory, "collect-2.md"), "utf8"),
     ).resolves.toContain("Collect candidates 2");
-    expect(provider.sentMessages.at(-1)?.message).toContain("[引流工作信息]");
-    expect(provider.sentMessages.at(-1)?.message).toContain(
-      `引流工作目录: ./work/${created.trafficWorkId}`,
-    );
-    expect(provider.sentMessages.at(-1)?.message).toContain(
-      "任务拆分Skill位置: ./agent/skills/cybernomads-task-decomposition/SKILL.md",
-    );
 
     const endResponse = await fetch(
       `${application.http.url}/api/traffic-works/${created.trafficWorkId}/end`,
@@ -358,7 +399,7 @@ describe.sequential("traffic work module http api", () => {
       lifecycleStatus: "deleted",
     });
 
-    expect(provider.sentMessages).toHaveLength(2);
+    expect(provider.submittedMessages).toHaveLength(2);
   });
 
   it("returns a failed preparation state when no current agent service is configured", async () => {
@@ -481,11 +522,11 @@ describe.sequential("traffic work module http api", () => {
           resourceLabel: "CyberNomads",
         },
       ],
-      contextPreparationStatus: "prepared",
+      contextPreparationStatus: "pending",
     });
 
-    expect(provider.sentMessages.at(-1)?.message).toContain(
-      "Object bindings:",
+    expect(provider.submittedMessages.at(-1)?.message).toContain(
+      "product_name",
     );
   });
 });
@@ -605,7 +646,95 @@ async function seedStrategy(
   );
 }
 
+async function simulateAgentPreparedTaskSet(input: {
+  application: ApplicationReadyState;
+  runtimePaths: ReturnType<typeof resolveRuntimePaths>;
+  trafficWorkId: string;
+  mode: "create" | "replace";
+  taskKey: string;
+  taskName: string;
+}): Promise<void> {
+  const batchSaveResponse = await fetch(
+    `${input.application.http.url}/api/task-decomposition-support-tools/batch-save-tasks`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        trafficWorkId: input.trafficWorkId,
+        mode: input.mode,
+        taskSet: {
+          source: {
+            kind: "agent-decomposition",
+            requestId: `${input.mode}-${input.taskKey}`,
+            description: "Integration test simulated task decomposition.",
+          },
+          tasks: [
+            {
+              taskKey: input.taskKey,
+              name: input.taskName,
+              instruction: "Collect candidate traffic targets.",
+              documentRef: `./${input.taskKey}.md`,
+              contextRef: "./",
+              condition: {
+                cron: null,
+                relyOnTaskKeys: [],
+              },
+              inputNeeds: [
+                {
+                  name: "work-context",
+                  description: "Use the prepared traffic work context.",
+                  source: "./knowledge",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    },
+  );
+  expect(batchSaveResponse.status).toBe(input.mode === "create" ? 201 : 200);
+  await expect(batchSaveResponse.json()).resolves.toMatchObject({
+    mode: input.mode,
+    trafficWorkId: input.trafficWorkId,
+    taskCount: 1,
+    tasks: [
+      {
+        taskKey: input.taskKey,
+      },
+    ],
+  });
+
+  await writeFile(
+    join(
+      input.runtimePaths.workDirectory,
+      input.trafficWorkId,
+      `${input.taskKey}.md`,
+    ),
+    `# ${input.taskName}\n\n- Task Key: ${input.taskKey}\n- Data Path: ./data/${input.taskKey}.json\n`,
+    "utf8",
+  );
+
+  const reportResponse = await fetch(
+    `${input.application.http.url}/api/task-decomposition-support-tools/context-preparation-status`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        trafficWorkId: input.trafficWorkId,
+        status: "prepared",
+        reason: `Prepared by integration test for ${input.taskKey}.`,
+      }),
+    },
+  );
+  expect(reportResponse.status).toBe(200);
+}
+
 class FakeAgentProvider implements AgentProviderPort {
+  readonly submittedMessages: AgentProviderSendMessageInput[] = [];
   readonly sentMessages: AgentProviderSendMessageInput[] = [];
   private readonly sessionMessages = new Map<
     string,
@@ -613,7 +742,6 @@ class FakeAgentProvider implements AgentProviderPort {
   >();
   private sessionCounter = 0;
   private messageCounter = 0;
-  private decompositionCounter = 0;
 
   constructor(readonly providerCode: string) {}
 
@@ -665,11 +793,7 @@ class FakeAgentProvider implements AgentProviderPort {
     void _context;
     this.messageCounter += 1;
     this.sentMessages.push(structuredClone(input));
-    const outputText = input.message.includes(
-      "Cybernomads TaskSetWriteInput contract",
-    )
-      ? this.createTaskSetOutputText()
-      : `handled:${input.message}`;
+    const outputText = `handled:${input.message}`;
 
     const messages = this.sessionMessages.get(input.sessionId) ?? [];
     messages.push({
@@ -685,6 +809,25 @@ class FakeAgentProvider implements AgentProviderPort {
     return {
       messageId: `message-${this.messageCounter}`,
       outputText,
+    };
+  }
+
+  async submitMessage(
+    _context: AgentProviderContext,
+    input: AgentProviderSendMessageInput,
+  ): Promise<AgentProviderSubmitMessageResult> {
+    void _context;
+    this.messageCounter += 1;
+    this.submittedMessages.push(structuredClone(input));
+    const messages = this.sessionMessages.get(input.sessionId) ?? [];
+    messages.push({
+      role: "user",
+      content: input.message,
+    });
+    this.sessionMessages.set(input.sessionId, messages);
+
+    return {
+      messageId: `message-${this.messageCounter}`,
     };
   }
 
@@ -706,38 +849,5 @@ class FakeAgentProvider implements AgentProviderPort {
       outputText: `subagent:${input.instructions}`,
       status: "completed",
     };
-  }
-
-  private createTaskSetOutputText(): string {
-    this.decompositionCounter += 1;
-    const taskKey = `collect-${this.decompositionCounter}`;
-
-    return JSON.stringify({
-      source: {
-        kind: "agent-decomposition",
-        requestId: `request-${this.decompositionCounter}`,
-        description: "Fake provider decomposition.",
-      },
-      tasks: [
-        {
-          taskKey,
-          name: `Collect candidates ${this.decompositionCounter}`,
-          instruction: "Collect candidate traffic targets.",
-          documentRef: `${taskKey}.md`,
-          contextRef: `work/demo/${taskKey}`,
-          condition: {
-            cron: null,
-            relyOnTaskKeys: [],
-          },
-          inputNeeds: [
-            {
-              name: "work-context",
-              description: "Use the prepared traffic work context.",
-              source: "work-context",
-            },
-          ],
-        },
-      ],
-    });
   }
 }
