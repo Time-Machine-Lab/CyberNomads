@@ -301,7 +301,7 @@ function createPlannerHarness(options: PlannerHarnessOptions) {
               name: task.name,
               status: task.status,
               condition: clone(task.condition),
-              inputNeeds: task.inputNeeds.map(clone),
+              inputPrompt: task.inputPrompt,
               updatedAt: task.updatedAt,
             })),
         };
@@ -417,7 +417,7 @@ function createTask(
       cron: null,
       relyOnTaskIds: [],
     },
-    inputNeeds: [],
+    inputPrompt: "Read required input from the current work context before execution.",
     status: "ready",
     statusReason: null,
     createdAt: "2026-04-23T08:00:00.000Z",

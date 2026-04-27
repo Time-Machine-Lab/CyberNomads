@@ -22,7 +22,7 @@
 - `instruction`
 - `contextRef`
 - `condition`
-- `inputNeeds`
+- `inputPrompt`
 
 建议必须具备：
 
@@ -48,14 +48,15 @@
   - 定时触发条件，没有就填 `null`
 - `condition.relyOnTaskKeys`
   - 依赖哪些上游任务
-- `inputNeeds`
-  - 每个输入都要说明名称、描述、来源
-  - 如果 `source` 是文件或目录，必须使用相对路径，不能写成绝对路径或 `work/<trafficWorkId>/...`
+- `inputPrompt`
+  - 使用一段完整提示词说明任务需要哪些输入
+  - 必须写清楚输入从哪里拿、怎么理解、怎么消费
+  - 如果提示词中引用文件或目录，必须使用相对路径，不能写成绝对路径或 `work/<trafficWorkId>/...`
 
 ## 任务必须具备的质量
 
 - 任务边界清晰
-- 输入来源明确
+- 输入获取方式明确
 - 上游依赖明确
 - 产出预期明确
 - 能够独立交给一个 subagent 执行

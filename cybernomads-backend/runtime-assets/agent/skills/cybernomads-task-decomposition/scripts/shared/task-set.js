@@ -102,7 +102,7 @@ export function validateTaskSet(taskSet) {
     }
 
     validateCondition(task.condition, `${prefix}.condition`, issues);
-    validateInputNeeds(task.inputNeeds, `${prefix}.inputNeeds`, issues);
+    validateInputPrompt(task.inputPrompt, `${prefix}.inputPrompt`, issues);
 
     if (name && instruction && taskKey && contextRef) {
       continue;
@@ -177,29 +177,12 @@ function validateCondition(condition, path, issues) {
   }
 }
 
-function validateInputNeeds(inputNeeds, path, issues) {
-  if (!Array.isArray(inputNeeds)) {
+function validateInputPrompt(inputPrompt, path, issues) {
+  if (typeof inputPrompt !== "string" || inputPrompt.trim().length === 0) {
     issues.push({
       path,
-      message: "Task inputNeeds must be an array.",
+      message: "Task inputPrompt must be a non-empty string.",
     });
-    return;
-  }
-
-  for (const [index, item] of inputNeeds.entries()) {
-    const itemPath = `${path}[${index}]`;
-
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      issues.push({
-        path: itemPath,
-        message: "Each task input need must be an object.",
-      });
-      continue;
-    }
-
-    requireNonEmptyString(item.name, `${itemPath}.name`, issues);
-    requireNonEmptyString(item.description, `${itemPath}.description`, issues);
-    requireNonEmptyString(item.source, `${itemPath}.source`, issues);
   }
 }
 

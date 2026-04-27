@@ -167,7 +167,7 @@ describe.sequential("task decomposition support tools http api", () => {
                   cron: null,
                   relyOnTaskKeys: [],
                 },
-                inputNeeds: [],
+                inputPrompt: "",
               },
             ],
           },
@@ -225,13 +225,8 @@ function createTaskDraft(
       cron: null,
       relyOnTaskKeys,
     },
-    inputNeeds: [
-      {
-        name: "input",
-        description: "Use upstream data.",
-        source: "task-data-area",
-      },
-    ],
+    inputPrompt:
+      "Read upstream task data from ./data/collect.json and use it as execution input.",
   };
 }
 

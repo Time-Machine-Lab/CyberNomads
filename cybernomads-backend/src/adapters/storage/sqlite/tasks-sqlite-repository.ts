@@ -7,7 +7,6 @@ import type {
 import type {
   ListTasksFilters,
   TaskCondition,
-  TaskInputNeed,
   TaskOutputRecord,
   TaskRecord,
 } from "../../../modules/tasks/types.js";
@@ -43,6 +42,12 @@ interface TrafficWorkStateRow {
 
 interface CountRow {
   count: number;
+}
+
+interface LegacyTaskInputNeed {
+  name?: unknown;
+  description?: unknown;
+  source?: unknown;
 }
 
 export class SqliteTaskRepository implements TaskStorePort {
@@ -225,7 +230,7 @@ export class SqliteTaskRepository implements TaskStorePort {
         record.documentRef,
         record.contextRef,
         serializeCondition(record.condition),
-        serializeInputNeeds(record.inputNeeds),
+        serializeInputPrompt(record.inputPrompt),
         record.status,
         record.statusReason,
         record.updatedAt,
@@ -309,7 +314,7 @@ export class SqliteTaskRepository implements TaskStorePort {
         record.documentRef,
         record.contextRef,
         serializeCondition(record.condition),
-        serializeInputNeeds(record.inputNeeds),
+        serializeInputPrompt(record.inputPrompt),
         record.status,
         record.statusReason,
         record.createdAt,
@@ -328,7 +333,7 @@ function mapTaskRow(row: TaskRow): TaskRecord {
     documentRef: row.document_ref,
     contextRef: row.context_ref,
     condition: parseCondition(row.condition_json),
-    inputNeeds: parseInputNeeds(row.input_needs_json),
+    inputPrompt: parseInputPrompt(row.input_needs_json),
     status: row.status,
     statusReason: row.status_reason,
     createdAt: row.created_at,
@@ -350,8 +355,8 @@ function serializeCondition(condition: TaskCondition): string {
   return JSON.stringify(condition);
 }
 
-function serializeInputNeeds(inputNeeds: TaskInputNeed[]): string {
-  return JSON.stringify(inputNeeds);
+function serializeInputPrompt(inputPrompt: string): string {
+  return inputPrompt;
 }
 
 function parseCondition(serializedValue: string): TaskCondition {
@@ -367,22 +372,90 @@ function parseCondition(serializedValue: string): TaskCondition {
   };
 }
 
-function parseInputNeeds(serializedValue: string): TaskInputNeed[] {
-  const parsedValue = JSON.parse(serializedValue) as unknown;
+function parseInputPrompt(serializedValue: string): string {
+  const normalizedValue = serializedValue.trim();
 
-  if (!Array.isArray(parsedValue)) {
-    return [];
+  if (normalizedValue.length === 0) {
+    return "";
   }
 
-  return parsedValue
-    .filter((item): item is TaskInputNeed => {
-      return Boolean(item) && typeof item === "object" && !Array.isArray(item);
-    })
-    .map((item) => ({
-      name: item.name,
-      description: item.description,
-      source: item.source,
-    }));
+  if (!looksLikeJson(normalizedValue)) {
+    return normalizedValue;
+  }
+
+  try {
+    const parsedValue = JSON.parse(normalizedValue) as unknown;
+
+    if (typeof parsedValue === "string") {
+      return parsedValue.trim();
+    }
+
+    if (Array.isArray(parsedValue)) {
+      return stringifyLegacyInputNeeds(parsedValue);
+    }
+  } catch {
+    return normalizedValue;
+  }
+
+  return normalizedValue;
+}
+
+function looksLikeJson(value: string): boolean {
+  return value.startsWith("[") || value.startsWith("{") || value.startsWith('"');
+}
+
+function stringifyLegacyInputNeeds(inputNeeds: unknown[]): string {
+  const lines = inputNeeds
+    .map((item) => toLegacyInputNeedLine(item))
+    .filter((line): line is string => line !== null);
+
+  if (lines.length === 0) {
+    return "";
+  }
+
+  return [
+    "Execution input guidance converted from legacy task input needs:",
+    ...lines.map((line, index) => `${index + 1}. ${line}`),
+  ].join("\n");
+}
+
+function toLegacyInputNeedLine(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const inputNeed = value as LegacyTaskInputNeed;
+  const name = normalizeLegacyText(inputNeed.name);
+  const description = normalizeLegacyText(inputNeed.description);
+  const source = normalizeLegacyText(inputNeed.source);
+  const parts: string[] = [];
+
+  if (name) {
+    parts.push(`Input: ${name}`);
+  }
+
+  if (description) {
+    parts.push(`Description: ${description}`);
+  }
+
+  if (source) {
+    parts.push(`Source: ${source}`);
+  }
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  return parts.join("; ");
+}
+
+function normalizeLegacyText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
 function rollbackQuietly(database: DatabaseSync): void {

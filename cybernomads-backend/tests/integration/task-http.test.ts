@@ -86,6 +86,8 @@ describe.sequential("task module http api", () => {
       condition: {
         relyOnTaskIds: [collectTaskId],
       },
+      inputPrompt:
+        "Read upstream task data from ./data/collect.json and use it as execution input.",
     });
 
     const statusResponse = await fetch(
@@ -234,7 +236,7 @@ describe.sequential("task module http api", () => {
                 cron: null,
                 relyOnTaskKeys: [],
               },
-              inputNeeds: [],
+              inputPrompt: "",
             },
           ],
         }),
@@ -269,6 +271,80 @@ describe.sequential("task module http api", () => {
       },
     );
     expect(replaceRunningResponse.status).toBe(409);
+  });
+
+  it("reads legacy array-shaped input values as execution input prompts", async () => {
+    const { application, workingDirectory } = await startTemporaryApplication(
+      temporaryDirectories,
+      applications,
+    );
+    const runtimePaths = resolveRuntimePaths(workingDirectory);
+    await seedTrafficWork(runtimePaths.databaseFile, "work-legacy", "ready");
+
+    const database = new DatabaseSync(runtimePaths.databaseFile);
+    database
+      .prepare(
+        `
+          INSERT INTO tasks (
+            task_id,
+            traffic_work_id,
+            task_key,
+            name,
+            instruction,
+            document_ref,
+            context_ref,
+            condition_json,
+            input_needs_json,
+            status,
+            status_reason,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        "legacy-task-1",
+        "work-legacy",
+        "legacy-collect",
+        "Legacy collect",
+        "Use legacy input payload.",
+        "legacy-collect.md",
+        "work/work-legacy/legacy-collect",
+        JSON.stringify({
+          cron: null,
+          relyOnTaskIds: [],
+        }),
+        JSON.stringify([
+          {
+            name: "candidate-video-list",
+            description: "Candidate videos produced by the upstream task.",
+            source: "./data/search-candidate-videos.json",
+          },
+        ]),
+        "ready",
+        null,
+        "2026-04-23T08:00:00.000Z",
+        "2026-04-23T08:00:00.000Z",
+      );
+    database.close();
+
+    const response = await fetch(
+      `${application.http.url}/api/tasks/legacy-task-1`,
+    );
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      taskId: string;
+      inputPrompt: string;
+    };
+    expect(payload).toMatchObject({
+      taskId: "legacy-task-1",
+    });
+    expect(payload.inputPrompt).toContain(
+      "Execution input guidance converted from legacy task input needs:",
+    );
+    expect(payload.inputPrompt).toContain(
+      "Source: ./data/search-candidate-videos.json",
+    );
   });
 });
 
@@ -308,13 +384,8 @@ function createTaskDraft(
       cron: null,
       relyOnTaskKeys,
     },
-    inputNeeds: [
-      {
-        name: "input",
-        description: "Use upstream data.",
-        source: "task-data-area",
-      },
-    ],
+    inputPrompt:
+      "Read upstream task data from ./data/collect.json and use it as execution input.",
   };
 }
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the top-level API, SQL, and OpenSpec contracts for the task domain so later task runtime, traffic-work task decomposition, planners, and Agent task skills share one stable source of truth for task identity, ownership, lightweight status, execution prerequisites, input needs, controlled task-set writes, and abstract output records.
+Define the top-level API, SQL, and OpenSpec contracts for the task domain so later task runtime, traffic-work task decomposition, planners, and Agent task skills share one stable source of truth for task identity, ownership, lightweight status, execution prerequisites, execution input prompts, controlled task-set writes, and abstract output records.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ The system SHALL define controlled contracts for creating or replacing a task se
 
 - **WHEN** Agent task decomposition produces a task set for a traffic work
 - **THEN** the task contract SHALL allow the backend to persist multiple tasks for that traffic work in one controlled operation
-- **AND** each task SHALL satisfy task identity, ownership, status, condition, input need, and context reference contracts
+- **AND** each task SHALL satisfy task identity, ownership, status, condition, execution input prompt, and context reference contracts
 
 #### Scenario: Replace task set for traffic work
 
@@ -50,13 +50,13 @@ The system SHALL define task list and detail read contracts so upper layers can 
 #### Scenario: Read task summary list
 
 - **WHEN** task contracts define list behavior
-- **THEN** they SHALL expose task identity, traffic-work ownership, name, lightweight status, condition summary, input needs, and update time
+- **THEN** they SHALL expose task identity, traffic-work ownership, name, lightweight status, condition summary, execution input prompt, and update time
 - **AND** the list contract MAY support filtering by traffic work, status, or keyword
 
 #### Scenario: Read task detail
 
 - **WHEN** task contracts define detail behavior
-- **THEN** they SHALL expose task instruction, document reference, context reference, conditions, input needs, status, status reason, and timestamps
+- **THEN** they SHALL expose task instruction, document reference, context reference, conditions, execution input prompt, status, status reason, and timestamps
 - **AND** they SHALL NOT expose provider-specific execution protocol details as task detail requirements
 
 ### Requirement: Task contracts SHALL define lightweight task status
@@ -81,9 +81,9 @@ The system SHALL define a minimal task status model with only `ready`, `running`
 - **THEN** the contracts SHALL use a controlled task status update entry point
 - **AND** the contracts SHALL NOT require direct storage edits for status transitions
 
-### Requirement: Task contracts SHALL define task conditions and input needs
+### Requirement: Task contracts SHALL define task conditions and execution input prompts
 
-The system SHALL define task condition and input need contracts so planners and Agents can understand execution prerequisites.
+The system SHALL define task condition and execution input prompt contracts so planners and Agents can understand execution prerequisites.
 
 #### Scenario: Define cron condition
 
@@ -97,10 +97,11 @@ The system SHALL define task condition and input need contracts so planners and 
 - **THEN** the contract SHALL identify upstream tasks that must be considered before execution
 - **AND** the contract SHALL support dependency-driven collaboration between tasks
 
-#### Scenario: Define input need
+#### Scenario: Define execution input prompt
 
 - **WHEN** a task requires upstream data
-- **THEN** the contract SHALL allow the task to describe what input is needed and how the Agent should locate it
+- **THEN** the contract SHALL allow the task to describe, as prompt text, what input is needed and how the Agent should locate, understand, and consume it
+- **AND** the persisted field MAY keep the legacy name `input_needs_json` for compatibility while exposing prompt-oriented semantics
 
 ### Requirement: Task contracts SHALL define output records without defining output data schemas
 
@@ -140,7 +141,7 @@ The system SHALL keep task-set creation and replacement semantics aligned with t
 
 ### Requirement: Task contracts SHALL exclude planner, Agent provider, and platform implementation internals
 
-The system SHALL keep task contracts focused on task identity, status, conditions, input needs, and output records.
+The system SHALL keep task contracts focused on task identity, status, conditions, execution input prompts, and output records.
 
 #### Scenario: Exclude scheduler internals
 

@@ -20,7 +20,7 @@
 当任务 B 需要消费任务 A 的产出时，同时做好两件事：
 
 1. 在 `condition.relyOnTaskKeys` 中声明 B 依赖 A
-2. 在 B 的 `inputNeeds` 中写明要从 A 的什么产物位置或什么数据文件读取
+2. 在 B 的 `inputPrompt` 中写明要从 A 的什么产物位置或什么数据文件读取，以及如何消费这些数据
 
 ## instruction 里要写明什么
 

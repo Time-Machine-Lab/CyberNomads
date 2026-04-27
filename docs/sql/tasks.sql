@@ -5,7 +5,7 @@
 --   2. 任务由 Agent 基于引流工作拆分后通过任务模块受控入口创建或替换；
 --      普通用户不直接逐条手工创建完整任务集合。
 --   3. 任务状态固定为 `ready`、`running`、`completed`、`failed`，不引入复杂状态机。
---   4. 执行条件与输入需求以结构化 JSON 文本保存，但不把调度算法写入存储契约。
+--   4. 执行条件以结构化 JSON 文本保存；任务执行输入以提示词文本保存，但不把调度算法写入存储契约。
 --   5. 任务产出记录只保存抽象追踪信息，不承载视频、评论、私信、图片、文章等产出数据本体。
 
 CREATE TABLE tasks (
@@ -17,7 +17,7 @@ CREATE TABLE tasks (
     document_ref TEXT,
     context_ref TEXT NOT NULL,
     condition_json TEXT NOT NULL DEFAULT '{"cron":null,"relyOnTaskIds":[]}',
-    input_needs_json TEXT NOT NULL DEFAULT '[]',
+    input_needs_json TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL
         CHECK (status IN (
             'ready',
@@ -73,7 +73,7 @@ CREATE INDEX idx_task_output_records_task_id
 -- Task Document Reference -> `document_ref`
 -- Task Context Reference -> `context_ref`
 -- Task Condition Set -> `condition_json`
--- Task Input Need Set -> `input_needs_json`
+-- Task Execution Input Prompt -> `input_needs_json`
 -- Task Status -> `status` + `status_reason`
 -- Task Output Record -> `task_output_records` 表中的单行记录。
 -- Task Output Data Location -> `data_location`
@@ -85,8 +85,10 @@ CREATE INDEX idx_task_output_records_task_id
 -- 3. `condition_json` 保存任务执行条件声明，当前推荐形态为：
 --    `{"cron": "0 * * * *", "relyOnTaskIds": ["task_x"]}`。
 --    该字段只表达条件，不定义规划器扫描线程、轮询间隔或依赖更新时间比较算法。
--- 4. `input_needs_json` 保存输入需求声明数组，当前推荐每项至少包含 `name`、`description`、`source`。
---    输入需求描述 Agent 如何找到数据，不承载输入数据本体。
+-- 4. `input_needs_json` 延续历史列名，但语义已调整为“任务执行输入提示词”。
+--    该字段保存一段由任务拆分 Agent 生成、供任务执行 Agent 消费的提示词文本，
+--    用于说明当前任务执行前需要哪些输入，以及应如何定位、理解和消费这些输入。
+--    为兼容历史数据，运行时读取时应允许把旧的数组形态转换为等价提示词文本。
 -- 5. `task_output_records.data_location` 只保存产物位置引用；真实产出数据可位于任务数据区域、
 --    本地文件系统、对象存储或其他实现层位置。
 
@@ -110,7 +112,7 @@ CREATE INDEX idx_task_output_records_task_id
 --
 -- instruction:
 --   - 面向 Agent / subagent 的任务执行说明。
---   - 必须足够表达任务目标、执行流程、可用工具、输入需求和产出要求。
+--   - 必须足够表达任务目标、执行流程、可用工具、执行输入提示词和产出要求。
 --
 -- document_ref:
 --   - 任务说明文档引用，可为空。
@@ -126,8 +128,9 @@ CREATE INDEX idx_task_output_records_task_id
 --   - `ready` 任务是否真正可执行，必须由规划器结合该字段判断。
 --
 -- input_needs_json:
---   - 输入需求声明 JSON 数组文本。
---   - 描述任务执行前需要哪些输入，以及 Agent 应如何定位和消费这些输入。
+--   - 任务执行输入提示词文本。
+--   - 由任务拆分 Agent 生成，由任务执行 Agent 消费。
+--   - 描述任务执行前需要哪些输入，以及 Agent 应如何定位、理解和消费这些输入。
 --
 -- status:
 --   - `ready`: 任务已进入可被规划器判断的范围，但不表示必然可执行。

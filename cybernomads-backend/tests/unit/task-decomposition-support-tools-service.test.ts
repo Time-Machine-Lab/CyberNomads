@@ -146,7 +146,7 @@ describe("task decomposition support tools service", () => {
                 cron: null,
                 relyOnTaskKeys: [],
               },
-              inputNeeds: [],
+              inputPrompt: "",
             },
           ],
         },

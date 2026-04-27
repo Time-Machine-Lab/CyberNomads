@@ -17,7 +17,6 @@ import type {
   TaskDetail,
   TaskDraft,
   TaskDraftCondition,
-  TaskInputNeed,
   TaskOutputRecord,
   TaskRecord,
   TaskSetWriteInput,
@@ -224,7 +223,7 @@ export class TaskService {
         documentRef: draft.documentRef ?? null,
         contextRef: draft.contextRef,
         condition: mapDraftCondition(draft.condition, taskIdsByKey),
-        inputNeeds: draft.inputNeeds.map(cloneTaskInputNeed),
+        inputPrompt: draft.inputPrompt,
         status: "ready",
         statusReason: null,
         createdAt: timestamp,
@@ -331,9 +330,9 @@ function normalizeTaskDraft(draft: TaskDraft, pathPrefix: string): TaskDraft {
       draft.condition,
       `${pathPrefix}.condition`,
     ),
-    inputNeeds: normalizeTaskInputNeeds(
-      draft.inputNeeds,
-      `${pathPrefix}.inputNeeds`,
+    inputPrompt: normalizeTaskInputPrompt(
+      draft.inputPrompt,
+      `${pathPrefix}.inputPrompt`,
     ),
   };
 }
@@ -365,42 +364,15 @@ function normalizeTaskDraftCondition(
   };
 }
 
-function normalizeTaskInputNeeds(
-  inputNeeds: TaskInputNeed[],
-  pathPrefix: string,
-): TaskInputNeed[] {
-  if (!Array.isArray(inputNeeds)) {
-    throw validationError("Task inputNeeds must be an array.", pathPrefix);
-  }
-
-  return inputNeeds.map((item, index) => {
-    const itemPath = `${pathPrefix}[${index}]`;
-
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw validationError(
-        "Each task input need must be an object.",
-        itemPath,
-      );
-    }
-
-    return {
-      name: normalizeRequiredString(
-        item.name,
-        "Input need name is required.",
-        `${itemPath}.name`,
-      ),
-      description: normalizeRequiredString(
-        item.description,
-        "Input need description is required.",
-        `${itemPath}.description`,
-      ),
-      source: normalizeRequiredString(
-        item.source,
-        "Input need source is required.",
-        `${itemPath}.source`,
-      ),
-    };
-  });
+function normalizeTaskInputPrompt(
+  inputPrompt: unknown,
+  path: string,
+): string {
+  return normalizeRequiredString(
+    inputPrompt,
+    "Task inputPrompt is required.",
+    path,
+  );
 }
 
 function normalizeListTasksFilters(
@@ -500,7 +472,7 @@ function toTaskSummary(record: TaskRecord): TaskSummary {
     name: record.name,
     status: record.status,
     condition: cloneTaskCondition(record.condition),
-    inputNeeds: record.inputNeeds.map(cloneTaskInputNeed),
+    inputPrompt: record.inputPrompt,
     updatedAt: record.updatedAt,
   };
 }
@@ -514,7 +486,7 @@ function toTaskDetail(record: TaskRecord): TaskDetail {
     documentRef: record.documentRef,
     contextRef: record.contextRef,
     condition: cloneTaskCondition(record.condition),
-    inputNeeds: record.inputNeeds.map(cloneTaskInputNeed),
+    inputPrompt: record.inputPrompt,
     status: record.status,
     statusReason: record.statusReason,
     createdAt: record.createdAt,
@@ -540,14 +512,6 @@ function cloneTaskCondition(condition: TaskCondition): TaskCondition {
   return {
     cron: condition.cron,
     relyOnTaskIds: [...condition.relyOnTaskIds],
-  };
-}
-
-function cloneTaskInputNeed(inputNeed: TaskInputNeed): TaskInputNeed {
-  return {
-    name: inputNeed.name,
-    description: inputNeed.description,
-    source: inputNeed.source,
   };
 }
 

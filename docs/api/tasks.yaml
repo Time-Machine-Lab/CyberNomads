@@ -6,7 +6,7 @@ info:
     任务模块首版 API 契约。当前阶段对外暴露稳定的任务摘要、任务详情、
     状态更新、任务产出记录创建与查询能力；同时提供按引流工作创建或替换
     任务集的受控入口，供引流工作创建/更新后的 Agent 任务拆分流程调用。
-    契约聚焦任务身份、引流工作归属、执行条件、输入需求、上下文引用、
+    契约聚焦任务身份、引流工作归属、执行条件、执行输入提示词、上下文引用、
     轻量状态与抽象产出记录，不定义调度线程、Agent provider 私有协议、
     平台脚本或具体产出数据本体结构。
   summary: 任务模块 MVP 对外与内部受控契约
@@ -49,7 +49,7 @@ paths:
       summary: 查询任务详情
       description: >
         返回单个任务的完整管理视图，包括任务身份、所属引流工作、任务说明、
-        执行条件、输入需求、上下文引用、任务状态与时间戳。详情不返回具体平台
+        执行条件、执行输入提示词、上下文引用、任务状态与时间戳。详情不返回具体平台
         执行动作、Agent provider 协议或产出数据本体。
       operationId: getTaskDetail
       responses:
@@ -273,7 +273,7 @@ components:
         - name
         - status
         - condition
-        - inputNeeds
+        - inputPrompt
         - updatedAt
       properties:
         taskId:
@@ -289,11 +289,10 @@ components:
           $ref: "#/components/schemas/TaskStatus"
         condition:
           $ref: "#/components/schemas/TaskCondition"
-        inputNeeds:
-          type: array
-          description: 输入需求摘要集合，对应 SQL 契约中的 `input_needs_json`
-          items:
-            $ref: "#/components/schemas/TaskInputNeed"
+        inputPrompt:
+          type: string
+          minLength: 1
+          description: 任务执行输入提示词，对应 SQL 契约中的 `input_needs_json`
         updatedAt:
           type: string
           format: date-time
@@ -308,7 +307,7 @@ components:
         - name
         - instruction
         - condition
-        - inputNeeds
+        - inputPrompt
         - contextRef
         - status
         - createdAt
@@ -336,11 +335,10 @@ components:
           description: 任务上下文引用，对应 SQL 契约中的 `context_ref`
         condition:
           $ref: "#/components/schemas/TaskCondition"
-        inputNeeds:
-          type: array
-          description: 输入需求集合，对应 SQL 契约中的 `input_needs_json`
-          items:
-            $ref: "#/components/schemas/TaskInputNeed"
+        inputPrompt:
+          type: string
+          minLength: 1
+          description: 任务执行输入提示词，对应 SQL 契约中的 `input_needs_json`
         status:
           $ref: "#/components/schemas/TaskStatus"
         statusReason:
@@ -404,7 +402,7 @@ components:
         - name
         - instruction
         - condition
-        - inputNeeds
+        - inputPrompt
         - contextRef
       properties:
         taskKey:
@@ -430,11 +428,12 @@ components:
           minLength: 1
         condition:
           $ref: "#/components/schemas/TaskDraftCondition"
-        inputNeeds:
-          type: array
-          description: 输入需求集合
-          items:
-            $ref: "#/components/schemas/TaskInputNeed"
+        inputPrompt:
+          type: string
+          description: >
+            任务执行输入提示词。该字段由任务拆分 Agent 生成，供任务执行 Agent
+            消费，用于说明需要哪些输入以及如何定位和消费这些输入。
+          minLength: 1
 
     TaskCondition:
       type: object
@@ -476,28 +475,6 @@ components:
           items:
             type: string
 
-    TaskInputNeed:
-      type: object
-      description: >
-        任务输入需求声明，说明执行前需要什么数据以及 Agent 应如何定位。
-        该模型不承载输入数据本体。
-      required:
-        - name
-        - description
-        - source
-      properties:
-        name:
-          type: string
-          description: 输入需求名称
-          minLength: 1
-        description:
-          type: string
-          description: 输入需求说明
-          minLength: 1
-        source:
-          type: string
-          description: 数据来源说明，例如上游任务产出记录、任务数据区域或工作上下文引用。
-          minLength: 1
 
     UpdateTaskStatusRequest:
       type: object

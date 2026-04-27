@@ -681,13 +681,8 @@ async function simulateAgentPreparedTaskSet(input: {
                 cron: null,
                 relyOnTaskKeys: [],
               },
-              inputNeeds: [
-                {
-                  name: "work-context",
-                  description: "Use the prepared traffic work context.",
-                  source: "./knowledge",
-                },
-              ],
+              inputPrompt:
+                "Read prepared work context from ./knowledge before executing this task.",
             },
           ],
         },

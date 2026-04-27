@@ -22,13 +22,7 @@
         "cron": "0 */6 * * *",
         "relyOnTaskKeys": []
       },
-      "inputNeeds": [
-        {
-          "name": "strategy-context",
-          "description": "用于判断视频相关性的策略与产品定位。",
-          "source": "traffic-work-context"
-        }
-      ]
+      "inputPrompt": "执行前先阅读 ./knowledge/product-summary.md 与 ./knowledge/strategy-summary.md，基于其中的产品定位与策略要求判断视频相关性；如需候选视频输入，优先从 ./data/search-candidate-videos.json 读取。"
     }
   ]
 }
@@ -56,15 +50,15 @@
   - 不需要定时时写 `null`
 - `condition.relyOnTaskKeys`
   - 不依赖上游任务时写空数组
-- `inputNeeds`
-  - 必填数组
-  - 每一项都要明确名称、说明和来源
+- `inputPrompt`
+  - 必填字符串
+  - 必须清楚说明执行前需要哪些输入，以及 Agent 应如何定位、理解和消费这些输入
 
 ## 元数据质量要求
 
 - 每个任务必须有稳定英文 `taskKey`
 - 每个任务必须有任务文档引用或明确的文档计划
-- 每个任务必须能看出输入、过程、产出和完成标准
+- 每个任务必须能看出输入获取方式、过程、产出和完成标准
 - 每个任务必须能解释为什么它要独立存在
 
 ## 依赖映射规则

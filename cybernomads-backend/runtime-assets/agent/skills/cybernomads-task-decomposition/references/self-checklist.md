@@ -9,13 +9,13 @@
 - 每个任务都有清晰 `instruction`
 - 每个任务都有 `contextRef`
 - 每个任务都声明了 `condition`
-- 每个任务都声明了 `inputNeeds`
+- 每个任务都声明了 `inputPrompt`
 - 需要任务文档时，已经为任务准备稳定 `documentRef`
 
 ## 协作与数据
 
 - 下游任务的依赖关系已经写入 `relyOnTaskKeys`
-- 下游任务的数据来源已经写入 `inputNeeds`
+- 下游任务的数据来源已经写入 `inputPrompt`
 - 每个任务都能说明产出放到哪里
 - 没有把所有任务的数据都塞进一个含义不清的大文件
 

@@ -7,7 +7,7 @@ CREATE TABLE tasks (
     document_ref TEXT,
     context_ref TEXT NOT NULL,
     condition_json TEXT NOT NULL DEFAULT '{"cron":null,"relyOnTaskIds":[]}',
-    input_needs_json TEXT NOT NULL DEFAULT '[]',
+    input_needs_json TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL
         CHECK (status IN (
             'ready',

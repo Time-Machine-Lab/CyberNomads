@@ -10,12 +10,6 @@ export interface TaskDraftCondition {
   relyOnTaskKeys: string[];
 }
 
-export interface TaskInputNeed {
-  name: string;
-  description: string;
-  source: string;
-}
-
 export interface TaskRecord {
   taskId: string;
   trafficWorkId: string;
@@ -25,7 +19,7 @@ export interface TaskRecord {
   documentRef: string | null;
   contextRef: string;
   condition: TaskCondition;
-  inputNeeds: TaskInputNeed[];
+  inputPrompt: string;
   status: TaskStatus;
   statusReason: string | null;
   createdAt: string;
@@ -38,7 +32,7 @@ export interface TaskSummary {
   name: string;
   status: TaskStatus;
   condition: TaskCondition;
-  inputNeeds: TaskInputNeed[];
+  inputPrompt: string;
   updatedAt: string;
 }
 
@@ -50,7 +44,7 @@ export interface TaskDetail {
   documentRef: string | null;
   contextRef: string;
   condition: TaskCondition;
-  inputNeeds: TaskInputNeed[];
+  inputPrompt: string;
   status: TaskStatus;
   statusReason: string | null;
   createdAt: string;
@@ -64,7 +58,7 @@ export interface TaskDraft {
   documentRef?: string | null;
   contextRef: string;
   condition: TaskDraftCondition;
-  inputNeeds: TaskInputNeed[];
+  inputPrompt: string;
 }
 
 export interface TaskSetSource {

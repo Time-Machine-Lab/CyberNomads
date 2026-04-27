@@ -59,13 +59,9 @@ describe("task service", () => {
 
     const commentTask = await service.getTaskDetail("task-2");
     expect(commentTask.condition.relyOnTaskIds).toEqual(["task-1"]);
-    expect(commentTask.inputNeeds).toEqual([
-      {
-        name: "input",
-        description: "Use upstream data.",
-        source: "task-data-area",
-      },
-    ]);
+    expect(commentTask.inputPrompt).toBe(
+      "Read upstream task data from ./data/collect.json and use it as execution input.",
+    );
 
     await expect(
       service.createTaskSetForTrafficWork("work-1", {
@@ -309,13 +305,8 @@ function createTaskDraft(
       cron: null,
       relyOnTaskKeys,
     },
-    inputNeeds: [
-      {
-        name: "input",
-        description: "Use upstream data.",
-        source: "task-data-area",
-      },
-    ],
+    inputPrompt:
+      "Read upstream task data from ./data/collect.json and use it as execution input.",
   };
 }
 

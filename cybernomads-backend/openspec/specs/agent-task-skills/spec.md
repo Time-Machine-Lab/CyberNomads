@@ -32,12 +32,12 @@ The system SHALL provide a task decomposition Skill that guides Agent-generated 
 
 - **WHEN** Agent decomposes a traffic work into tasks
 - **THEN** the Skill SHALL instruct the Agent to keep tasks atomic and context-bounded
-- **AND** each task SHALL include task instruction, execution condition, input needs, context reference, and expected output guidance
+- **AND** each task SHALL include task instruction, execution condition, execution input prompt, context reference, and expected output guidance
 
 #### Scenario: Declare task collaboration explicitly
 
 - **WHEN** a task depends on another task
-- **THEN** the Skill SHALL instruct the Agent to declare both dependency condition and input need semantics
+- **THEN** the Skill SHALL instruct the Agent to declare both dependency condition and execution input prompt semantics
 - **AND** dependency relationships SHALL NOT rely only on implicit prose
 
 #### Scenario: Prepare context assets
@@ -53,7 +53,7 @@ The system SHALL provide a task execution Skill that guides Agent execution of o
 #### Scenario: Execute one task with context
 
 - **WHEN** Agent executes a task
-- **THEN** the Skill SHALL instruct the Agent to load the task detail, work context, input needs, and available tools
+- **THEN** the Skill SHALL instruct the Agent to load the task detail, work context, execution input prompt, and available tools
 - **AND** it SHALL keep execution scoped to the submitted task rather than re-planning the entire traffic work
 
 #### Scenario: Update task status after execution

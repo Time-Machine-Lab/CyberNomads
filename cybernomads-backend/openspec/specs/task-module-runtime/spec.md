@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the backend task module runtime that persists and exposes task records, task sets, lightweight task status, task conditions, input needs, and abstract task output records while preserving planner, Agent provider, and platform execution boundaries.
+Define the backend task module runtime that persists and exposes task records, task sets, lightweight task status, task conditions, execution input prompts, and abstract task output records while preserving planner, Agent provider, and platform execution boundaries.
 
 ## Requirements
 
@@ -19,7 +19,7 @@ The backend task module SHALL create, persist, read, and update task records acc
 #### Scenario: Read task detail
 
 - **WHEN** a caller requests task detail
-- **THEN** the runtime SHALL return task instruction reference, conditions, input needs, context reference, and current status
+- **THEN** the runtime SHALL return task instruction reference, conditions, execution input prompt, context reference, and current status
 
 ### Requirement: Task module runtime SHALL manage task sets by traffic work
 
@@ -39,8 +39,24 @@ The backend task module SHALL provide controlled operations for creating and rep
 
 #### Scenario: Reject invalid task set
 
-- **WHEN** a task set misses required task identity, name, instruction reference, condition, input need, or context reference semantics
+- **WHEN** a task set misses required task identity, name, instruction reference, condition, execution input prompt, or context reference semantics
 - **THEN** the runtime SHALL reject the task set and return a validation error
+
+### Requirement: Task module runtime SHALL preserve compatibility for historical input-need arrays
+
+The backend task module SHALL write prompt-oriented task input values while safely reading historical array-shaped values.
+
+#### Scenario: Write prompt text for new task data
+
+- **WHEN** the runtime persists newly created or replaced tasks
+- **THEN** it SHALL store the execution input contract as prompt text
+- **AND** it SHALL NOT require new writes to follow the historical array-of-objects structure
+
+#### Scenario: Read historical array-shaped values
+
+- **WHEN** the runtime reads a stored task whose legacy `input_needs_json` value is still an array-shaped payload
+- **THEN** it SHALL convert that historical value into a safe execution input prompt representation
+- **AND** task reads SHALL remain available without forcing immediate manual data migration
 
 ### Requirement: Task module runtime SHALL support controlled status updates
 
@@ -82,5 +98,5 @@ The backend task module SHALL not implement task polling, provider-specific exec
 #### Scenario: Runtime remains task-domain scoped
 
 - **WHEN** the task module is implemented
-- **THEN** it SHALL stop at task records, task-set persistence, status, conditions, input needs, and output records
+- **THEN** it SHALL stop at task records, task-set persistence, status, conditions, execution input prompts, and output records
 - **AND** planner and Agent provider behavior SHALL remain outside this module

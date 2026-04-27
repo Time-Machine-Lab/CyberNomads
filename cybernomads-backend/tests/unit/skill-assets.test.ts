@@ -78,13 +78,8 @@ describe("runtime skill assets", () => {
             cron: "0 */6 * * *",
             relyOnTaskKeys: [],
           },
-          inputNeeds: [
-            {
-              name: "strategy-context",
-              description: "Product and strategy context for relevance.",
-              source: "traffic-work-context",
-            },
-          ],
+          inputPrompt:
+            "Read strategy and product context from ./knowledge/strategy-summary.md and ./knowledge/product-summary.md before searching.",
         },
         {
           taskKey: "comment-on-prospects",
@@ -96,13 +91,8 @@ describe("runtime skill assets", () => {
             cron: null,
             relyOnTaskKeys: ["search-candidate-videos"],
           },
-          inputNeeds: [
-            {
-              name: "candidate-video-list",
-              description: "Candidate videos produced by the search task.",
-              source: "output:search-candidate-videos",
-            },
-          ],
+          inputPrompt:
+            "Load candidate videos from output:search-candidate-videos and ./data/search-candidate-videos.json before commenting.",
         },
         {
           taskKey: "private-message-follow-up",
@@ -114,13 +104,8 @@ describe("runtime skill assets", () => {
             cron: "0 10 * * *",
             relyOnTaskKeys: ["comment-on-prospects"],
           },
-          inputNeeds: [
-            {
-              name: "qualified-prospects",
-              description: "Prospects qualified by previous interactions.",
-              source: "output:comment-on-prospects",
-            },
-          ],
+          inputPrompt:
+            "Load qualified prospects from output:comment-on-prospects and ./data/comment-on-prospects.json before following up.",
         },
       ],
     };
@@ -136,7 +121,7 @@ describe("runtime skill assets", () => {
 
     const commentTask = await service.getTaskDetail("task-2");
     expect(commentTask.condition.relyOnTaskIds).toEqual(["task-1"]);
-    expect(commentTask.inputNeeds[0]?.source).toBe(
+    expect(commentTask.inputPrompt).toContain(
       "output:search-candidate-videos",
     );
   });

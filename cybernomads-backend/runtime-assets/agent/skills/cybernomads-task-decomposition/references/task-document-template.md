@@ -27,8 +27,8 @@
    - `documentRef`
    - `contextRef`
    - `condition`
-   - `inputNeeds`
-4. 如果某个任务会使用特定 Skill、工具、知识文件或数据文件，必须在 `instruction` 和 `inputNeeds` 中把相对路径说清楚。
+  - `inputPrompt`
+4. 如果某个任务会使用特定 Skill、工具、知识文件或数据文件，必须在 `instruction` 和 `inputPrompt` 中把相对路径说清楚。
 
 ## 结果判断标准
 
