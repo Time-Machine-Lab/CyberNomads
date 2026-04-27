@@ -22,6 +22,8 @@
 1. 在 `condition.relyOnTaskKeys` 中声明 B 依赖 A
 2. 在 B 的 `inputPrompt` 中写明要从 A 的什么产物位置或什么数据文件读取，以及如何消费这些数据
 
+`inputPrompt` 会保存到数据库的 `input_needs_json` 字段。只要任务需要任何前置数据、外部素材或上游产出，就必须认真填写；只有任务确实不需要前置输入时才可以写空字符串。
+
 ## instruction 里要写明什么
 
 任务说明中应明确：

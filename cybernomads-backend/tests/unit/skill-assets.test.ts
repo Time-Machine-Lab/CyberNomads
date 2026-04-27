@@ -73,7 +73,7 @@ describe("runtime skill assets", () => {
           name: "Search candidate videos",
           instruction: "Search candidate videos and save candidate metadata.",
           documentRef: "search-candidate-videos.md",
-          contextRef: "work/work-1/task/search-candidate-videos",
+          contextRef: "./",
           condition: {
             cron: "0 */6 * * *",
             relyOnTaskKeys: [],
@@ -86,7 +86,7 @@ describe("runtime skill assets", () => {
           name: "Find prospects and comment",
           instruction: "Use candidate videos to find prospects and comment.",
           documentRef: "comment-on-prospects.md",
-          contextRef: "work/work-1/task/comment-on-prospects",
+          contextRef: "./",
           condition: {
             cron: null,
             relyOnTaskKeys: ["search-candidate-videos"],
@@ -99,7 +99,7 @@ describe("runtime skill assets", () => {
           name: "Private message follow-up",
           instruction: "Follow up with qualified prospects.",
           documentRef: "private-message-follow-up.md",
-          contextRef: "work/work-1/task/private-message-follow-up",
+          contextRef: "./",
           condition: {
             cron: "0 10 * * *",
             relyOnTaskKeys: ["comment-on-prospects"],

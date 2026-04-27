@@ -40,6 +40,13 @@ The system SHALL provide a task decomposition Skill that guides Agent-generated 
 - **THEN** the Skill SHALL instruct the Agent to declare both dependency condition and execution input prompt semantics
 - **AND** dependency relationships SHALL NOT rely only on implicit prose
 
+#### Scenario: Treat execution input prompt as database input guidance
+
+- **WHEN** Agent decomposes a task that needs upstream output, external material, or generated input
+- **THEN** the Skill SHALL instruct the Agent to fill the task-set `inputPrompt` field with concrete acquisition and consumption guidance
+- **AND** the Skill SHALL explain that `inputPrompt` is persisted as `input_needs_json`
+- **AND** the Skill MAY allow an empty `inputPrompt` only when the task truly needs no prior input
+
 #### Scenario: Prepare context assets
 
 - **WHEN** Agent decomposes a traffic work

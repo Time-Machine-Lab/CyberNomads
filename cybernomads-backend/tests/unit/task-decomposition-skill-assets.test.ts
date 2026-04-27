@@ -65,4 +65,45 @@ describe("task decomposition skill assets", () => {
       expect(stdout).toContain("Usage:");
     }
   });
+
+  it("keeps task documents focused on context, flow, and output collaboration", async () => {
+    const template = await readFile(
+      join(
+        process.cwd(),
+        "runtime-assets",
+        "agent",
+        "knowledge",
+        "引流任务文档模板.md",
+      ),
+      "utf8",
+    );
+    const templateGuidance = await readFile(
+      join(skillDirectory, "references", "task-document-template.md"),
+      "utf8",
+    );
+
+    expect(template).toContain("## 3. 任务上下文前提");
+    expect(template).toContain("## 4. 任务流程");
+    expect(template).toContain("## 5. 任务产出与协作");
+    expect(template).toContain("## 6. 任务自检");
+    expect(template).toContain("## 7. 执行约束");
+    expect(template).toContain("产出存在性");
+    expect(template).toContain("数据结构合规性");
+    expect(template).toContain("无产出原因");
+    expect(template).toContain("```json");
+    expect(template).toContain("required: false");
+    expect(template).not.toContain("## 3. 执行条件");
+    expect(template).not.toContain("## 4. 输入依赖");
+    expect(templateGuidance).toContain(
+      "`condition` 和 `inputPrompt` 只属于任务元数据",
+    );
+    expect(templateGuidance).toContain("不要作为独立章节写入任务 Markdown 文档");
+    const taskShape = await readFile(
+      join(skillDirectory, "references", "task-shape.md"),
+      "utf8",
+    );
+    expect(taskShape).toContain('"contextRef": "./"');
+    expect(taskShape).toContain("保存到数据库 `input_needs_json`");
+    expect(taskShape).toContain("可以填写空字符串");
+  });
 });

@@ -291,7 +291,6 @@ components:
           $ref: "#/components/schemas/TaskCondition"
         inputPrompt:
           type: string
-          minLength: 1
           description: 任务执行输入提示词，对应 SQL 契约中的 `input_needs_json`
         updatedAt:
           type: string
@@ -337,7 +336,6 @@ components:
           $ref: "#/components/schemas/TaskCondition"
         inputPrompt:
           type: string
-          minLength: 1
           description: 任务执行输入提示词，对应 SQL 契约中的 `input_needs_json`
         status:
           $ref: "#/components/schemas/TaskStatus"
@@ -432,8 +430,8 @@ components:
           type: string
           description: >
             任务执行输入提示词。该字段由任务拆分 Agent 生成，供任务执行 Agent
-            消费，用于说明需要哪些输入以及如何定位和消费这些输入。
-          minLength: 1
+            消费，用于说明需要哪些输入以及如何定位和消费这些输入；当任务确实不需要
+            任何前置输入时可以为空字符串。
 
     TaskCondition:
       type: object

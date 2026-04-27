@@ -183,6 +183,74 @@ describe("task service", () => {
     });
   });
 
+  it("allows an empty input prompt for tasks without prior input", async () => {
+    const taskStore = new InMemoryTaskStore([
+      {
+        trafficWorkId: "work-1",
+        lifecycleStatus: "ready",
+      },
+    ]);
+    const service = new TaskService({
+      taskStore,
+      createTaskId: createSequentialId("task"),
+    });
+
+    await service.createTaskSetForTrafficWork("work-1", {
+      source: {
+        kind: "agent-decomposition",
+      },
+      tasks: [
+        {
+          ...createTaskDraft("scan-messages", "Scan private messages", []),
+          contextRef: "./",
+          inputPrompt: "",
+        },
+      ],
+    });
+
+    await expect(service.getTaskDetail("task-1")).resolves.toMatchObject({
+      contextRef: "./",
+      inputPrompt: "",
+    });
+  });
+
+  it("rejects non-string input prompts", async () => {
+    const taskStore = new InMemoryTaskStore([
+      {
+        trafficWorkId: "work-1",
+        lifecycleStatus: "ready",
+      },
+    ]);
+    const service = new TaskService({
+      taskStore,
+      createTaskId: createSequentialId("task"),
+    });
+
+    await expect(
+      service.createTaskSetForTrafficWork("work-1", {
+        source: {
+          kind: "agent-decomposition",
+        },
+        tasks: [
+          {
+            ...createTaskDraft("broken", "Broken task", []),
+            inputPrompt: null,
+          } as never,
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "TASK_VALIDATION_FAILED",
+      details: {
+        issues: [
+          {
+            path: "tasks[0].inputPrompt",
+            message: "Task inputPrompt must be a string.",
+          },
+        ],
+      },
+    });
+  });
+
   it("keeps task module boundaries free from Agent provider and platform adapters", async () => {
     const taskModuleFiles = await listTypeScriptFiles(
       join(process.cwd(), "src", "modules", "tasks"),

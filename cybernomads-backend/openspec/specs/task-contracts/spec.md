@@ -103,6 +103,12 @@ The system SHALL define task condition and execution input prompt contracts so p
 - **THEN** the contract SHALL allow the task to describe, as prompt text, what input is needed and how the Agent should locate, understand, and consume it
 - **AND** the persisted field MAY keep the legacy name `input_needs_json` for compatibility while exposing prompt-oriented semantics
 
+#### Scenario: Allow empty execution input prompt when no prior input is needed
+
+- **WHEN** a task does not require upstream task output, external material, or other prior input
+- **THEN** the contract SHALL allow the execution input prompt to be an empty string
+- **AND** tasks that do require prior input SHALL still describe how the Agent should locate, understand, and consume that input
+
 ### Requirement: Task contracts SHALL define output records without defining output data schemas
 
 The system SHALL define task output records as abstract trace records and SHALL NOT define concrete output data schemas in the task contract.

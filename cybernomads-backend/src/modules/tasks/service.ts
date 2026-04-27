@@ -368,11 +368,11 @@ function normalizeTaskInputPrompt(
   inputPrompt: unknown,
   path: string,
 ): string {
-  return normalizeRequiredString(
-    inputPrompt,
-    "Task inputPrompt is required.",
-    path,
-  );
+  if (typeof inputPrompt !== "string") {
+    throw validationError("Task inputPrompt must be a string.", path);
+  }
+
+  return inputPrompt.trim();
 }
 
 function normalizeListTasksFilters(

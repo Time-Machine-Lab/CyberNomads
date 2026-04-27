@@ -17,7 +17,7 @@
       "name": "搜索候选视频",
       "instruction": "目标、步骤、使用资源、预期产出和完成标准。",
       "documentRef": "task-search-candidate-videos.md",
-      "contextRef": "work/<trafficWorkId>/skills/bilibili-web-api",
+      "contextRef": "./",
       "condition": {
         "cron": "0 */6 * * *",
         "relyOnTaskKeys": []
@@ -45,14 +45,17 @@
   - 必须落在当前引流工作目录内
 - `contextRef`
   - 必填
-  - 表达后续执行时应优先加载的上下文入口
+  - 默认填写 `./`，表示当前引流工作目录
+  - 只有任务确实需要更窄的上下文入口时，才填写当前引流工作目录下的相对路径
 - `condition.cron`
   - 不需要定时时写 `null`
 - `condition.relyOnTaskKeys`
   - 不依赖上游任务时写空数组
 - `inputPrompt`
-  - 必填字符串
-  - 必须清楚说明执行前需要哪些输入，以及 Agent 应如何定位、理解和消费这些输入
+  - 必填字段，类型必须是字符串，可为空字符串
+  - 该字段会保存到数据库 `input_needs_json`
+  - 当任务需要前置数据、外部素材或上游产出时，必须清楚说明执行前需要哪些输入，以及 Agent 应如何定位、理解和消费这些输入
+  - 当任务确实不需要任何前置输入时，例如定时搜索或定时查看私信，可以填写空字符串
 
 ## 元数据质量要求
 

@@ -51,6 +51,7 @@ The backend task module SHALL write prompt-oriented task input values while safe
 - **WHEN** the runtime persists newly created or replaced tasks
 - **THEN** it SHALL store the execution input contract as prompt text
 - **AND** it SHALL NOT require new writes to follow the historical array-of-objects structure
+- **AND** it SHALL allow an empty prompt string when the task does not require prior input
 
 #### Scenario: Read historical array-shaped values
 

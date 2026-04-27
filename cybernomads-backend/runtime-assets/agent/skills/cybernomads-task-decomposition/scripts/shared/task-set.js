@@ -178,10 +178,10 @@ function validateCondition(condition, path, issues) {
 }
 
 function validateInputPrompt(inputPrompt, path, issues) {
-  if (typeof inputPrompt !== "string" || inputPrompt.trim().length === 0) {
+  if (typeof inputPrompt !== "string") {
     issues.push({
       path,
-      message: "Task inputPrompt must be a non-empty string.",
+      message: "Task inputPrompt must be a string.",
     });
   }
 }
