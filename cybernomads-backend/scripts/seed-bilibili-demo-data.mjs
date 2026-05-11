@@ -1,4 +1,4 @@
-const apiBaseUrl = process.env.CYBERNOMADS_API_BASE_URL?.trim() || 'http://127.0.0.1:3000/api'
+const apiBaseUrl = process.env.CYBERNOMADS_API_BASE_URL?.trim() || 'http://127.0.0.1:5000/api'
 
 const products = [
   {

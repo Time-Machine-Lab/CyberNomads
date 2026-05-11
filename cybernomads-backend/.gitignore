@@ -13,3 +13,4 @@ storage/artifacts/outputs/**
 !storage/artifacts/logs/task/.gitkeep
 !storage/artifacts/logs/error/.gitkeep
 !storage/artifacts/outputs/.gitkeep
+logs/

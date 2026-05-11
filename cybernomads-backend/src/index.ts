@@ -1,8 +1,22 @@
 import { startApplication } from "./app/start-application.js";
 import { isBootstrapError } from "./shared/bootstrap-error.js";
 
+function resolveServerPort() {
+  const value = process.env.SERVER_PORT?.trim();
+
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 try {
-  const application = await startApplication();
+  const application = await startApplication({
+    host: process.env.SERVER_HOST?.trim() || undefined,
+    port: resolveServerPort(),
+  });
 
   console.info("Cybernomads backend is ready.");
   console.info(`Runtime root: ${application.runtime.paths.runtimeRoot}`);
