@@ -122,6 +122,7 @@ export interface TaskDecompositionRequest {
   prompt: string;
   context: string;
   title?: string;
+  trafficWorkId?: string;
 }
 
 export interface TaskDecompositionResult {

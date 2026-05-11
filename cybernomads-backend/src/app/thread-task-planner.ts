@@ -2,6 +2,10 @@ import type { AgentAccessService } from "../modules/agent-access/service.js";
 import type { TaskService } from "../modules/tasks/service.js";
 import type { TaskCondition, TaskDetail } from "../modules/tasks/types.js";
 import type { TrafficWorkService } from "../modules/traffic-works/service.js";
+import {
+  recordAgentInteractionEvent,
+  type AgentInteractionLogRecorderPort,
+} from "../ports/agent-interaction-log-recorder-port.js";
 
 type TimerHandle = ReturnType<typeof setInterval>;
 
@@ -12,6 +16,7 @@ export interface ThreadTaskPlannerOptions {
   >;
   trafficWorkService: Pick<TrafficWorkService, "listTrafficWorks">;
   agentAccessService: Pick<AgentAccessService, "submitTaskExecutionRequest">;
+  agentInteractionLogRecorder?: AgentInteractionLogRecorderPort;
   intervalMs?: number;
   now?: () => Date;
 }
@@ -267,6 +272,29 @@ export class ThreadTaskPlanner {
     task: TaskDetail,
     result: ThreadTaskPlannerTickResult,
   ): Promise<void> {
+    recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+      scope: {
+        kind: "task",
+        taskId: task.taskId,
+      },
+      eventType: "thread-planner-dispatch-selected",
+      title: task.name,
+      occurredAt: this.now().toISOString(),
+      summary:
+        "Thread task planner selected a ready task and is submitting it for Agent execution.",
+      decisionSummary:
+        "Task conditions evaluated as executable, so the planner will mark the task running and submit it once through Agent access.",
+      correlation: {
+        taskId: task.taskId,
+        trafficWorkId: task.trafficWorkId,
+      },
+      input: {
+        condition: task.condition,
+        contextRef: task.contextRef,
+        instruction: task.instruction,
+      },
+    });
+
     try {
       await this.options.taskService.updateTaskStatus(task.taskId, {
         status: "running",
@@ -279,8 +307,41 @@ export class ThreadTaskPlanner {
         contextDirectory: task.contextRef,
         instructions: task.instruction,
       });
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope: {
+          kind: "task",
+          taskId: task.taskId,
+        },
+        eventType: "thread-planner-dispatch-submitted",
+        title: task.name,
+        occurredAt: this.now().toISOString(),
+        summary:
+          "Thread task planner submitted the task execution request to Agent access.",
+        correlation: {
+          taskId: task.taskId,
+          trafficWorkId: task.trafficWorkId,
+        },
+      });
       result.submittedTasks += 1;
     } catch (error) {
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope: {
+          kind: "task",
+          taskId: task.taskId,
+        },
+        eventType: "thread-planner-dispatch-failed",
+        title: task.name,
+        occurredAt: this.now().toISOString(),
+        summary:
+          "Thread task planner failed to submit the task execution request.",
+        correlation: {
+          taskId: task.taskId,
+          trafficWorkId: task.trafficWorkId,
+        },
+        output: {
+          error: toFailureReason("Task submission failed", error),
+        },
+      });
       await this.failTask(
         task.taskId,
         toFailureReason("Task submission failed", error),

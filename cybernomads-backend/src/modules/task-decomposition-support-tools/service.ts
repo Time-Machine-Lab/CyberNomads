@@ -12,11 +12,14 @@ import type {
   CopyRuntimeAgentResourceToolResult,
   ReportTrafficWorkPreparationStatusToolInput,
   ReportTrafficWorkPreparationStatusToolResult,
-  TaskDecompositionSupportToolValidationIssue,
 } from "./types.js";
 import type { RuntimeAgentResourceStorePort } from "../../ports/runtime-agent-resource-store-port.js";
 import type { TrafficWorkContextStore } from "../../ports/traffic-work-context-store-port.js";
 import type { TrafficWorkStateStore } from "../../ports/traffic-work-state-store-port.js";
+import {
+  recordAgentInteractionEvent,
+  type AgentInteractionLogRecorderPort,
+} from "../../ports/agent-interaction-log-recorder-port.js";
 
 export interface TaskDecompositionSupportToolsServiceOptions {
   trafficWorkStateStore: Pick<
@@ -29,6 +32,7 @@ export interface TaskDecompositionSupportToolsServiceOptions {
     TaskService,
     "createTaskSetForTrafficWork" | "replaceTaskSetForTrafficWork"
   >;
+  agentInteractionLogRecorder?: AgentInteractionLogRecorderPort;
   now?: () => Date;
 }
 
@@ -82,6 +86,32 @@ export class TaskDecompositionSupportToolsService {
           resourcePath,
           targetRootDirectory,
         });
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope: {
+          kind: "traffic-work",
+          trafficWorkId,
+        },
+        eventType: "decomposition-tool-resource-copy",
+        title: `copy ${resourceType}:${resourcePath}`,
+        occurredAt: this.now().toISOString(),
+        summary:
+          "Agent-controlled decomposition support tool copied a runtime resource into the traffic work context.",
+        correlation: {
+          trafficWorkId,
+          resourceType,
+        },
+        toolCalls: [
+          {
+            name: "copyRuntimeAgentResource",
+            status: "completed",
+            input: {
+              resourceType,
+              resourcePath,
+            },
+            output: result,
+          },
+        ],
+      });
 
       return {
         trafficWorkId,
@@ -92,6 +122,35 @@ export class TaskDecompositionSupportToolsService {
         targetRuntimeRelativePath: result.targetRuntimeRelativePath,
       };
     } catch (error) {
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope: {
+          kind: "traffic-work",
+          trafficWorkId,
+        },
+        eventType: "decomposition-tool-resource-copy-failed",
+        title: `copy ${resourceType}:${resourcePath}`,
+        occurredAt: this.now().toISOString(),
+        summary:
+          "Agent-controlled decomposition support tool failed to copy a runtime resource.",
+        correlation: {
+          trafficWorkId,
+          resourceType,
+        },
+        toolCalls: [
+          {
+            name: "copyRuntimeAgentResource",
+            status: "failed",
+            input: {
+              resourceType,
+              resourcePath,
+            },
+            output: {
+              error: error instanceof Error ? error.message : "Unknown error.",
+            },
+          },
+        ],
+      });
+
       if (error instanceof Error) {
         if (error.message.includes("outside the allowed")) {
           throw new TaskDecompositionSupportToolsBoundaryViolationError(
@@ -142,16 +201,82 @@ export class TaskDecompositionSupportToolsService {
       );
     }
 
-    const result =
-      mode === "create"
-        ? await this.options.taskService.createTaskSetForTrafficWork(
-            trafficWorkId,
-            input.taskSet,
-          )
-        : await this.options.taskService.replaceTaskSetForTrafficWork(
-            trafficWorkId,
-            input.taskSet,
-          );
+    let result: Awaited<
+      ReturnType<TaskService["createTaskSetForTrafficWork"]>
+    >;
+
+    try {
+      result =
+        mode === "create"
+          ? await this.options.taskService.createTaskSetForTrafficWork(
+              trafficWorkId,
+              input.taskSet,
+            )
+          : await this.options.taskService.replaceTaskSetForTrafficWork(
+              trafficWorkId,
+              input.taskSet,
+            );
+    } catch (error) {
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope: {
+          kind: "traffic-work",
+          trafficWorkId,
+        },
+        eventType: "decomposition-tool-task-set-save-failed",
+        title: `task-set:${mode}`,
+        occurredAt: this.now().toISOString(),
+        summary:
+          "Agent-controlled decomposition support tool failed to persist the decomposed task set.",
+        correlation: {
+          trafficWorkId,
+          mode,
+        },
+        toolCalls: [
+          {
+            name: "batchSaveTasks",
+            status: "failed",
+            input: {
+              mode,
+              taskSet: input.taskSet,
+            },
+            output: {
+              error: error instanceof Error ? error.message : "Unknown error.",
+            },
+          },
+        ],
+      });
+      throw error;
+    }
+
+    recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+      scope: {
+        kind: "traffic-work",
+        trafficWorkId,
+      },
+      eventType: "decomposition-tool-task-set-save",
+      title: `task-set:${mode}`,
+      occurredAt: this.now().toISOString(),
+      summary:
+        "Agent-controlled decomposition support tool persisted the decomposed task set.",
+      decisionSummary:
+        "Task metadata persistence happened through the controlled task module boundary instead of direct database mutation.",
+      correlation: {
+        trafficWorkId,
+        mode,
+        taskCount: result.taskCount,
+      },
+      toolCalls: [
+        {
+          name: "batchSaveTasks",
+          status: "completed",
+          input: {
+            mode,
+            taskSet: input.taskSet,
+          },
+          output: result,
+        },
+      ],
+    });
 
     return {
       mode,
@@ -199,6 +324,35 @@ export class TaskDecompositionSupportToolsService {
     };
 
     await this.options.trafficWorkStateStore.saveTrafficWork(nextRecord);
+    recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+      scope: {
+        kind: "traffic-work",
+        trafficWorkId,
+      },
+      eventType: "decomposition-tool-preparation-status",
+      title: `preparation:${status}`,
+      occurredAt: updatedAt,
+      summary:
+        "Agent-controlled decomposition support tool reported traffic work preparation status.",
+      correlation: {
+        trafficWorkId,
+        status,
+      },
+      toolCalls: [
+        {
+          name: "reportTrafficWorkPreparationStatus",
+          status: "completed",
+          input,
+          output: {
+            trafficWorkId,
+            status,
+            reason: nextRecord.contextPreparationStatusReason,
+            contextPreparedAt: nextRecord.contextPreparedAt,
+            updatedAt,
+          },
+        },
+      ],
+    });
 
     return {
       trafficWorkId,

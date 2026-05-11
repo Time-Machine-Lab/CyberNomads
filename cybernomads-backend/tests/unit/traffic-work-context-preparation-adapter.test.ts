@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgentAccessTrafficWorkContextPreparationAdapter } from "../../src/adapters/agent/traffic-work-context-preparation-adapter.js";
+import { FileSystemAgentInteractionLogRecorder } from "../../src/adapters/storage/file-system/agent-interaction-log-recorder.js";
 import type { AgentAccessService } from "../../src/modules/agent-access/service.js";
 import type { PrepareTrafficWorkContextInput } from "../../src/ports/traffic-work-context-preparation-port.js";
 
@@ -43,6 +44,7 @@ describe("traffic work context preparation adapter", () => {
       "knowledge",
     );
     const workDirectory = join(runtimeRootDirectory, "work", "traffic-work-1");
+    const logsDirectory = join(runtimeRootDirectory, "..", "logs");
 
     await mkdir(
       join(runtimeSkillsDirectory, "cybernomads-task-decomposition"),
@@ -66,10 +68,14 @@ describe("traffic work context preparation adapter", () => {
     );
 
     const submitTaskDecompositionRequest = vi.fn(
-      async (_request: TaskDecompositionRequestLike) => ({
-        sessionId: "session-1",
-        messageId: "message-1",
-      }),
+      async (request: TaskDecompositionRequestLike) => {
+        expect(request.title).toBe("traffic-work:traffic-work-1");
+
+        return {
+          sessionId: "session-1",
+          messageId: "message-1",
+        };
+      },
     );
     const adapter = new AgentAccessTrafficWorkContextPreparationAdapter({
       agentAccessService: {
@@ -77,6 +83,10 @@ describe("traffic work context preparation adapter", () => {
       } as unknown as AgentAccessService,
       runtimeRootDirectory,
       runtimeSkillsDirectory,
+      agentInteractionLogRecorder: new FileSystemAgentInteractionLogRecorder({
+        logsDirectory,
+        now: () => new Date("2026-05-11T08:00:00.000Z"),
+      }),
     });
 
     const result = await adapter.prepareContext(createInput(workDirectory));
@@ -106,6 +116,12 @@ describe("traffic work context preparation adapter", () => {
       "当任务元数据、任务文档、资源准备和自检全部完成后，你必须通过受控工具回写当前引流工作的 contextPreparationStatus",
     );
     expect(request.prompt).toContain("引流工作目录: ./work/traffic-work-1");
+    const logText = await waitForText(
+      join(logsDirectory, "traffic-works", "traffic-work-1.logs"),
+    );
+    expect(logText).toContain("traffic-work-decomposition-prompt-built");
+    expect(logText).toContain("cybernomads-task-decomposition");
+    expect(logText).toContain("trafficWorkId");
   });
 
   it("fails before agent invocation when the Cybernomads root directory is missing", async () => {
@@ -268,4 +284,19 @@ async function createTemporaryDirectory(
   await mkdir(directory, { recursive: true });
   temporaryDirectories.push(directory);
   return directory;
+}
+
+async function waitForText(path: string): Promise<string> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      return await readFile(path, "utf8");
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Log was not found.");
 }

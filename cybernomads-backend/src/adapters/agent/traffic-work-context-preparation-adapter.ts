@@ -2,6 +2,10 @@ import { access } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 
 import type { AgentAccessService } from "../../modules/agent-access/service.js";
+import {
+  recordAgentInteractionEvent,
+  type AgentInteractionLogRecorderPort,
+} from "../../ports/agent-interaction-log-recorder-port.js";
 import type {
   PrepareTrafficWorkContextInput,
   TrafficWorkContextPreparationPort,
@@ -20,6 +24,7 @@ export class AgentAccessTrafficWorkContextPreparationAdapter implements TrafficW
       agentAccessService: AgentAccessService;
       runtimeRootDirectory: string;
       runtimeSkillsDirectory: string;
+      agentInteractionLogRecorder?: AgentInteractionLogRecorderPort;
     },
   ) {}
 
@@ -76,16 +81,45 @@ export class AgentAccessTrafficWorkContextPreparationAdapter implements TrafficW
       "traffic task document template file",
     );
 
-    return this.options.agentAccessService.submitTaskDecompositionRequest({
+    const prompt = buildTaskDecompositionPrompt({
+      input,
+      runtimeRootDirectory,
+      trafficWorkDirectoryRelativePath,
+      taskDecompositionSkillRelativePath,
+      taskDocumentTemplateRelativePath,
+    });
+
+    recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+      scope: {
+        kind: "traffic-work",
+        trafficWorkId: input.trafficWorkId,
+      },
+      eventType: "traffic-work-decomposition-prompt-built",
       title: `traffic-work:${input.trafficWorkId}`,
-      context: input.contextMarkdown,
-      prompt: buildTaskDecompositionPrompt({
-        input,
+      summary:
+        "Traffic work context preparation built the task decomposition prompt and runtime path hints.",
+      decisionSummary:
+        "The backend provides business context and file access hints only; detailed decomposition remains owned by the task decomposition Skill.",
+      correlation: {
+        trafficWorkId: input.trafficWorkId,
+        productId: input.product.productId,
+        strategyId: input.strategy.strategyId,
+      },
+      skills: [CYBERNOMADS_TASK_DECOMPOSITION_SKILL],
+      input: {
         runtimeRootDirectory,
         trafficWorkDirectoryRelativePath,
         taskDecompositionSkillRelativePath,
         taskDocumentTemplateRelativePath,
-      }),
+        prompt,
+      },
+    });
+
+    return this.options.agentAccessService.submitTaskDecompositionRequest({
+      trafficWorkId: input.trafficWorkId,
+      title: `traffic-work:${input.trafficWorkId}`,
+      context: input.contextMarkdown,
+      prompt,
     });
   }
 }

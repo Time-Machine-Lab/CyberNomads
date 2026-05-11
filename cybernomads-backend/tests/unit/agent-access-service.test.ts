@@ -21,6 +21,10 @@ import type {
   AgentServiceConnectionRecord,
   AgentServiceCredentialRecord,
 } from "../../src/modules/agent-access/types.js";
+import type {
+  AgentInteractionLogEvent,
+  AgentInteractionLogRecorderPort,
+} from "../../src/ports/agent-interaction-log-recorder-port.js";
 
 describe("agent access service", () => {
   it("forwards task planning and task execution through the provider-neutral port", async () => {
@@ -180,6 +184,130 @@ describe("agent access service", () => {
     expect(provider.submitMessageCalls[0]?.message).toContain(
       "Decompose the current traffic work.",
     );
+  });
+
+  it("records decomposition submission and task execution history without exposing provider-specific contracts", async () => {
+    const stateStore = new InMemoryAgentServiceStateStore();
+    const credentialStore = new InMemoryAgentServiceCredentialStore();
+    const provider = new FakeAgentProvider("openclaw");
+    const recorder = new InMemoryAgentInteractionLogRecorder();
+    const service = new AgentAccessService({
+      stateStore,
+      credentialStore,
+      providers: [provider],
+      agentInteractionLogRecorder: recorder,
+      now: () => new Date("2026-05-11T08:00:00.000Z"),
+      createAgentServiceId: () => "agent-service-1",
+    });
+
+    await service.configureCurrentService({
+      providerCode: "openclaw",
+      endpointUrl: "http://agent.local:3001",
+      authentication: {
+        kind: "bearer-token",
+        secret: "secret-token",
+      },
+    });
+    await service.verifyCurrentServiceConnection();
+    await service.prepareCurrentAgentServiceCapabilities();
+
+    await service.submitTaskDecompositionRequest({
+      trafficWorkId: "traffic-work-1",
+      prompt: "Decompose the current traffic work.",
+      context: "traffic-work context",
+      title: "traffic-work:1",
+    });
+    await service.submitTaskExecutionRequest({
+      taskId: "task-1",
+      instructions: "Execute the first task.",
+      contextDirectory: "D:/cybernomads/work/demo",
+      title: "execution",
+    });
+
+    expect(recorder.events.map((event) => event.eventType)).toEqual([
+      "task-decomposition-submitting",
+      "task-decomposition-accepted",
+      "task-execution-submitted",
+      "task-execution-completed",
+    ]);
+    expect(recorder.events[0]).toMatchObject({
+      scope: {
+        kind: "traffic-work",
+        trafficWorkId: "traffic-work-1",
+      },
+      correlation: {
+        trafficWorkId: "traffic-work-1",
+        sessionId: "session-1",
+        providerCode: "openclaw",
+      },
+      skills: ["cybernomads-task-decomposition"],
+    });
+    expect(recorder.events[3]).toMatchObject({
+      scope: {
+        kind: "task",
+        taskId: "task-1",
+      },
+      correlation: {
+        taskId: "task-1",
+        sessionId: "session-2",
+        messageId: "message-2",
+      },
+      output: {
+        status: "completed",
+      },
+    });
+    expect(recorder.events[3]?.skills).toBeUndefined();
+    expect(recorder.events[3]?.messages).toEqual([
+      {
+        role: "system",
+        content: "D:/cybernomads/work/demo",
+      },
+      {
+        role: "user",
+        content: expect.stringContaining("Execute the first task."),
+      },
+      {
+        role: "assistant",
+        content: expect.stringContaining("Execute the first task."),
+      },
+    ]);
+  });
+
+  it("does not fail agent submission when interaction logging fails", async () => {
+    const stateStore = new InMemoryAgentServiceStateStore();
+    const credentialStore = new InMemoryAgentServiceCredentialStore();
+    const provider = new FakeAgentProvider("openclaw");
+    const service = new AgentAccessService({
+      stateStore,
+      credentialStore,
+      providers: [provider],
+      agentInteractionLogRecorder: new FailingAgentInteractionLogRecorder(),
+      now: () => new Date("2026-05-11T08:00:00.000Z"),
+      createAgentServiceId: () => "agent-service-1",
+    });
+
+    await service.configureCurrentService({
+      providerCode: "openclaw",
+      endpointUrl: "http://agent.local:3001",
+      authentication: {
+        kind: "bearer-token",
+        secret: "secret-token",
+      },
+    });
+    await service.verifyCurrentServiceConnection();
+    await service.prepareCurrentAgentServiceCapabilities();
+
+    await expect(
+      service.submitTaskDecompositionRequest({
+        trafficWorkId: "traffic-work-1",
+        prompt: "Decompose the current traffic work.",
+        context: "traffic-work context",
+        title: "traffic-work:1",
+      }),
+    ).resolves.toEqual({
+      sessionId: "session-1",
+      messageId: "message-1",
+    });
   });
 });
 
@@ -354,5 +482,24 @@ class FakeAgentProvider implements AgentProviderPort {
       outputText: `subagent:${input.instructions}`,
       status: "completed",
     };
+  }
+}
+
+class InMemoryAgentInteractionLogRecorder
+  implements AgentInteractionLogRecorderPort
+{
+  readonly events: AgentInteractionLogEvent[] = [];
+
+  async appendEvent(event: AgentInteractionLogEvent): Promise<void> {
+    this.events.push(structuredClone(event));
+  }
+}
+
+class FailingAgentInteractionLogRecorder
+  implements AgentInteractionLogRecorderPort
+{
+  async appendEvent(_event: AgentInteractionLogEvent): Promise<void> {
+    void _event;
+    throw new Error("log write failed");
   }
 }

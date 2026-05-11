@@ -142,6 +142,46 @@ describe("openclaw agent provider", () => {
       outputText: "handled:List the skills.",
     });
   });
+
+  it("preserves provider-visible tool role messages in normalized history", async () => {
+    const provider = new OpenClawAgentProvider({
+      httpClient: new FakeOpenClawHttpClient(),
+      wsClient: new FakeOpenClawWsClient({
+        includeToolMessage: true,
+      }),
+      createId: createSequence(["session-1", "run-1"]),
+    });
+    const context = createProviderContext();
+    const session = await provider.createSession(context, {
+      purpose: "task_execution",
+      title: "Execution",
+      context: null,
+    });
+
+    await provider.sendMessage(context, {
+      sessionId: session.sessionId,
+      message: "Use a tool.",
+    });
+
+    await expect(
+      provider.listSessionMessages(context, {
+        sessionId: session.sessionId,
+      }),
+    ).resolves.toEqual([
+      {
+        role: "user",
+        content: "Use a tool.",
+      },
+      {
+        role: "tool",
+        content: "tool:batchSaveTasks completed",
+      },
+      {
+        role: "assistant",
+        content: "handled:Use a tool.",
+      },
+    ]);
+  });
 });
 
 describe("agent access service with openclaw provider", () => {
@@ -269,6 +309,7 @@ class FakeOpenClawWsClient {
   constructor(
     private readonly options: {
       waitStatus?: string;
+      includeToolMessage?: boolean;
     } = {},
   ) {}
 
@@ -290,6 +331,14 @@ class FakeOpenClawWsClient {
           role: "user",
           content: message,
         },
+        ...(this.options.includeToolMessage
+          ? [
+              {
+                role: "tool",
+                content: "tool:batchSaveTasks completed",
+              },
+            ]
+          : []),
         {
           role: "assistant",
           content: `handled:${message}`,

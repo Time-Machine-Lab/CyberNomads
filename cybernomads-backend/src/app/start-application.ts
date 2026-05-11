@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import {
   bootstrapRuntime,
   type BootstrapRuntimeOptions,
@@ -5,6 +7,7 @@ import {
 } from "./bootstrap-runtime.js";
 import { BilibiliStubAccountPlatformAdapter } from "../adapters/platform/bilibili/bilibili-stub-account-platform-adapter.js";
 import { AgentAccessTrafficWorkContextPreparationAdapter } from "../adapters/agent/traffic-work-context-preparation-adapter.js";
+import { FileSystemAgentInteractionLogRecorder } from "../adapters/storage/file-system/agent-interaction-log-recorder.js";
 import { FileSystemAccountSecretStore } from "../adapters/storage/file-system/account-secret-store.js";
 import { FileSystemAgentServiceCredentialStore } from "../adapters/storage/file-system/agent-service-credential-store.js";
 import { FileSystemProductContentStore } from "../adapters/storage/file-system/product-content-store.js";
@@ -44,12 +47,18 @@ export interface StartThreadTaskPlannerOptions {
   intervalMs?: number;
 }
 
+export interface StartAgentInteractionLogsOptions {
+  enabled?: boolean;
+  logsDirectory?: string;
+}
+
 export interface StartApplicationOptions extends BootstrapRuntimeOptions {
   host?: string;
   port?: number;
   agentProviders?: Iterable<AgentProviderPort>;
   accountPlatforms?: Iterable<AccountPlatformPort>;
   threadTaskPlanner?: StartThreadTaskPlannerOptions;
+  agentInteractionLogs?: StartAgentInteractionLogsOptions;
 }
 
 export interface ApplicationReadyState {
@@ -64,6 +73,10 @@ export async function startApplication(
   options: StartApplicationOptions = {},
 ): Promise<ApplicationReadyState> {
   const runtime = await bootstrapRuntime(options);
+  const agentInteractionLogRecorder = createAgentInteractionLogRecorder(
+    runtime.paths.workingDirectory,
+    options.agentInteractionLogs,
+  );
   const productRepository = new SqliteProductRepository(
     runtime.paths.databaseFile,
   );
@@ -132,6 +145,7 @@ export async function startApplication(
     stateStore: agentServiceStateRepository,
     credentialStore: agentServiceCredentialStore,
     providers: [new OpenClawAgentProvider(), ...(options.agentProviders ?? [])],
+    agentInteractionLogRecorder,
   });
   const taskService = new TaskService({
     taskStore: taskRepository,
@@ -142,6 +156,7 @@ export async function startApplication(
       trafficWorkContextStore,
       runtimeAgentResourceStore,
       taskService,
+      agentInteractionLogRecorder,
     });
   const trafficWorkService = new TrafficWorkService({
     stateStore: trafficWorkRepository,
@@ -150,6 +165,7 @@ export async function startApplication(
       agentAccessService,
       runtimeRootDirectory: runtime.paths.runtimeRoot,
       runtimeSkillsDirectory: runtime.paths.agentSkillsDirectory,
+      agentInteractionLogRecorder,
     }),
     productStore: productRepository,
     productContentStore,
@@ -167,6 +183,7 @@ export async function startApplication(
         taskService,
         trafficWorkService,
         agentAccessService,
+        agentInteractionLogRecorder,
         intervalMs: threadTaskPlannerOptions.intervalMs,
       });
     }
@@ -216,4 +233,44 @@ export async function startApplication(
     strategyReferenceRepository.close();
     throw error;
   }
+}
+
+function createAgentInteractionLogRecorder(
+  workingDirectory: string,
+  options: StartAgentInteractionLogsOptions | undefined,
+) {
+  const enabled = options?.enabled ?? resolveAgentInteractionLogsEnabled();
+
+  if (!enabled) {
+    return undefined;
+  }
+
+  return new FileSystemAgentInteractionLogRecorder({
+    logsDirectory:
+      options?.logsDirectory ??
+      normalizeOptionalEnv(
+        process.env.CYBERNOMADS_AGENT_INTERACTION_LOG_DIR,
+      ) ??
+      join(workingDirectory, "logs"),
+    enabled,
+  });
+}
+
+function resolveAgentInteractionLogsEnabled(): boolean {
+  const value = process.env.CYBERNOMADS_AGENT_INTERACTION_LOGS_ENABLED?.trim();
+
+  if (!value) {
+    return true;
+  }
+
+  return !["0", "false", "off", "no", "disabled"].includes(
+    value.toLowerCase(),
+  );
+}
+
+function normalizeOptionalEnv(value: string | undefined): string | undefined {
+  const normalizedValue = value?.trim();
+  return normalizedValue && normalizedValue.length > 0
+    ? normalizedValue
+    : undefined;
 }

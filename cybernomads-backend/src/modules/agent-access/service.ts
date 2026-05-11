@@ -5,8 +5,15 @@ import {
   type AgentProviderPort,
 } from "../../ports/agent-provider-port.js";
 import type { AgentServiceCredentialStore } from "../../ports/agent-service-credential-store-port.js";
+import {
+  recordAgentInteractionEvent,
+  type AgentInteractionLogRecorderPort,
+  type AgentInteractionLogScope,
+} from "../../ports/agent-interaction-log-recorder-port.js";
 import type { AgentServiceStateStore } from "../../ports/agent-service-state-store-port.js";
 import {
+  CYBERNOMADS_TASK_DECOMPOSITION_SKILL,
+  CYBERNOMADS_TASK_EXECUTION_SKILL,
   renderTaskDecompositionSkillInstruction,
   renderTaskExecutionSkillInstruction,
 } from "../../shared/agent-task-skill-instructions.js";
@@ -40,6 +47,7 @@ export interface AgentAccessServiceOptions {
   stateStore: AgentServiceStateStore;
   credentialStore: AgentServiceCredentialStore;
   providers?: Iterable<AgentProviderPort>;
+  agentInteractionLogRecorder?: AgentInteractionLogRecorderPort;
   now?: () => Date;
   createAgentServiceId?: () => string;
 }
@@ -305,28 +313,91 @@ export class AgentAccessService {
         context: normalizedRequest.context ?? null,
       },
     );
-    const messageResult = await providerAccess.provider.sendMessage(
-      providerAccess.context,
-      {
-        sessionId: session.sessionId,
-        message: [
-          renderTaskDecompositionSkillInstruction(),
-          normalizedRequest.prompt,
-        ].join("\n\n"),
-      },
-    );
-    const history = await providerAccess.provider.listSessionMessages(
-      providerAccess.context,
-      {
-        sessionId: session.sessionId,
-      },
-    );
-
-    return {
+    const message = [
+      renderTaskDecompositionSkillInstruction(),
+      normalizedRequest.prompt,
+    ].join("\n\n");
+    const scope: AgentInteractionLogScope = {
+      kind: "agent-session",
       sessionId: session.sessionId,
-      outputText: messageResult.outputText,
-      history,
     };
+
+    recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+      scope,
+      eventType: "task-planning-submitted",
+      title: normalizedRequest.title,
+      occurredAt: this.now().toISOString(),
+      summary: "Task planning request submitted to the current Agent service.",
+      decisionSummary:
+        "Backend created a provider session and submitted a planning prompt through the provider-neutral Agent access runtime.",
+      correlation: {
+        sessionId: session.sessionId,
+        agentServiceId: providerAccess.context.agentServiceId,
+        providerCode: providerAccess.context.providerCode,
+      },
+      skills: [CYBERNOMADS_TASK_DECOMPOSITION_SKILL],
+      input: {
+        prompt: normalizedRequest.prompt,
+        context: normalizedRequest.context ?? null,
+      },
+    });
+
+    try {
+      const messageResult = await providerAccess.provider.sendMessage(
+        providerAccess.context,
+        {
+          sessionId: session.sessionId,
+          message,
+        },
+      );
+      const history = await providerAccess.provider.listSessionMessages(
+        providerAccess.context,
+        {
+          sessionId: session.sessionId,
+        },
+      );
+
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope,
+        eventType: "task-planning-completed",
+        title: normalizedRequest.title,
+        occurredAt: this.now().toISOString(),
+        summary: "Task planning Agent interaction completed.",
+        correlation: {
+          sessionId: session.sessionId,
+          messageId: messageResult.messageId,
+          agentServiceId: providerAccess.context.agentServiceId,
+          providerCode: providerAccess.context.providerCode,
+        },
+        messages: history,
+        output: {
+          outputText: messageResult.outputText,
+        },
+      });
+
+      return {
+        sessionId: session.sessionId,
+        outputText: messageResult.outputText,
+        history,
+      };
+    } catch (error) {
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope,
+        eventType: "task-planning-failed",
+        title: normalizedRequest.title,
+        occurredAt: this.now().toISOString(),
+        summary: "Task planning Agent interaction failed.",
+        correlation: {
+          sessionId: session.sessionId,
+          agentServiceId: providerAccess.context.agentServiceId,
+          providerCode: providerAccess.context.providerCode,
+        },
+        output: {
+          error: toErrorMessage(error),
+        },
+      });
+      throw error;
+    }
   }
 
   async submitTaskDecompositionRequest(
@@ -342,21 +413,92 @@ export class AgentAccessService {
         context: normalizedRequest.context,
       },
     );
-    const messageResult = await providerAccess.provider.submitMessage(
-      providerAccess.context,
-      {
-        sessionId: session.sessionId,
-        message: [
-          renderTaskDecompositionSkillInstruction(),
-          normalizedRequest.prompt,
-        ].join("\n\n"),
-      },
-    );
+    const message = [
+      renderTaskDecompositionSkillInstruction(),
+      normalizedRequest.prompt,
+    ].join("\n\n");
+    const scope: AgentInteractionLogScope = normalizedRequest.trafficWorkId
+      ? {
+          kind: "traffic-work",
+          trafficWorkId: normalizedRequest.trafficWorkId,
+        }
+      : {
+          kind: "agent-session",
+          sessionId: session.sessionId,
+        };
 
-    return {
-      sessionId: session.sessionId,
-      messageId: messageResult.messageId,
-    };
+    recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+      scope,
+      eventType: "task-decomposition-submitting",
+      title: normalizedRequest.title,
+      occurredAt: this.now().toISOString(),
+      summary:
+        "Task decomposition request is being submitted without waiting for Agent completion.",
+      decisionSummary:
+        "Decomposition is asynchronous; later Agent-controlled tool calls will append task-set and preparation events.",
+      correlation: {
+        trafficWorkId: normalizedRequest.trafficWorkId,
+        sessionId: session.sessionId,
+        agentServiceId: providerAccess.context.agentServiceId,
+        providerCode: providerAccess.context.providerCode,
+      },
+      skills: [CYBERNOMADS_TASK_DECOMPOSITION_SKILL],
+      input: {
+        prompt: normalizedRequest.prompt,
+        context: normalizedRequest.context,
+      },
+    });
+
+    try {
+      const messageResult = await providerAccess.provider.submitMessage(
+        providerAccess.context,
+        {
+          sessionId: session.sessionId,
+          message,
+        },
+      );
+
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope,
+        eventType: "task-decomposition-accepted",
+        title: normalizedRequest.title,
+        occurredAt: this.now().toISOString(),
+        summary: "Agent service accepted the task decomposition request.",
+        correlation: {
+          trafficWorkId: normalizedRequest.trafficWorkId,
+          sessionId: session.sessionId,
+          messageId: messageResult.messageId,
+          agentServiceId: providerAccess.context.agentServiceId,
+          providerCode: providerAccess.context.providerCode,
+        },
+        output: {
+          messageId: messageResult.messageId,
+        },
+      });
+
+      return {
+        sessionId: session.sessionId,
+        messageId: messageResult.messageId,
+      };
+    } catch (error) {
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope,
+        eventType: "task-decomposition-failed",
+        title: normalizedRequest.title,
+        occurredAt: this.now().toISOString(),
+        summary: "Agent service rejected or failed the task decomposition request.",
+        correlation: {
+          trafficWorkId: normalizedRequest.trafficWorkId,
+          sessionId: session.sessionId,
+          agentServiceId: providerAccess.context.agentServiceId,
+          providerCode: providerAccess.context.providerCode,
+        },
+        output: {
+          error: toErrorMessage(error),
+        },
+      });
+      throw error;
+    }
   }
 
   async submitTaskExecutionRequest(
@@ -372,30 +514,98 @@ export class AgentAccessService {
         context: normalizedRequest.contextDirectory ?? null,
       },
     );
-    const messageResult = await providerAccess.provider.sendMessage(
-      providerAccess.context,
-      {
-        sessionId: session.sessionId,
-        message: [
-          renderTaskExecutionSkillInstruction(normalizedRequest.taskId),
-          normalizedRequest.instructions,
-        ].join("\n\n"),
-      },
-    );
-    const history = await providerAccess.provider.listSessionMessages(
-      providerAccess.context,
-      {
-        sessionId: session.sessionId,
-      },
-    );
-
-    return {
-      sessionId: session.sessionId,
-      executionId: `${normalizedRequest.taskId}:${messageResult.messageId}`,
-      outputText: messageResult.outputText,
-      status: "completed",
-      history,
+    const message = [
+      renderTaskExecutionSkillInstruction(normalizedRequest.taskId),
+      normalizedRequest.instructions,
+    ].join("\n\n");
+    const scope: AgentInteractionLogScope = {
+      kind: "task",
+      taskId: normalizedRequest.taskId,
     };
+
+    recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+      scope,
+      eventType: "task-execution-submitted",
+      title: normalizedRequest.title,
+      occurredAt: this.now().toISOString(),
+      summary: "Task execution request submitted to the current Agent service.",
+      decisionSummary:
+        "Backend submitted one scoped task execution request and will preserve provider-visible history when the provider completes.",
+      correlation: {
+        taskId: normalizedRequest.taskId,
+        sessionId: session.sessionId,
+        agentServiceId: providerAccess.context.agentServiceId,
+        providerCode: providerAccess.context.providerCode,
+      },
+      skills: [CYBERNOMADS_TASK_EXECUTION_SKILL],
+      input: {
+        instructions: normalizedRequest.instructions,
+        contextDirectory: normalizedRequest.contextDirectory ?? null,
+      },
+    });
+
+    try {
+      const messageResult = await providerAccess.provider.sendMessage(
+        providerAccess.context,
+        {
+          sessionId: session.sessionId,
+          message,
+        },
+      );
+      const history = await providerAccess.provider.listSessionMessages(
+        providerAccess.context,
+        {
+          sessionId: session.sessionId,
+        },
+      );
+
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope,
+        eventType: "task-execution-completed",
+        title: normalizedRequest.title,
+        occurredAt: this.now().toISOString(),
+        summary: "Task execution Agent interaction completed.",
+        correlation: {
+          taskId: normalizedRequest.taskId,
+          sessionId: session.sessionId,
+          messageId: messageResult.messageId,
+          executionId: `${normalizedRequest.taskId}:${messageResult.messageId}`,
+          agentServiceId: providerAccess.context.agentServiceId,
+          providerCode: providerAccess.context.providerCode,
+        },
+        messages: history,
+        output: {
+          outputText: messageResult.outputText,
+          status: "completed",
+        },
+      });
+
+      return {
+        sessionId: session.sessionId,
+        executionId: `${normalizedRequest.taskId}:${messageResult.messageId}`,
+        outputText: messageResult.outputText,
+        status: "completed",
+        history,
+      };
+    } catch (error) {
+      recordAgentInteractionEvent(this.options.agentInteractionLogRecorder, {
+        scope,
+        eventType: "task-execution-failed",
+        title: normalizedRequest.title,
+        occurredAt: this.now().toISOString(),
+        summary: "Task execution Agent interaction failed.",
+        correlation: {
+          taskId: normalizedRequest.taskId,
+          sessionId: session.sessionId,
+          agentServiceId: providerAccess.context.agentServiceId,
+          providerCode: providerAccess.context.providerCode,
+        },
+        output: {
+          error: toErrorMessage(error),
+        },
+      });
+      throw error;
+    }
   }
 
   close(): void {
@@ -665,6 +875,13 @@ function normalizeTaskDecompositionRequest(
         : normalizeRequiredString(
             request.title,
             "Task decomposition title must be a non-empty string.",
+          ),
+    trafficWorkId:
+      request.trafficWorkId === undefined
+        ? undefined
+        : normalizeRequiredString(
+            request.trafficWorkId,
+            "Task decomposition trafficWorkId must be a non-empty string.",
           ),
   };
 }

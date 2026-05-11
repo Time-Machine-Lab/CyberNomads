@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { FileSystemRuntimeAgentResourceStore } from "../../src/adapters/storage/file-system/runtime-agent-resource-store.js";
+import { FileSystemAgentInteractionLogRecorder } from "../../src/adapters/storage/file-system/agent-interaction-log-recorder.js";
 import { TaskDecompositionSupportToolsService } from "../../src/modules/task-decomposition-support-tools/service.js";
 import { TaskService } from "../../src/modules/tasks/service.js";
 import type {
@@ -214,6 +215,83 @@ describe("task decomposition support tools service", () => {
       code: "TASK_DECOMPOSITION_TOOL_VALIDATION_FAILED",
     });
   });
+
+  it("appends controlled tool events to the traffic work interaction log", async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), "cybernomads-tools-"));
+    temporaryDirectories.push(runtimeRoot);
+
+    const agentSkillsDirectory = join(runtimeRoot, "agent", "skills");
+    const agentKnowledgeDirectory = join(runtimeRoot, "agent", "knowledge");
+    const workDirectory = join(runtimeRoot, "work");
+    const logsDirectory = join(runtimeRoot, "..", "logs");
+    await mkdir(join(agentSkillsDirectory, "bilibili-web-api"), {
+      recursive: true,
+    });
+    await mkdir(agentKnowledgeDirectory, { recursive: true });
+    await writeFile(
+      join(agentSkillsDirectory, "bilibili-web-api", "SKILL.md"),
+      "# skill",
+      "utf8",
+    );
+
+    const service = createSupportToolsService({
+      trafficWorks: [{ trafficWorkId: "work-1" }],
+      contextStore: new InMemoryTrafficWorkContextStore(workDirectory),
+      runtimeAgentResourceStore: new FileSystemRuntimeAgentResourceStore({
+        runtimePaths: {
+          runtimeRoot,
+          agentSkillsDirectory,
+          agentKnowledgeDirectory,
+        },
+      }),
+      agentInteractionLogRecorder: new FileSystemAgentInteractionLogRecorder({
+        logsDirectory,
+        now: () => new Date("2026-05-11T08:00:00.000Z"),
+      }),
+    });
+
+    await service.copyRuntimeAgentResource({
+      trafficWorkId: "work-1",
+      resourceType: "skill",
+      resourcePath: "bilibili-web-api",
+    });
+    await service.batchSaveTasks({
+      trafficWorkId: "work-1",
+      mode: "create",
+      taskSet: {
+        source: {
+          kind: "agent-decomposition",
+        },
+        tasks: [
+          {
+            taskKey: "collect",
+            name: "Collect",
+            instruction: "Collect candidates.",
+            documentRef: "collect.md",
+            contextRef: "./work/work-1",
+            condition: {
+              cron: null,
+              relyOnTaskKeys: [],
+            },
+            inputPrompt: "",
+          },
+        ],
+      },
+    });
+    await service.reportTrafficWorkPreparationStatus({
+      trafficWorkId: "work-1",
+      status: "prepared",
+    });
+
+    const logText = await waitForTextContaining(
+      join(logsDirectory, "traffic-works", "work-1.logs"),
+      "decomposition-tool-preparation-status",
+    );
+    expect(logText).toContain("decomposition-tool-resource-copy");
+    expect(logText).toContain("decomposition-tool-task-set-save");
+    expect(logText).toContain("decomposition-tool-preparation-status");
+    expect(logText).toContain("batchSaveTasks");
+  });
 });
 
 function createSupportToolsService(input: {
@@ -221,6 +299,7 @@ function createSupportToolsService(input: {
   contextStore: TrafficWorkContextStore;
   runtimeAgentResourceStore: FileSystemRuntimeAgentResourceStore;
   stateStore?: InMemoryTrafficWorkStateStore;
+  agentInteractionLogRecorder?: FileSystemAgentInteractionLogRecorder;
 }) {
   const taskStore = new InMemoryTaskStore(
     input.trafficWorks.map((trafficWork) => ({
@@ -239,6 +318,7 @@ function createSupportToolsService(input: {
     trafficWorkContextStore: input.contextStore,
     runtimeAgentResourceStore: input.runtimeAgentResourceStore,
     taskService,
+    agentInteractionLogRecorder: input.agentInteractionLogRecorder,
     now: () => new Date("2026-04-27T12:00:00.000Z"),
   });
 }
@@ -399,4 +479,29 @@ function createSequentialId(prefix: string): () => string {
     tick += 1;
     return `${prefix}-${tick}`;
   };
+}
+
+async function waitForTextContaining(
+  path: string,
+  expectedText: string,
+): Promise<string> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      const text = await readFile(path, "utf8");
+
+      if (text.includes(expectedText)) {
+        return text;
+      }
+
+      lastError = new Error(`Log does not contain "${expectedText}".`);
+    } catch (error) {
+      lastError = error;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Log was not found.");
 }

@@ -13,6 +13,10 @@ import type {
   TrafficWorkSummary,
 } from "../../src/modules/traffic-works/types.js";
 import type { TaskExecutionRequest } from "../../src/modules/agent-access/types.js";
+import type {
+  AgentInteractionLogEvent,
+  AgentInteractionLogRecorderPort,
+} from "../../src/ports/agent-interaction-log-recorder-port.js";
 
 describe("thread task planner", () => {
   it("scans running traffic works and ready tasks before dispatch", async () => {
@@ -236,6 +240,45 @@ describe("thread task planner", () => {
       statusReason: expect.stringContaining("agent unavailable"),
     });
   });
+
+  it("records planner dispatch decisions and ignores logging failures", async () => {
+    const recorder = new InMemoryAgentInteractionLogRecorder();
+    const harness = createPlannerHarness({
+      agentInteractionLogRecorder: recorder,
+      trafficWorks: [createTrafficWork("work-1", "running")],
+      tasks: [createTask("task-1")],
+    });
+
+    await expect(harness.planner.tick()).resolves.toMatchObject({
+      submittedTasks: 1,
+      failedTasks: 0,
+    });
+    expect(recorder.events.map((event) => event.eventType)).toEqual([
+      "thread-planner-dispatch-selected",
+      "thread-planner-dispatch-submitted",
+    ]);
+    expect(recorder.events[0]).toMatchObject({
+      scope: {
+        kind: "task",
+        taskId: "task-1",
+      },
+      correlation: {
+        taskId: "task-1",
+        trafficWorkId: "work-1",
+      },
+    });
+
+    const failingHarness = createPlannerHarness({
+      agentInteractionLogRecorder: new FailingAgentInteractionLogRecorder(),
+      trafficWorks: [createTrafficWork("work-2", "running")],
+      tasks: [createTask("task-2", { trafficWorkId: "work-2" })],
+    });
+
+    await expect(failingHarness.planner.tick()).resolves.toMatchObject({
+      submittedTasks: 1,
+      failedTasks: 0,
+    });
+  });
 });
 
 interface PlannerHarnessOptions {
@@ -243,6 +286,7 @@ interface PlannerHarnessOptions {
   tasks: TaskDetail[];
   submitFailure?: Error;
   submitGate?: Deferred<void>;
+  agentInteractionLogRecorder?: AgentInteractionLogRecorderPort;
   now?: () => Date;
 }
 
@@ -358,6 +402,7 @@ function createPlannerHarness(options: PlannerHarnessOptions) {
         };
       },
     },
+    agentInteractionLogRecorder: options.agentInteractionLogRecorder,
   });
 
   return {
@@ -461,4 +506,23 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+class InMemoryAgentInteractionLogRecorder
+  implements AgentInteractionLogRecorderPort
+{
+  readonly events: AgentInteractionLogEvent[] = [];
+
+  async appendEvent(event: AgentInteractionLogEvent): Promise<void> {
+    this.events.push(structuredClone(event));
+  }
+}
+
+class FailingAgentInteractionLogRecorder
+  implements AgentInteractionLogRecorderPort
+{
+  async appendEvent(_event: AgentInteractionLogEvent): Promise<void> {
+    void _event;
+    throw new Error("log write failed");
+  }
 }
