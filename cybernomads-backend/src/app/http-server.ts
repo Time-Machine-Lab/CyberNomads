@@ -24,7 +24,7 @@ import type { TrafficWorkService } from "../modules/traffic-works/service.js";
 import { sendJson } from "../shared/http.js";
 
 const DEFAULT_HOST = "127.0.0.1";
-const DEFAULT_PORT = 5000;
+const DEFAULT_PORT = 50001;
 
 export interface StartHttpServerOptions {
   productService: ProductService;

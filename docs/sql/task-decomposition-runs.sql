@@ -6,6 +6,11 @@
 --   3. 正式任务仍由任务模块写入 `tasks` 表；本契约不复制正式任务生命周期字段。
 --   4. provider secret、API Key、Authorization、Bearer token 不得进入本表或产物内容。
 
+-- Center-view progress contract (2026-05-20):
+--   The task decomposition center derives display progress from run_status and
+--   run_stage at read time. No progress percent, label, or UI action state is
+--   persisted in this contract. The center view must not write progress into
+--   traffic_works lifecycle_status or context_preparation_status.
 CREATE TABLE task_decomposition_runs (
     decomposition_run_id TEXT PRIMARY KEY,
     traffic_work_id TEXT NOT NULL,

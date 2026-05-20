@@ -432,3 +432,12 @@ cybernomads/
 - Agent Interaction Logs 记录 provider code、模型、阶段、工具名和结构化摘要，并全链路脱敏 API Key、Authorization、Bearer token 与 credential-like values。
 
 第一版报告可由后端基于结构化草案和 Review 报告渲染，不强制单独调用 Report Agent。这样可以先保证确认前不落库、确认后系统提交和反馈重拆三条业务边界稳定。
+
+
+## Addendum: Center-View Ownership Boundary (2026-05-20)
+
+Cybernomads Agent owns generation of structured task plan drafts, Review reports, repair attempts, and decomposition reports. These artifacts remain internal planning artifacts until the user confirms a plan.
+
+The backend owns the task decomposition center projection. It reads the latest decomposition run and its artifacts, filters them into a safe display contract, derives progress and available actions, and excludes provider secrets, raw prompts, Authorization headers, and unfiltered artifact internals.
+
+OpenClaw remains the execution provider for confirmed formal tasks. It does not own draft review, center-view projection, or formal task persistence.

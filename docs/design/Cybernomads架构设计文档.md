@@ -398,3 +398,12 @@ cybernomads/
 创建或更新引流工作后，系统先启动任务拆分运行批次，保存草案、Review 报告、修正历史、用户反馈和确认快照。Review 通过前不写入正式任务表；Review 通过后进入 `waiting_user_confirmation`。用户确认后，后端 Orchestrator 调用任务模块创建或替换正式任务集，再把引流工作上下文准备状态标记为 `prepared`。
 
 OpenClaw 不再接收整份产品、策略和引流工作去自由拆分任务，也不拥有正式任务落库权。它只接收单任务说明、任务文档、必要上下文和可用工具，执行失败时将异常摘要回流为未来反馈重拆材料。
+
+
+## Addendum: Task Decomposition Center Runtime (2026-05-20)
+
+The task decomposition center is the product-facing planning and review surface between traffic work creation/update and formal task execution. After a traffic work is created or updated, the backend starts a decomposition run and the frontend should route the user to the center view instead of treating the traffic work as executable immediately.
+
+The center view is a read model over task decomposition run records and artifacts. It exposes display progress, draft task graph data, Review issues, repair summaries, report metadata, and available user actions. It is not a new traffic work lifecycle state and it does not replace task execution views.
+
+Formal task records are created only after the user confirms a reviewed task plan. Until that confirmation succeeds, the traffic work remains in its existing lifecycle state set and its context preparation status remains `pending` unless decomposition fails.

@@ -6,13 +6,13 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const frontendPort = Number(env.VITE_PORT?.trim() || '5001')
+  const frontendPort = Number(env.VITE_PORT?.trim() || '5000')
   const apiProxyTarget =
     env.VITE_API_PROXY_TARGET?.trim() ||
     env.VITE_PRODUCT_API_PROXY_TARGET?.trim() ||
     env.VITE_STRATEGY_API_PROXY_TARGET?.trim() ||
     env.VITE_ACCOUNT_API_PROXY_TARGET?.trim() ||
-    'http://127.0.0.1:5000'
+    'http://127.0.0.1:50001'
 
   return {
     plugins: [vue()],
@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: '127.0.0.1',
-      port: Number.isInteger(frontendPort) && frontendPort > 0 ? frontendPort : 5001,
+      port: Number.isInteger(frontendPort) && frontendPort > 0 ? frontendPort : 5000,
       strictPort: true,
       proxy: {
         '/api': {

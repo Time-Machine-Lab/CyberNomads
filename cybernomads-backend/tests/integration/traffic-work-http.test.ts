@@ -51,7 +51,9 @@ describe.sequential("traffic work module http api", () => {
           },
         ),
       ),
-      JSON.stringify(createPassingReview("Feedback-based draft is reviewable.")),
+      JSON.stringify(
+        createPassingReview("Feedback-based draft is reviewable."),
+      ),
       JSON.stringify(createTaskPlanDraft("collect-2", "Collect candidates 2")),
       JSON.stringify(createPassingReview("Replacement draft is reviewable.")),
     ]);
@@ -216,6 +218,51 @@ describe.sequential("traffic work module http api", () => {
       ]),
     });
 
+    const centerViewResponse = await fetch(
+      `${application.http.url}/api/traffic-works/${created.trafficWorkId}/decomposition-run/center-view`,
+    );
+    expect(centerViewResponse.status).toBe(200);
+    const centerView = (await centerViewResponse.json()) as Record<
+      string,
+      unknown
+    >;
+    expect(centerView).toMatchObject({
+      status: "waiting_user_confirmation",
+      stage: "waiting_user_confirmation",
+      progress: {
+        percent: 90,
+        label: "Waiting for confirmation",
+      },
+      draftGraph: {
+        sourceArtifactType: "task_plan_draft",
+        nodes: [
+          expect.objectContaining({
+            taskKey: "collect-1",
+            name: "Collect candidates 1",
+          }),
+        ],
+        edges: [],
+      },
+      review: {
+        conclusion: "pass",
+        issuesBySeverity: {
+          info: [],
+          warning: [],
+          error: [],
+        },
+      },
+      availableActions: {
+        confirmPlan: true,
+        submitFeedback: true,
+        enterExecution: false,
+        inspectFailure: false,
+      },
+    });
+    expect(JSON.stringify(centerView)).toContain("Collect candidates 1");
+    expect(JSON.stringify(centerView)).not.toContain("planning-secret");
+    expect(JSON.stringify(centerView)).not.toContain("inputPrompt");
+    expect(JSON.stringify(centerView)).not.toContain("Authorization");
+
     const reportResponse = await fetch(
       `${application.http.url}/api/traffic-works/${created.trafficWorkId}/decomposition-run/report`,
     );
@@ -268,6 +315,34 @@ describe.sequential("traffic work module http api", () => {
       status: "committed",
       stage: "prepared",
       requiresUserConfirmation: false,
+    });
+
+    const preparedCenterViewResponse = await fetch(
+      `${application.http.url}/api/traffic-works/${created.trafficWorkId}/decomposition-run/center-view`,
+    );
+    expect(preparedCenterViewResponse.status).toBe(200);
+    await expect(preparedCenterViewResponse.json()).resolves.toMatchObject({
+      status: "committed",
+      stage: "prepared",
+      progress: {
+        percent: 100,
+        label: "Prepared",
+      },
+      draftGraph: {
+        sourceArtifactType: "confirmation_snapshot",
+        nodes: [
+          expect.objectContaining({
+            taskKey: "collect-feedback",
+            name: "Collect candidates after feedback",
+          }),
+        ],
+      },
+      availableActions: {
+        confirmPlan: false,
+        submitFeedback: false,
+        enterExecution: true,
+        inspectFailure: false,
+      },
     });
 
     const createdTasksAfterPreparationResponse = await fetch(
@@ -389,6 +464,7 @@ describe.sequential("traffic work module http api", () => {
     await expect(updateResponse.json()).resolves.toMatchObject({
       trafficWorkId: created.trafficWorkId,
       displayName: "Main Growth Work v2",
+      lifecycleStatus: "ready",
       strategy: {
         strategyId: "strategy-2",
         name: "Retention Strategy",

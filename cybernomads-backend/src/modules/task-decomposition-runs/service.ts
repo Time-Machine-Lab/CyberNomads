@@ -25,7 +25,15 @@ import type {
   StartTaskDecompositionRunInput,
   TaskDecompositionArtifactRecord,
   TaskDecompositionArtifactSummary,
+  TaskDecompositionCenterAvailableActions,
+  TaskDecompositionCenterView,
+  TaskDecompositionDraftGraph,
+  TaskDecompositionProgress,
+  TaskDecompositionRepairSummary,
+  TaskDecompositionReportProjection,
+  TaskDecompositionReviewProjection,
   TaskDecompositionFeedbackInput,
+  TaskDecompositionFailureProjection,
   TaskDecompositionReportView,
   TaskDecompositionRunDetail,
   TaskDecompositionRunRecord,
@@ -131,7 +139,12 @@ export class TaskDecompositionRunService {
         run = await this.saveReview(run, reviewReport);
 
         if (reviewReport.conclusion === "pass") {
-          run = await this.writeReport(run, draft, reviewReport, repairSummaries);
+          run = await this.writeReport(
+            run,
+            draft,
+            reviewReport,
+            repairSummaries,
+          );
           return this.toDetail(run);
         }
 
@@ -200,6 +213,12 @@ export class TaskDecompositionRunService {
     trafficWorkId: string,
   ): Promise<TaskDecompositionRunDetail> {
     return this.toDetail(await this.getLatestRun(trafficWorkId));
+  }
+
+  async getCurrentCenterView(
+    trafficWorkId: string,
+  ): Promise<TaskDecompositionCenterView> {
+    return this.toCenterView(await this.getLatestRun(trafficWorkId));
   }
 
   async getCurrentReport(
@@ -271,7 +290,10 @@ export class TaskDecompositionRunService {
     }
 
     await this.archiveConfirmedDraft(committingRun, draft);
-    await this.markTrafficWorkPrepared(committingRun.trafficWorkId, confirmedAt);
+    await this.markTrafficWorkPrepared(
+      committingRun.trafficWorkId,
+      confirmedAt,
+    );
     const preparedRun = await this.saveRun({
       ...committingRun,
       status: "committed",
@@ -287,7 +309,8 @@ export class TaskDecompositionRunService {
       },
       eventType: "decomposition-run-confirmed",
       occurredAt: confirmedAt,
-      summary: "User confirmed the Cybernomads Agent task plan and the backend committed formal tasks.",
+      summary:
+        "User confirmed the Cybernomads Agent task plan and the backend committed formal tasks.",
       correlation: {
         trafficWorkId: preparedRun.trafficWorkId,
         decompositionRunId: preparedRun.decompositionRunId,
@@ -305,7 +328,10 @@ export class TaskDecompositionRunService {
     trafficWorkId: string,
     input: TaskDecompositionFeedbackInput,
   ): Promise<TaskDecompositionRunDetail> {
-    const feedback = normalizeRequiredString(input.feedback, "Feedback is required.");
+    const feedback = normalizeRequiredString(
+      input.feedback,
+      "Feedback is required.",
+    );
     const previousRun = await this.getLatestRun(trafficWorkId);
     await this.createArtifact({
       run: previousRun,
@@ -321,7 +347,9 @@ export class TaskDecompositionRunService {
     });
 
     const trafficWork =
-      await this.options.trafficWorkStateStore.getTrafficWorkById(trafficWorkId);
+      await this.options.trafficWorkStateStore.getTrafficWorkById(
+        trafficWorkId,
+      );
 
     if (!trafficWork) {
       throw new TaskDecompositionRunNotFoundError(trafficWorkId);
@@ -488,7 +516,9 @@ export class TaskDecompositionRunService {
     preparedAt: string,
   ): Promise<void> {
     const trafficWork =
-      await this.options.trafficWorkStateStore.getTrafficWorkById(trafficWorkId);
+      await this.options.trafficWorkStateStore.getTrafficWorkById(
+        trafficWorkId,
+      );
 
     if (!trafficWork) {
       throw new TaskDecompositionRunNotFoundError(trafficWorkId);
@@ -554,6 +584,31 @@ export class TaskDecompositionRunService {
     };
   }
 
+  private async toCenterView(
+    run: TaskDecompositionRunRecord,
+  ): Promise<TaskDecompositionCenterView> {
+    const artifacts = await this.options.runStore.listArtifactsForRun(
+      run.decompositionRunId,
+    );
+
+    return {
+      decompositionRunId: run.decompositionRunId,
+      trafficWorkId: run.trafficWorkId,
+      status: run.status,
+      stage: run.stage,
+      taskSetMode: run.taskSetMode,
+      progress: deriveTaskDecompositionProgress(run),
+      draftGraph: toDraftGraphProjection(run, artifacts),
+      review: toReviewProjection(run, artifacts),
+      repairHistory: toRepairHistoryProjection(artifacts),
+      report: toReportProjection(run, artifacts),
+      failure: toFailureProjection(run),
+      availableActions: deriveTaskDecompositionCenterActions(run),
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+    };
+  }
+
   private async createArtifact(input: {
     run: TaskDecompositionRunRecord;
     artifactType: TaskDecompositionArtifactRecord["artifactType"];
@@ -599,6 +654,398 @@ export class TaskDecompositionRunService {
   }
 }
 
+const PROGRESS_BY_STAGE: Record<
+  TaskDecompositionRunRecord["stage"],
+  Omit<TaskDecompositionProgress, "updatedAt">
+> = {
+  context_ready: {
+    percent: 10,
+    label: "Context ready",
+    description: "Traffic work context is ready for task decomposition.",
+  },
+  planning: {
+    percent: 30,
+    label: "Planning",
+    description: "Cybernomads Agent is drafting the task plan.",
+  },
+  reviewing: {
+    percent: 55,
+    label: "Reviewing",
+    description: "Agent Review is checking task quality and dependencies.",
+  },
+  repairing: {
+    percent: 70,
+    label: "Repairing",
+    description: "Cybernomads Agent is repairing review issues.",
+  },
+  reporting: {
+    percent: 85,
+    label: "Reporting",
+    description: "The backend is rendering the decomposition report.",
+  },
+  waiting_user_confirmation: {
+    percent: 90,
+    label: "Waiting for confirmation",
+    description: "The reviewed task plan is ready for user confirmation.",
+  },
+  committing: {
+    percent: 95,
+    label: "Committing",
+    description: "The backend is committing confirmed tasks.",
+  },
+  prepared: {
+    percent: 100,
+    label: "Prepared",
+    description: "Confirmed tasks were committed and execution can start.",
+  },
+  failed: {
+    percent: 100,
+    label: "Failed",
+    description: "Task decomposition stopped with a failure.",
+  },
+};
+
+export function deriveTaskDecompositionProgress(
+  run: Pick<TaskDecompositionRunRecord, "status" | "stage" | "updatedAt">,
+): TaskDecompositionProgress {
+  if (run.status === "failed" || run.stage === "failed") {
+    return {
+      ...PROGRESS_BY_STAGE.failed,
+      updatedAt: run.updatedAt,
+    };
+  }
+
+  return {
+    ...PROGRESS_BY_STAGE[run.stage],
+    updatedAt: run.updatedAt,
+  };
+}
+
+export function deriveTaskDecompositionCenterActions(
+  run: Pick<TaskDecompositionRunRecord, "status">,
+): TaskDecompositionCenterAvailableActions {
+  return {
+    confirmPlan: run.status === "waiting_user_confirmation",
+    submitFeedback:
+      run.status === "waiting_user_confirmation" ||
+      run.status === "failed" ||
+      run.status === "awaiting_user_feedback",
+    enterExecution: run.status === "committed",
+    inspectFailure:
+      run.status === "failed" || run.status === "awaiting_user_feedback",
+  };
+}
+
+function toDraftGraphProjection(
+  run: TaskDecompositionRunRecord,
+  artifacts: TaskDecompositionArtifactRecord[],
+): TaskDecompositionDraftGraph {
+  const snapshotArtifact = findArtifactById(
+    artifacts,
+    run.confirmationSnapshotArtifactId,
+  );
+  const snapshotDraft =
+    snapshotArtifact?.artifactType === "confirmation_snapshot"
+      ? readDraftFromConfirmationSnapshot(snapshotArtifact.contentJson)
+      : null;
+
+  if (snapshotArtifact && snapshotDraft) {
+    return toDraftGraph(
+      snapshotArtifact,
+      "confirmation_snapshot",
+      snapshotDraft,
+    );
+  }
+
+  const draftArtifact =
+    findArtifactById(artifacts, run.draftArtifactId) ??
+    [...artifacts]
+      .reverse()
+      .find((artifact) => artifact.artifactType === "task_plan_draft");
+  const draft =
+    draftArtifact?.artifactType === "task_plan_draft"
+      ? readDraft(draftArtifact.contentJson)
+      : null;
+
+  if (!draftArtifact || !draft) {
+    return {
+      sourceArtifactId: null,
+      sourceArtifactType: null,
+      summary: null,
+      strategyCoverageSummary: null,
+      feedbackConsideration: null,
+      nodes: [],
+      edges: [],
+    };
+  }
+
+  return toDraftGraph(draftArtifact, "task_plan_draft", draft);
+}
+
+function toDraftGraph(
+  artifact: TaskDecompositionArtifactRecord,
+  sourceArtifactType: "task_plan_draft" | "confirmation_snapshot",
+  draft: TaskPlanDraft,
+): TaskDecompositionDraftGraph {
+  const nodes = draft.tasks.map((task) => ({
+    taskKey: sanitizeText(task.taskKey) ?? task.taskKey,
+    name: sanitizeText(task.name) ?? task.name,
+    goal: sanitizeText(task.goal) ?? task.goal,
+    expectedOutputs: task.expectedOutputs.map(
+      (output) => sanitizeText(output) ?? "",
+    ),
+    inputSources: task.inputSources.map((source) => ({
+      ...source,
+      description: sanitizeText(source.description) ?? source.description,
+      acquisition: sanitizeText(source.acquisition) ?? source.acquisition,
+      sourceTaskKey: source.sourceTaskKey
+        ? (sanitizeText(source.sourceTaskKey) ?? source.sourceTaskKey)
+        : source.sourceTaskKey,
+    })),
+    dependsOn: task.dependsOn.map(
+      (taskKey) => sanitizeText(taskKey) ?? taskKey,
+    ),
+    resourceNeeds: task.resourceNeeds.map(
+      (resource) => sanitizeText(resource) ?? "",
+    ),
+    strategyCoverage: task.strategyCoverage.map(
+      (coverage) => sanitizeText(coverage) ?? "",
+    ),
+    skillRefs: task.skillRefs.map((skillRef) => sanitizeText(skillRef) ?? ""),
+    documentRef: sanitizeText(task.documentRef) ?? task.documentRef,
+    contextRef: sanitizeText(task.contextRef) ?? task.contextRef,
+  }));
+  const taskKeys = new Set(draft.tasks.map((task) => task.taskKey));
+  const edges = draft.tasks.flatMap((task) => {
+    const dependencies = new Set([
+      ...task.dependsOn,
+      ...task.condition.relyOnTaskKeys,
+    ]);
+
+    return Array.from(dependencies)
+      .filter((sourceTaskKey) => sourceTaskKey !== task.taskKey)
+      .filter((sourceTaskKey) => taskKeys.has(sourceTaskKey))
+      .map((sourceTaskKey) => ({
+        edgeId: `${sourceTaskKey}->${task.taskKey}`,
+        sourceTaskKey: sanitizeText(sourceTaskKey) ?? sourceTaskKey,
+        targetTaskKey: sanitizeText(task.taskKey) ?? task.taskKey,
+        relation: "depends_on" as const,
+      }));
+  });
+
+  return {
+    sourceArtifactId: artifact.artifactId,
+    sourceArtifactType,
+    summary: sanitizeText(draft.summary),
+    strategyCoverageSummary: sanitizeText(draft.strategyCoverageSummary),
+    feedbackConsideration: sanitizeText(draft.feedbackConsideration ?? null),
+    nodes,
+    edges,
+  };
+}
+
+function toReviewProjection(
+  run: TaskDecompositionRunRecord,
+  artifacts: TaskDecompositionArtifactRecord[],
+): TaskDecompositionReviewProjection | null {
+  const reviewArtifact =
+    findArtifactById(artifacts, run.reviewArtifactId) ??
+    [...artifacts]
+      .reverse()
+      .find((artifact) => artifact.artifactType === "review_report");
+
+  if (!reviewArtifact || reviewArtifact.artifactType !== "review_report") {
+    return null;
+  }
+
+  const reviewReport = readReviewReport(reviewArtifact.contentJson);
+  const issues = (reviewReport?.issues ?? []).map(sanitizeReviewIssue);
+
+  return {
+    artifactId: reviewArtifact.artifactId,
+    conclusion:
+      reviewReport?.conclusion ?? toReviewConclusion(run.reviewConclusion),
+    summary: sanitizeText(reviewReport?.summary ?? reviewArtifact.summary),
+    issues,
+    issuesBySeverity: {
+      info: issues.filter((issue) => issue.severity === "info"),
+      warning: issues.filter((issue) => issue.severity === "warning"),
+      error: issues.filter((issue) => issue.severity === "error"),
+    },
+    createdAt: reviewArtifact.createdAt,
+  };
+}
+
+function toRepairHistoryProjection(
+  artifacts: TaskDecompositionArtifactRecord[],
+): TaskDecompositionRepairSummary[] {
+  return artifacts
+    .filter((artifact) => artifact.artifactType === "repair_history")
+    .map((artifact, index) => ({
+      artifactId: artifact.artifactId,
+      attempt: index + 1,
+      summary: sanitizeText(
+        readSummary(artifact.contentJson) ?? artifact.summary,
+      ),
+      createdAt: artifact.createdAt,
+    }));
+}
+
+function toReportProjection(
+  run: TaskDecompositionRunRecord,
+  artifacts: TaskDecompositionArtifactRecord[],
+): TaskDecompositionReportProjection | null {
+  const reportArtifact =
+    findArtifactById(artifacts, run.reportArtifactId) ??
+    [...artifacts]
+      .reverse()
+      .find((artifact) => artifact.artifactType === "decomposition_report");
+
+  if (
+    !reportArtifact ||
+    reportArtifact.artifactType !== "decomposition_report"
+  ) {
+    return null;
+  }
+
+  return {
+    artifactId: reportArtifact.artifactId,
+    summary: sanitizeText(
+      reportArtifact.summary ?? readSummary(reportArtifact.contentJson),
+    ),
+    markdownExcerpt: sanitizeText(
+      truncateForCenterView(reportArtifact.contentMarkdown),
+    ),
+    createdAt: reportArtifact.createdAt,
+  };
+}
+
+function toFailureProjection(
+  run: TaskDecompositionRunRecord,
+): TaskDecompositionFailureProjection | null {
+  if (run.status !== "failed" && run.status !== "awaiting_user_feedback") {
+    return null;
+  }
+
+  return {
+    summary: sanitizeText(run.latestSummary),
+  };
+}
+
+function findArtifactById(
+  artifacts: TaskDecompositionArtifactRecord[],
+  artifactId: string | null,
+): TaskDecompositionArtifactRecord | undefined {
+  if (!artifactId) {
+    return undefined;
+  }
+
+  return artifacts.find((artifact) => artifact.artifactId === artifactId);
+}
+
+function readDraft(value: unknown): TaskPlanDraft | null {
+  if (!isRecord(value) || !Array.isArray(value.tasks)) {
+    return null;
+  }
+
+  return value as unknown as TaskPlanDraft;
+}
+
+function readDraftFromConfirmationSnapshot(
+  value: unknown,
+): TaskPlanDraft | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return readDraft(value.sourceDraft);
+}
+
+function readReviewReport(value: unknown): ReviewReport | null {
+  if (!isRecord(value) || !Array.isArray(value.issues)) {
+    return null;
+  }
+
+  if (
+    value.conclusion !== "pass" &&
+    value.conclusion !== "fix_required" &&
+    value.conclusion !== "failed"
+  ) {
+    return null;
+  }
+
+  return value as unknown as ReviewReport;
+}
+
+function toReviewConclusion(
+  value: string | null,
+): ReviewReport["conclusion"] | null {
+  if (value === "pass" || value === "fix_required" || value === "failed") {
+    return value;
+  }
+
+  return null;
+}
+
+function sanitizeReviewIssue(
+  issue: ReviewReport["issues"][number],
+): ReviewReport["issues"][number] {
+  return {
+    ...issue,
+    message: sanitizeText(issue.message) ?? issue.message,
+    taskKey: issue.taskKey
+      ? (sanitizeText(issue.taskKey) ?? issue.taskKey)
+      : issue.taskKey,
+    evidence: issue.evidence
+      ? (sanitizeText(issue.evidence) ?? issue.evidence)
+      : issue.evidence,
+    suggestion: issue.suggestion
+      ? (sanitizeText(issue.suggestion) ?? issue.suggestion)
+      : issue.suggestion,
+  };
+}
+
+function readSummary(value: unknown): string | null {
+  if (isRecord(value) && typeof value.summary === "string") {
+    return value.summary;
+  }
+
+  return null;
+}
+
+function truncateForCenterView(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const maxLength = 1200;
+  const normalizedValue = value.trim();
+
+  if (normalizedValue.length <= maxLength) {
+    return normalizedValue;
+  }
+
+  return `${normalizedValue.slice(0, maxLength)}\n[truncated]`;
+}
+
+function sanitizeText(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return value
+    .replace(/Authorization\s*:\s*[^\r\n]+/gi, "Authorization: [redacted]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(
+      /\b(api[_-]?key|secret|token|password)\b\s*[:=]\s*["']?[^"',\s)]+/gi,
+      "$1=[redacted]",
+    );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function toTaskSetWriteInput(
   draft: TaskPlanDraft,
   run: TaskDecompositionRunRecord,
@@ -620,7 +1067,9 @@ function toTaskSetWriteInput(
       contextRef: task.contextRef,
       condition: {
         cron: task.condition.cron,
-        relyOnTaskKeys: task.dependsOn.filter((taskKey) => taskKeys.has(taskKey)),
+        relyOnTaskKeys: task.dependsOn.filter((taskKey) =>
+          taskKeys.has(taskKey),
+        ),
       },
       inputPrompt: task.inputPrompt,
     })),
@@ -700,7 +1149,8 @@ function toErrorMessage(error: unknown): string {
 function summarizePriorArtifactForPlanning(
   artifact: TaskDecompositionArtifactRecord,
 ): string {
-  const content = artifact.contentMarkdown ?? toPlanningJson(artifact.contentJson);
+  const content =
+    artifact.contentMarkdown ?? toPlanningJson(artifact.contentJson);
 
   return [
     `[${artifact.artifactType}] ${artifact.summary ?? "no summary"}`,

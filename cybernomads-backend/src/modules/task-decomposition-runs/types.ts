@@ -1,4 +1,9 @@
-import type { TaskPlanDraft } from "../cybernomads-agent-runtime/types.js";
+import type {
+  ReviewConclusion,
+  ReviewIssue,
+  TaskPlanDraft,
+  TaskPlanInputSource,
+} from "../cybernomads-agent-runtime/types.js";
 
 export type TaskDecompositionRunStatus =
   | "running"
@@ -78,6 +83,99 @@ export interface TaskDecompositionRunDetail {
   reviewConclusion: string | null;
   requiresUserConfirmation: boolean;
   artifacts: TaskDecompositionArtifactSummary[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskDecompositionProgress {
+  percent: number;
+  label: string;
+  description: string;
+  updatedAt: string;
+}
+
+export interface TaskDecompositionDraftNode {
+  taskKey: string;
+  name: string;
+  goal: string;
+  expectedOutputs: string[];
+  inputSources: TaskPlanInputSource[];
+  dependsOn: string[];
+  resourceNeeds: string[];
+  strategyCoverage: string[];
+  skillRefs: string[];
+  documentRef: string;
+  contextRef: string;
+}
+
+export interface TaskDecompositionDraftEdge {
+  edgeId: string;
+  sourceTaskKey: string;
+  targetTaskKey: string;
+  relation: "depends_on";
+}
+
+export interface TaskDecompositionDraftGraph {
+  sourceArtifactId: string | null;
+  sourceArtifactType: "task_plan_draft" | "confirmation_snapshot" | null;
+  summary: string | null;
+  strategyCoverageSummary: string | null;
+  feedbackConsideration: string | null;
+  nodes: TaskDecompositionDraftNode[];
+  edges: TaskDecompositionDraftEdge[];
+}
+
+export interface TaskDecompositionReviewProjection {
+  artifactId: string;
+  conclusion: ReviewConclusion | null;
+  summary: string | null;
+  issues: ReviewIssue[];
+  issuesBySeverity: {
+    info: ReviewIssue[];
+    warning: ReviewIssue[];
+    error: ReviewIssue[];
+  };
+  createdAt: string;
+}
+
+export interface TaskDecompositionRepairSummary {
+  artifactId: string;
+  attempt: number;
+  summary: string | null;
+  createdAt: string;
+}
+
+export interface TaskDecompositionReportProjection {
+  artifactId: string;
+  summary: string | null;
+  markdownExcerpt: string | null;
+  createdAt: string;
+}
+
+export interface TaskDecompositionFailureProjection {
+  summary: string | null;
+}
+
+export interface TaskDecompositionCenterAvailableActions {
+  confirmPlan: boolean;
+  submitFeedback: boolean;
+  enterExecution: boolean;
+  inspectFailure: boolean;
+}
+
+export interface TaskDecompositionCenterView {
+  decompositionRunId: string;
+  trafficWorkId: string;
+  status: TaskDecompositionRunStatus;
+  stage: TaskDecompositionRunStage;
+  taskSetMode: "create" | "replace";
+  progress: TaskDecompositionProgress;
+  draftGraph: TaskDecompositionDraftGraph;
+  review: TaskDecompositionReviewProjection | null;
+  repairHistory: TaskDecompositionRepairSummary[];
+  report: TaskDecompositionReportProjection | null;
+  failure: TaskDecompositionFailureProjection | null;
+  availableActions: TaskDecompositionCenterAvailableActions;
   createdAt: string;
   updatedAt: string;
 }

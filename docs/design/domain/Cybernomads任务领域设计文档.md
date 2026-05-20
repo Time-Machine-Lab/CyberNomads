@@ -244,3 +244,12 @@ sequenceDiagram
 - OpenClaw 只接收单个已确认任务的说明、任务文档和必要上下文，不参与整份引流工作的重规划。
 
 如果 OpenClaw 执行单任务失败，失败原因可以作为未来任务拆分运行批次的反馈材料，但不能触发 OpenClaw 自行重拆整份任务集。
+
+
+## Addendum: Draft Tasks Versus Formal Task Records (2026-05-20)
+
+Task plan draft items are not formal task records. Draft tasks may be shown in the task decomposition center as nodes and dependency edges, but they do not enter the `tasks` table and are not visible to the execution scheduler until user confirmation.
+
+The task domain remains the only formal task persistence boundary. After confirmation, the backend orchestrator converts the confirmed draft or confirmation snapshot into controlled task module writes, then traffic work context preparation can become `prepared`.
+
+Center-view draft graph data is therefore an audit and review projection, not a second task source of truth.

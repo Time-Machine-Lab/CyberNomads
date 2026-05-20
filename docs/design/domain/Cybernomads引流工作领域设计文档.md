@@ -243,3 +243,12 @@ TrafficWork context -> Cybernomads Agent draft -> Review/Repair -> report
 引流工作在 `waiting_user_confirmation` 阶段仍保持 `context_preparation_status = pending`。这表示工作上下文正在等待用户确认，不表示失败。只有用户确认后，Orchestrator 调用任务模块创建或替换正式任务集，并完成任务文档、资源清单和确认快照归档后，才能把引流工作标记为 `prepared`。
 
 反馈重拆属于引流工作准备流程的一部分，但拆分草案、Review 报告、修正历史、用户反馈、执行异常摘要和确认快照都不进入 `traffic_works` 表。这些产物由任务拆分运行批次存储承担，`traffic_works` 只保留当前上下文准备状态和原因摘要。
+
+
+## Addendum: Decomposition Progress Is Not Traffic Work Status (2026-05-20)
+
+Traffic work lifecycle status continues to mean only `ready`, `running`, `ended`, `archived`, or `deleted`. Traffic work context preparation status continues to mean only `pending`, `prepared`, or `failed`.
+
+Task decomposition progress is display-only state exposed by the task decomposition center view. It must be derived from the latest decomposition run status and stage, and it must not add new traffic work status values or mutate traffic work lifecycle state.
+
+After create or update starts decomposition, the traffic work can remain `ready` and `pending` while the center view shows planning, Review, repair, reporting, waiting confirmation, or failure progress.

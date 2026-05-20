@@ -43,6 +43,20 @@ export function createTaskDecompositionRunsController(
         return true;
       }
 
+      if (match.operation === "center-view") {
+        if (method !== "GET") {
+          sendMethodNotAllowed(response, ["GET"]);
+          return true;
+        }
+
+        sendJson(
+          response,
+          200,
+          await service.getCurrentCenterView(match.trafficWorkId),
+        );
+        return true;
+      }
+
       if (match.operation === "report") {
         if (method !== "GET") {
           sendMethodNotAllowed(response, ["GET"]);
@@ -77,8 +91,9 @@ export function createTaskDecompositionRunsController(
           return true;
         }
 
-        const payload =
-          (await readJsonBody(request)) as TaskDecompositionFeedbackInput;
+        const payload = (await readJsonBody(
+          request,
+        )) as TaskDecompositionFeedbackInput;
         sendJson(
           response,
           202,
@@ -97,10 +112,10 @@ export function createTaskDecompositionRunsController(
 
 function matchDecompositionRunPath(pathname: string): {
   trafficWorkId: string;
-  operation?: "report" | "confirmation" | "feedback";
+  operation?: "center-view" | "report" | "confirmation" | "feedback";
 } | null {
   const match =
-    /^\/api\/traffic-works\/([^/]+)\/decomposition-run(?:\/(report|confirmation|feedback))?$/.exec(
+    /^\/api\/traffic-works\/([^/]+)\/decomposition-run(?:\/(center-view|report|confirmation|feedback))?$/.exec(
       pathname,
     );
 
@@ -110,7 +125,12 @@ function matchDecompositionRunPath(pathname: string): {
 
   return {
     trafficWorkId: decodeURIComponent(match[1]),
-    operation: match[2] as "report" | "confirmation" | "feedback" | undefined,
+    operation: match[2] as
+      | "center-view"
+      | "report"
+      | "confirmation"
+      | "feedback"
+      | undefined,
   };
 }
 

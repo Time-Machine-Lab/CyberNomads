@@ -30,6 +30,29 @@ paths:
         "404":
           description: 当前引流工作尚无拆分运行批次
 
+  /api/traffic-works/{trafficWorkId}/decomposition-run/center-view:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    get:
+      tags:
+        - TaskDecompositionRuns
+      summary: Read the task decomposition center view
+      description: >
+        Returns a safe frontend projection for the latest decomposition run of one traffic work,
+        including display-only progress, draft task graph, Review and repair projection, report
+        excerpt, and server-derived available actions. This endpoint does not expose raw prompts,
+        provider secrets, Authorization headers, or unfiltered artifact internals.
+      operationId: getTaskDecompositionCenterView
+      responses:
+        "200":
+          description: Center view returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDecompositionCenterView"
+        "404":
+          description: No decomposition run exists for the traffic work
+
   /api/traffic-works/{trafficWorkId}/decomposition-run/report:
     parameters:
       - $ref: "#/components/parameters/TrafficWorkId"
@@ -184,6 +207,300 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    TaskDecompositionCenterView:
+      type: object
+      required:
+        - decompositionRunId
+        - trafficWorkId
+        - status
+        - stage
+        - taskSetMode
+        - progress
+        - draftGraph
+        - review
+        - repairHistory
+        - report
+        - failure
+        - availableActions
+        - createdAt
+        - updatedAt
+      properties:
+        decompositionRunId:
+          type: string
+        trafficWorkId:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskDecompositionRunStatus"
+        stage:
+          $ref: "#/components/schemas/TaskDecompositionRunStage"
+        taskSetMode:
+          type: string
+          enum:
+            - create
+            - replace
+        progress:
+          $ref: "#/components/schemas/TaskDecompositionProgress"
+        draftGraph:
+          $ref: "#/components/schemas/TaskDecompositionDraftGraph"
+        review:
+          anyOf:
+            - $ref: "#/components/schemas/TaskDecompositionReviewProjection"
+            - type: "null"
+        repairHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskDecompositionRepairSummary"
+        report:
+          anyOf:
+            - $ref: "#/components/schemas/TaskDecompositionReportProjection"
+            - type: "null"
+        failure:
+          anyOf:
+            - $ref: "#/components/schemas/TaskDecompositionFailureProjection"
+            - type: "null"
+        availableActions:
+          $ref: "#/components/schemas/TaskDecompositionCenterAvailableActions"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskDecompositionProgress:
+      type: object
+      required:
+        - percent
+        - label
+        - description
+        - updatedAt
+      properties:
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Display-only progress derived from run status and stage; not a business state.
+        label:
+          type: string
+        description:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskDecompositionDraftGraph:
+      type: object
+      required:
+        - sourceArtifactId
+        - sourceArtifactType
+        - summary
+        - strategyCoverageSummary
+        - feedbackConsideration
+        - nodes
+        - edges
+      properties:
+        sourceArtifactId:
+          type:
+            - string
+            - "null"
+        sourceArtifactType:
+          type:
+            - string
+            - "null"
+          enum:
+            - task_plan_draft
+            - confirmation_snapshot
+            - null
+        summary:
+          type:
+            - string
+            - "null"
+        strategyCoverageSummary:
+          type:
+            - string
+            - "null"
+        feedbackConsideration:
+          type:
+            - string
+            - "null"
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskDecompositionDraftNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskDecompositionDraftEdge"
+
+    TaskDecompositionDraftNode:
+      type: object
+      required:
+        - taskKey
+        - name
+        - goal
+        - expectedOutputs
+        - inputSources
+        - dependsOn
+        - resourceNeeds
+        - strategyCoverage
+        - skillRefs
+        - documentRef
+        - contextRef
+      properties:
+        taskKey:
+          type: string
+        name:
+          type: string
+        goal:
+          type: string
+        expectedOutputs:
+          type: array
+          items:
+            type: string
+        inputSources:
+          type: array
+          items:
+            type: object
+        dependsOn:
+          type: array
+          items:
+            type: string
+        resourceNeeds:
+          type: array
+          items:
+            type: string
+        strategyCoverage:
+          type: array
+          items:
+            type: string
+        skillRefs:
+          type: array
+          items:
+            type: string
+        documentRef:
+          type: string
+        contextRef:
+          type: string
+
+    TaskDecompositionDraftEdge:
+      type: object
+      required:
+        - edgeId
+        - sourceTaskKey
+        - targetTaskKey
+        - relation
+      properties:
+        edgeId:
+          type: string
+        sourceTaskKey:
+          type: string
+        targetTaskKey:
+          type: string
+        relation:
+          type: string
+          enum:
+            - depends_on
+
+    TaskDecompositionReviewProjection:
+      type: object
+      required:
+        - artifactId
+        - conclusion
+        - summary
+        - issues
+        - issuesBySeverity
+        - createdAt
+      properties:
+        artifactId:
+          type: string
+        conclusion:
+          type:
+            - string
+            - "null"
+        summary:
+          type:
+            - string
+            - "null"
+        issues:
+          type: array
+          items:
+            type: object
+        issuesBySeverity:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+
+    TaskDecompositionRepairSummary:
+      type: object
+      required:
+        - artifactId
+        - attempt
+        - summary
+        - createdAt
+      properties:
+        artifactId:
+          type: string
+        attempt:
+          type: integer
+          minimum: 1
+        summary:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+
+    TaskDecompositionReportProjection:
+      type: object
+      required:
+        - artifactId
+        - summary
+        - markdownExcerpt
+        - createdAt
+      properties:
+        artifactId:
+          type: string
+        summary:
+          type:
+            - string
+            - "null"
+        markdownExcerpt:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+
+    TaskDecompositionFailureProjection:
+      type: object
+      required:
+        - summary
+      properties:
+        summary:
+          type:
+            - string
+            - "null"
+
+    TaskDecompositionCenterAvailableActions:
+      type: object
+      required:
+        - confirmPlan
+        - submitFeedback
+        - enterExecution
+        - inspectFailure
+      properties:
+        confirmPlan:
+          type: boolean
+        submitFeedback:
+          type: boolean
+        enterExecution:
+          type: boolean
+        inspectFailure:
+          type: boolean
 
     TaskDecompositionArtifactSummary:
       type: object

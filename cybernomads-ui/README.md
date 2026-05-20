@@ -4,7 +4,7 @@ Vue 3 + TypeScript + Vite frontend scaffold for the CyberNomads web client.
 
 ## Scripts
 
-- `npm run dev`: start local development server on `http://127.0.0.1:5001`
+- `npm run dev`: start local development server on `http://127.0.0.1:5000`
 - `npm run build`: run type check and create production build
 - `npm run preview`: preview production build
 - `npm run typecheck`: run TypeScript checks
@@ -19,7 +19,7 @@ Vue 3 + TypeScript + Vite frontend scaffold for the CyberNomads web client.
 
 - `VITE_USE_REAL_ACCOUNT_API=true`: enable the real account module backend
 - `VITE_USE_REAL_STRATEGY_API=true`: enable the real strategy module backend
-- `VITE_PORT=5001`: set the frontend dev server port
-- `VITE_API_PROXY_TARGET=http://127.0.0.1:5000`: shared local `/api` proxy target for real backend modules
+- `VITE_PORT=5000`: set the frontend dev server port
+- `VITE_API_PROXY_TARGET=http://127.0.0.1:50001`: shared local `/api` proxy target for real backend modules
 
 If only the strategy module needs the real backend, keep other modules on mock data and only enable `VITE_USE_REAL_STRATEGY_API`.

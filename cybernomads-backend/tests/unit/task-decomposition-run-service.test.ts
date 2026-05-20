@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { TaskDecompositionRunService } from "../../src/modules/task-decomposition-runs/service.js";
+import {
+  deriveTaskDecompositionCenterActions,
+  deriveTaskDecompositionProgress,
+  TaskDecompositionRunService,
+} from "../../src/modules/task-decomposition-runs/service.js";
 import type { TaskService } from "../../src/modules/tasks/service.js";
 import type { TaskSetWriteInput } from "../../src/modules/tasks/types.js";
 import type {
@@ -17,6 +21,86 @@ import type { TaskDecompositionArchiveStorePort } from "../../src/ports/task-dec
 import type { TaskDecompositionRunStorePort } from "../../src/ports/task-decomposition-run-store-port.js";
 
 describe("task decomposition run service", () => {
+  it("derives display progress for every decomposition stage", () => {
+    const updatedAt = "2026-05-20T08:00:00.000Z";
+
+    expect(
+      [
+        ["context_ready", "running"],
+        ["planning", "running"],
+        ["reviewing", "running"],
+        ["repairing", "running"],
+        ["reporting", "running"],
+        ["waiting_user_confirmation", "waiting_user_confirmation"],
+        ["committing", "running"],
+        ["prepared", "committed"],
+        ["failed", "failed"],
+      ].map(([stage, status]) =>
+        deriveTaskDecompositionProgress({
+          stage: stage as TaskDecompositionRunRecord["stage"],
+          status: status as TaskDecompositionRunRecord["status"],
+          updatedAt,
+        }),
+      ),
+    ).toEqual([
+      expect.objectContaining({ percent: 10, label: "Context ready" }),
+      expect.objectContaining({ percent: 30, label: "Planning" }),
+      expect.objectContaining({ percent: 55, label: "Reviewing" }),
+      expect.objectContaining({ percent: 70, label: "Repairing" }),
+      expect.objectContaining({ percent: 85, label: "Reporting" }),
+      expect.objectContaining({
+        percent: 90,
+        label: "Waiting for confirmation",
+      }),
+      expect.objectContaining({ percent: 95, label: "Committing" }),
+      expect.objectContaining({ percent: 100, label: "Prepared" }),
+      expect.objectContaining({ percent: 100, label: "Failed" }),
+    ]);
+  });
+
+  it("derives center actions from run status", () => {
+    expect(
+      deriveTaskDecompositionCenterActions({
+        status: "running",
+      }),
+    ).toEqual({
+      confirmPlan: false,
+      submitFeedback: false,
+      enterExecution: false,
+      inspectFailure: false,
+    });
+    expect(
+      deriveTaskDecompositionCenterActions({
+        status: "waiting_user_confirmation",
+      }),
+    ).toEqual({
+      confirmPlan: true,
+      submitFeedback: true,
+      enterExecution: false,
+      inspectFailure: false,
+    });
+    expect(
+      deriveTaskDecompositionCenterActions({
+        status: "committed",
+      }),
+    ).toEqual({
+      confirmPlan: false,
+      submitFeedback: false,
+      enterExecution: true,
+      inspectFailure: false,
+    });
+    expect(
+      deriveTaskDecompositionCenterActions({
+        status: "failed",
+      }),
+    ).toEqual({
+      confirmPlan: false,
+      submitFeedback: true,
+      enterExecution: false,
+      inspectFailure: true,
+    });
+  });
+
   it("stages drafts and does not write formal tasks before user confirmation", async () => {
     const runStore = new InMemoryTaskDecompositionRunStore();
     const trafficWorkStore = new InMemoryTrafficWorkStore();
@@ -45,9 +129,9 @@ describe("task decomposition run service", () => {
     expect(staged.status).toBe("waiting_user_confirmation");
     expect(staged.requiresUserConfirmation).toBe(true);
     expect(taskService.createCalls).toEqual([]);
-    expect(trafficWorkStore.records.get("work-1")?.contextPreparationStatus).toBe(
-      "pending",
-    );
+    expect(
+      trafficWorkStore.records.get("work-1")?.contextPreparationStatus,
+    ).toBe("pending");
 
     const confirmed = await service.confirmCurrentRun("work-1");
 
@@ -119,6 +203,54 @@ describe("task decomposition run service", () => {
       "repair_history",
     );
   });
+
+  it("projects draft nodes and dependency edges without exposing execution prompts", async () => {
+    const service = new TaskDecompositionRunService({
+      runStore: new InMemoryTaskDecompositionRunStore(),
+      trafficWorkStateStore: new InMemoryTrafficWorkStore(),
+      taskService: new FakeTaskService() as unknown as Pick<
+        TaskService,
+        "createTaskSetForTrafficWork" | "replaceTaskSetForTrafficWork"
+      >,
+      runtime: new FakeRuntime({
+        draft: createDependentDraft(),
+      }) as never,
+      archiveStore: new InMemoryArchiveStore(),
+      now: createSequentialNow(),
+      createRunId: () => "run-1",
+      createArtifactId: createSequentialId("artifact"),
+    });
+
+    await service.startRun({
+      trafficWorkId: "work-1",
+      displayName: "Main Growth Work",
+      contextMarkdown: "# Context",
+      taskSetMode: "create",
+    });
+
+    const centerView = await service.getCurrentCenterView("work-1");
+
+    expect(centerView.progress).toMatchObject({
+      percent: 90,
+      label: "Waiting for confirmation",
+    });
+    expect(centerView.draftGraph.nodes).toHaveLength(2);
+    expect(centerView.draftGraph.nodes[1]).toMatchObject({
+      taskKey: "publish",
+      dependsOn: ["collect"],
+      expectedOutputs: ["Published response log"],
+    });
+    expect(centerView.draftGraph.edges).toEqual([
+      {
+        edgeId: "collect->publish",
+        sourceTaskKey: "collect",
+        targetTaskKey: "publish",
+        relation: "depends_on",
+      },
+    ]);
+    expect(centerView.draftGraph.nodes[1]).not.toHaveProperty("inputPrompt");
+    expect(centerView.draftGraph.nodes[1]).not.toHaveProperty("instruction");
+  });
 });
 
 class FakeRuntime {
@@ -127,6 +259,8 @@ class FakeRuntime {
   constructor(
     private readonly options: {
       reviewReports?: ReviewReport[];
+      draft?: TaskPlanDraft;
+      repairedDraft?: TaskPlanDraft;
     } = {},
   ) {}
 
@@ -139,7 +273,7 @@ class FakeRuntime {
   }
 
   async planTasks() {
-    const draft = createDraft();
+    const draft = this.options.draft ?? createDraft();
     return {
       stage: "planning",
       providerCode: "cybernomads-agent",
@@ -163,14 +297,19 @@ class FakeRuntime {
   }
 
   async repairDraft() {
-    const revisedDraft = createDraft({
-      summary: "Repaired draft.",
-    });
+    const revisedDraft =
+      this.options.repairedDraft ??
+      createDraft({
+        summary: "Repaired draft.",
+      });
     return {
       stage: "repair",
       providerCode: "cybernomads-agent",
       model: "gpt-5.5",
-      outputText: JSON.stringify({ summary: "Added input source detail.", revisedDraft }),
+      outputText: JSON.stringify({
+        summary: "Added input source detail.",
+        revisedDraft,
+      }),
       output: {
         summary: "Added input source detail.",
         revisedDraft,
@@ -193,10 +332,14 @@ class FakeRuntime {
 }
 
 class FakeTaskService {
-  readonly createCalls: Array<{ trafficWorkId: string; input: TaskSetWriteInput }> =
-    [];
-  readonly replaceCalls: Array<{ trafficWorkId: string; input: TaskSetWriteInput }> =
-    [];
+  readonly createCalls: Array<{
+    trafficWorkId: string;
+    input: TaskSetWriteInput;
+  }> = [];
+  readonly replaceCalls: Array<{
+    trafficWorkId: string;
+    input: TaskSetWriteInput;
+  }> = [];
 
   async createTaskSetForTrafficWork(
     trafficWorkId: string,
@@ -266,11 +409,12 @@ class InMemoryTrafficWorkStore {
   }
 }
 
-class InMemoryTaskDecompositionRunStore
-  implements TaskDecompositionRunStorePort
-{
+class InMemoryTaskDecompositionRunStore implements TaskDecompositionRunStorePort {
   private readonly runs = new Map<string, TaskDecompositionRunRecord>();
-  private readonly artifacts = new Map<string, TaskDecompositionArtifactRecord>();
+  private readonly artifacts = new Map<
+    string,
+    TaskDecompositionArtifactRecord
+  >();
 
   async createRun(record: TaskDecompositionRunRecord): Promise<void> {
     this.runs.set(record.decompositionRunId, structuredClone(record));
@@ -385,6 +529,46 @@ function createDraft(overrides: Partial<TaskPlanDraft> = {}): TaskPlanDraft {
     ],
     feedbackConsideration: null,
     ...overrides,
+  };
+}
+
+function createDependentDraft(): TaskPlanDraft {
+  const draft = createDraft({
+    summary: "Drafted dependent tasks.",
+  });
+
+  return {
+    ...draft,
+    tasks: [
+      draft.tasks[0],
+      {
+        taskKey: "publish",
+        name: "Publish outreach",
+        goal: "Publish outreach based on collected candidates.",
+        expectedOutputs: ["Published response log"],
+        inputSources: [
+          {
+            type: "upstream_task",
+            description: "Candidate list from collection.",
+            acquisition: "Read the collect task output.",
+            missingBehavior: "blocking",
+            sourceTaskKey: "collect",
+          },
+        ],
+        dependsOn: ["collect"],
+        resourceNeeds: ["bilibili-web-api skill"],
+        strategyCoverage: ["activation"],
+        skillRefs: ["cybernomads-task-execution"],
+        instruction: "Publish outreach based on the candidate list.",
+        documentRef: "./publish.md",
+        contextRef: "./",
+        condition: {
+          cron: null,
+          relyOnTaskKeys: ["collect"],
+        },
+        inputPrompt: "Use the collect task output as the candidate source.",
+      },
+    ],
   };
 }
 
