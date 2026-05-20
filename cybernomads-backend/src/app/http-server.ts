@@ -17,6 +17,8 @@ import { createTasksController } from "../modules/tasks/controller.js";
 import type { TaskService } from "../modules/tasks/service.js";
 import { createTaskDecompositionSupportToolsController } from "../modules/task-decomposition-support-tools/controller.js";
 import type { TaskDecompositionSupportToolsService } from "../modules/task-decomposition-support-tools/service.js";
+import { createTaskDecompositionRunsController } from "../modules/task-decomposition-runs/controller.js";
+import type { TaskDecompositionRunService } from "../modules/task-decomposition-runs/service.js";
 import { createTrafficWorksController } from "../modules/traffic-works/controller.js";
 import type { TrafficWorkService } from "../modules/traffic-works/service.js";
 import { sendJson } from "../shared/http.js";
@@ -32,6 +34,7 @@ export interface StartHttpServerOptions {
   agentAccessService: AgentAccessService;
   trafficWorkService: TrafficWorkService;
   taskService: TaskService;
+  taskDecompositionRunService: TaskDecompositionRunService;
   taskDecompositionSupportToolsService: TaskDecompositionSupportToolsService;
   host?: string;
   port?: number;
@@ -71,6 +74,10 @@ export async function startHttpServer(
     createTaskDecompositionSupportToolsController(
       options.taskDecompositionSupportToolsService,
     );
+  const handleTaskDecompositionRunsRequest =
+    createTaskDecompositionRunsController(
+      options.taskDecompositionRunService,
+    );
 
   const server = createServer(async (request, response) => {
     try {
@@ -81,6 +88,7 @@ export async function startHttpServer(
         handleStrategiesRequest,
         handleProductsRequest,
         handleTaskDecompositionSupportToolsRequest,
+        handleTaskDecompositionRunsRequest,
         handleTasksRequest,
         handleTrafficWorksRequest,
       ];

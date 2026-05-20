@@ -421,3 +421,14 @@ cybernomads/
 7. **第一版不要过度多 Agent 化**：Planner + Reviewer + Repair Loop 足够，过多角色会降低可控性。
 8. **供应商可替换但接口要收敛**：默认 GPT provider，但 Cybernomads Agent Runtime 应通过 provider adapter 接入，避免把业务逻辑写死到某个模型供应商。
 
+## 7. 实施边界补充（2026-05-20）
+
+本期实现采用后端内置的 Cybernomads Agent Runtime，并把框架能力控制在最小可落地范围：
+
+- provider code 固定为 `cybernomads-agent`，只作为 `planning` provider。
+- GPT / OpenAI-compatible Responses API 通过服务地址、模型、推理强度和 API Key 配置；API Key 只进入 secret store。
+- Runtime 输出必须通过 schema 校验后才能保存为任务方案草案、Review 报告、修正历史和报告产物。
+- Controlled Tool Registry 只向 Agent 暴露只读工具和草案工具说明；正式任务提交、资源最终归档和 prepared 状态更新只允许 Orchestrator 调用。
+- Agent Interaction Logs 记录 provider code、模型、阶段、工具名和结构化摘要，并全链路脱敏 API Key、Authorization、Bearer token 与 credential-like values。
+
+第一版报告可由后端基于结构化草案和 Review 报告渲染，不强制单独调用 Report Agent。这样可以先保证确认前不落库、确认后系统提交和反馈重拆三条业务边界稳定。

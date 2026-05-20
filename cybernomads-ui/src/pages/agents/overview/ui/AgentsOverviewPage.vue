@@ -15,12 +15,14 @@ onMounted(async () => {
 })
 
 function resolveNodeIcon(node: AgentNodeRecord) {
+  if (node.roleLabel === 'planning') return 'psychology'
   if (node.type === 'openclaw') return 'precision_manufacturing'
   if (node.type === 'codex') return 'data_object'
   return 'forum'
 }
 
 function resolveNodeTone(node: AgentNodeRecord) {
+  if (node.roleLabel === 'planning') return 'secondary'
   if (node.type === 'openclaw') return 'primary'
   if (node.type === 'codex') return 'tertiary'
   return 'secondary'
@@ -137,7 +139,9 @@ function resolveNodeStatus(node: AgentNodeRecord) {
                   { 'agent-card--recommended': node.type === 'openclaw' },
                 ]"
               >
-                <div v-if="node.type === 'openclaw'" class="agent-card__ribbon">推荐</div>
+                <div v-if="node.roleLabel === 'planning' || node.type === 'openclaw'" class="agent-card__ribbon">
+                  {{ node.roleLabel === 'planning' ? '规划' : '执行' }}
+                </div>
 
                 <div class="agent-card__glyph">
                   <span class="material-symbols-outlined">{{ resolveNodeIcon(node) }}</span>
@@ -147,8 +151,8 @@ function resolveNodeStatus(node: AgentNodeRecord) {
                 <p>{{ node.notes }}</p>
 
                 <RouterLink
-                  v-if="node.type === 'openclaw'"
-                  to="/agents/openclaw"
+                  v-if="node.roleLabel === 'planning' || node.type === 'openclaw'"
+                  :to="node.roleLabel === 'planning' ? '/agents/cybernomads-agent' : '/agents/openclaw'"
                   class="agent-card__button agent-card__button--primary"
                 >
                   <span>立即配置</span>
@@ -204,18 +208,18 @@ function resolveNodeStatus(node: AgentNodeRecord) {
 
               <div class="agent-runtime-card__actions">
                 <RouterLink
-                  v-if="node.type === 'openclaw'"
-                  to="/agents/openclaw"
+                  v-if="node.roleLabel === 'planning' || node.type === 'openclaw'"
+                  :to="node.roleLabel === 'planning' ? '/agents/cybernomads-agent' : '/agents/openclaw'"
                   class="agent-runtime-card__button"
                 >
                   编辑配置
                 </RouterLink>
                 <button
-                  v-if="node.type === 'openclaw'"
+                  v-if="node.roleLabel === 'planning' || node.type === 'openclaw'"
                   type="button"
                   class="agent-runtime-card__button agent-runtime-card__button--primary"
                 >
-                  切换
+                  {{ node.roleLabel === 'planning' ? '规划模型' : '执行器' }}
                 </button>
                 <template v-else>
                   <button type="button" class="agent-runtime-card__button">

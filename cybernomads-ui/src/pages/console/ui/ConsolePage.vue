@@ -9,6 +9,8 @@ const overview = ref<ConsoleOverviewRecord | null>(null)
 const isLoading = ref(true)
 
 const service = computed(() => overview.value?.currentService ?? null)
+const planningService = computed(() => overview.value?.servicesByPurpose?.planning ?? null)
+const executionService = computed(() => overview.value?.servicesByPurpose?.execution ?? service.value)
 
 const connectionLabel = computed(() => {
   switch (overview.value?.connectionStatus) {
@@ -38,20 +40,22 @@ const capabilityLabel = computed(() => {
 
 const agentServiceOptions = computed(() => [
   {
-    key: 'openclaw',
-    title: 'OpenClaw',
-    description: '推荐接入方式，当前可配置。',
-    icon: 'precision_manufacturing',
+    key: 'cybernomads-agent',
+    title: 'Cybernomads Agent LLM',
+    description: '任务拆分、Review、修正和拆分报告使用的 planning provider。',
+    icon: 'psychology',
     enabled: true,
-    badge: service.value?.providerCode === 'openclaw' ? '已选择' : '可用',
+    badge: planningService.value ? '已配置' : '需要配置',
+    to: '/console/cybernomads-agent',
   },
   {
-    key: 'internal-agent',
-    title: '内部 Agent',
-    description: '内置执行引擎，后续版本开放。',
-    icon: 'hub',
-    enabled: false,
-    badge: '未开放',
+    key: 'openclaw',
+    title: 'OpenClaw Executor',
+    description: '执行用户已确认的单任务，不承担任务拆分 / Review。',
+    icon: 'precision_manufacturing',
+    enabled: true,
+    badge: executionService.value?.providerCode === 'openclaw' ? '已配置' : '需要配置',
+    to: '/console/openclaw',
   },
   {
     key: 'external-agent',
@@ -60,6 +64,7 @@ const agentServiceOptions = computed(() => [
     icon: 'cloud_sync',
     enabled: false,
     badge: '未开放',
+    to: '',
   },
 ])
 
@@ -104,7 +109,7 @@ onMounted(loadOverview)
           <h2>{{ overview.hasCurrentService ? '当前 Agent 服务' : '尚未接入 Agent 服务' }}</h2>
 
           <div class="console-readiness__actions">
-            <RouterLink class="console-readiness__primary" to="/console/openclaw">
+            <RouterLink class="console-readiness__primary" :to="planningService ? '/console/openclaw' : '/console/cybernomads-agent'">
               <span>{{ overview.actionLabel }}</span>
               <span class="material-symbols-outlined">arrow_forward</span>
             </RouterLink>
@@ -113,12 +118,16 @@ onMounted(loadOverview)
 
         <aside class="console-readiness__status">
           <div class="console-metric">
-            <span>Provider</span>
-            <strong>{{ service?.providerCode ?? 'openclaw' }}</strong>
+            <span>Planning Provider</span>
+            <strong>{{ planningService?.providerCode ?? '未配置' }}</strong>
           </div>
           <div class="console-metric">
-            <span>Endpoint</span>
-            <strong>{{ service?.endpointUrl ?? '未配置' }}</strong>
+            <span>Execution Provider</span>
+            <strong>{{ executionService?.providerCode ?? 'openclaw' }}</strong>
+          </div>
+          <div class="console-metric">
+            <span>Planning Model</span>
+            <strong>{{ planningService?.model ?? '未配置' }}</strong>
           </div>
           <div class="console-metric">
             <span>连接状态</span>
@@ -172,7 +181,7 @@ onMounted(loadOverview)
               <h3>{{ option.title }}</h3>
               <p>{{ option.description }}</p>
             </div>
-            <RouterLink v-if="option.enabled" class="console-service-card__action" to="/console/openclaw">
+            <RouterLink v-if="option.enabled" class="console-service-card__action" :to="option.to">
               <span>选择配置</span>
               <span class="material-symbols-outlined">arrow_forward</span>
             </RouterLink>

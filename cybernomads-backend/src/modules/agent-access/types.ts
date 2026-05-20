@@ -1,6 +1,16 @@
-export const CURRENT_AGENT_SERVICE_SCOPE = "current";
+export const PLANNING_AGENT_SERVICE_PURPOSE = "planning";
+export const EXECUTION_AGENT_SERVICE_PURPOSE = "execution";
+export const DEFAULT_AGENT_SERVICE_PURPOSE = EXECUTION_AGENT_SERVICE_PURPOSE;
+export const CYBERNOMADS_AGENT_PROVIDER_CODE = "cybernomads-agent";
+export const OPENCLAW_PROVIDER_CODE = "openclaw";
 
-export type AgentServiceScope = typeof CURRENT_AGENT_SERVICE_SCOPE;
+export type AgentServicePurpose =
+  | typeof PLANNING_AGENT_SERVICE_PURPOSE
+  | typeof EXECUTION_AGENT_SERVICE_PURPOSE;
+
+export type AgentServiceScope = AgentServicePurpose;
+
+export type AgentReasoningEffort = "low" | "medium" | "high";
 
 export type StoredConnectionStatus =
   | "pending_verification"
@@ -21,14 +31,20 @@ export interface AgentServiceAuthenticationInput {
 }
 
 export interface ConfigureAgentServiceInput {
+  purpose?: AgentServicePurpose;
   providerCode: string;
   endpointUrl: string;
+  model?: string | null;
+  reasoningEffort?: AgentReasoningEffort | null;
   authentication: AgentServiceAuthenticationInput;
 }
 
 export interface UpdateAgentServiceInput {
+  purpose?: AgentServicePurpose;
   providerCode: string;
   endpointUrl: string;
+  model?: string | null;
+  reasoningEffort?: AgentReasoningEffort | null;
   authentication: AgentServiceAuthenticationInput;
 }
 
@@ -42,6 +58,9 @@ export interface AgentServiceConnectionRecord {
   agentServiceId: string;
   providerCode: string;
   endpointUrl: string;
+  model: string | null;
+  reasoningEffort: AgentReasoningEffort | null;
+  providerSettings: Record<string, unknown>;
   authenticationKind: string;
   credentialRef: string;
   connectionStatus: StoredConnectionStatus;
@@ -57,8 +76,11 @@ export interface AgentServiceConnectionRecord {
 
 export interface CurrentAgentService {
   agentServiceId: string;
+  purpose: AgentServicePurpose;
   providerCode: string;
   endpointUrl: string;
+  model: string | null;
+  reasoningEffort: AgentReasoningEffort | null;
   authenticationKind: string;
   hasCredential: boolean;
   connectionStatus: StoredConnectionStatus;
@@ -77,6 +99,7 @@ export interface CurrentAgentService {
 export interface AgentServiceStatusSnapshot {
   hasCurrentService: boolean;
   currentService: CurrentAgentService | null;
+  servicesByPurpose: Record<AgentServicePurpose, CurrentAgentService | null>;
   connectionStatus: ConnectionStatus;
   capabilityStatus: CapabilityProvisioningStatus;
   isUsable: boolean;
@@ -114,6 +137,8 @@ export interface TaskPlanningRequest {
 
 export interface TaskPlanningResult {
   sessionId: string;
+  providerCode: string;
+  model: string | null;
   outputText: string;
   history: AgentConversationMessage[];
 }

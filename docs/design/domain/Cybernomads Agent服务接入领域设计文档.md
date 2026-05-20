@@ -22,7 +22,8 @@
 - **连接状态 (Connection Status)**：当前 Agent 服务在系统中的接入状态，例如未配置、已连接、连接异常。
 - **能力准备 (Capability Provisioning)**：系统确保 Agent 服务具备 Cybernomads 所需能力的过程，当前实现可通过提示词驱动完成。
 - **能力准备状态 (Capability Provisioning Status)**：当前 Agent 服务是否已经完成 Cybernomads 所需能力准备的业务状态。
-- **当前激活服务 (Active Agent Service)**：当前系统唯一使用中的 Agent 服务入口。
+- **当前激活服务 (Active Agent Service)**：某个用途槽位下当前使用中的 Agent 服务入口。
+- **Provider 用途 (Agent Service Purpose)**：Agent 服务被系统使用的业务目的，当前固定为 `planning` 与 `execution`。
 - **原子能力 (Atomic Capability)**：Agent 服务本身提供的底层能力，例如会话创建、消息发送、查询会话记录、调用 subagent。
 - **任务规划请求 (Task Planning Request)**：上层应用将产品内容与策略内容交给 Agent 服务，请其拆分任务的业务请求。
 - **任务执行请求 (Task Execution Request)**：上层应用将任务信息与工作上下文交给 Agent 服务，请其执行任务的业务请求。
@@ -72,8 +73,8 @@ classDiagram
 
 ## 3. 核心业务约束 (Invariants & Business Rules)
 
-- **单服务约束**：在当前 MVP 阶段，系统只允许存在一个当前激活的 Agent 服务入口，不支持多个外部 Agent 服务并行接入。
-- **单激活约束**：任一时刻最多只有一个 AgentServiceConnection 处于激活状态。
+- **用途槽位约束**：在当前 MVP 阶段，系统只允许存在 `planning` 与 `execution` 两个当前激活服务槽位，不支持任意多 provider 路由。
+- **按用途单激活约束**：任一时刻每个用途最多只有一个 AgentServiceConnection 处于激活状态。
 - **接入前置约束**：只有完成有效接入配置的 Agent 服务，才能进入连接验证流程。
 - **连接成功约束**：在当前 MVP 语义下，连接成功即可视为当前 Agent 服务可被系统使用，不额外引入独立“可执行状态”作为用户侧主状态。
 - **能力准备从属约束**：能力准备属于 Agent 服务接入域的子能力，但不改变“系统只连接一个 Agent 服务入口”的主业务语义。
@@ -81,7 +82,19 @@ classDiagram
 - **原子能力约束**：Agent 服务域对上提供的是原子能力入口，而不是任务规划、任务调度、引流策略编排等完整上层业务能力。
 - **影响传递约束**：如果用户修改 Agent 服务连接信息或 Agent 服务中断，当前已有引流工作会受到影响；MVP 阶段暂不提供容灾与自动恢复能力。
 - **能力准备一致性约束**：系统一旦声明某个 Agent 服务已完成能力准备，则该服务应具备 Cybernomads 所需的最小运行能力。
-- **服务替换约束**：从 OpenClaw 切换到其他 Agent 服务时，应只影响实现层，不影响上层业务模型和调用语义。
+- **服务替换约束**：从 OpenClaw 切换到其他 Agent 服务时，应只影响对应用途槽位和实现层，不影响上层业务模型和调用语义。
+- **规划/执行边界约束**：`cybernomads-agent` 第一版只作为 `planning` provider，负责任务拆分、Review、修正和报告；OpenClaw 只作为 `execution` provider，负责执行已确认单任务。
+
+## 5. Provider 用途补充（2026-05-20）
+
+本期 Agent 服务接入域从“一个当前 active service”演进为“按用途 active service”。这是最小路由语义，不是通用 provider 市场：
+
+- `planning`: Cybernomads Agent，第一版接 GPT / OpenAI-compatible Responses API，配置项为服务地址、模型、推理强度和 API Key。
+- `execution`: OpenClaw，执行已由用户确认并由系统落库的单任务。
+
+状态查询必须只返回安全摘要：provider code、用途、服务地址、模型、推理强度、连接状态和能力准备状态。API Key、Authorization、Bearer token、credential ref 和 secret store 路径都不得出现在状态响应、日志、草案、Review 报告或任务文件中。
+
+上层任务拆分流程必须读取 `planning` provider；任务执行调度必须读取 `execution` provider。系统不得因为某个 provider 已连接，就默认它同时具备规划和执行能力。
 
 ## 4. 核心用例与行为流转 (Core Behaviors)
 

@@ -6,6 +6,7 @@ import {
 } from "./errors.js";
 import type { AgentAccessService } from "./service.js";
 import type {
+  AgentServicePurpose,
   ConfigureAgentServiceInput,
   UpdateAgentServiceInput,
 } from "./types.js";
@@ -28,6 +29,74 @@ export function createAgentAccessController(agentAccessService: AgentAccessServi
     }
 
     try {
+      const purposePathMatch = matchPurposePath(url.pathname);
+
+      if (purposePathMatch) {
+        const { purpose, operation } = purposePathMatch;
+
+        if (!operation) {
+          if (method === "POST") {
+            const payload = (await readJsonBody(
+              request,
+            )) as ConfigureAgentServiceInput;
+            const currentService =
+              await agentAccessService.configureCurrentService({
+                ...payload,
+                purpose,
+              });
+            sendJson(response, 201, currentService);
+            return true;
+          }
+
+          if (method === "GET") {
+            const currentService =
+              await agentAccessService.getAgentServiceForPurpose(purpose);
+            sendJson(response, 200, currentService);
+            return true;
+          }
+
+          if (method === "PUT") {
+            const payload = (await readJsonBody(
+              request,
+            )) as UpdateAgentServiceInput;
+            const currentService =
+              await agentAccessService.updateCurrentService({
+                ...payload,
+                purpose,
+              });
+            sendJson(response, 200, currentService);
+            return true;
+          }
+
+          sendMethodNotAllowed(response, ["POST", "GET", "PUT"]);
+          return true;
+        }
+
+        if (operation === "connection-verification") {
+          if (method === "POST") {
+            const result =
+              await agentAccessService.verifyServiceConnection(purpose);
+            sendJson(response, 200, result);
+            return true;
+          }
+
+          sendMethodNotAllowed(response, ["POST"]);
+          return true;
+        }
+
+        if (operation === "capability-provisioning") {
+          if (method === "POST") {
+            const result =
+              await agentAccessService.prepareAgentServiceCapabilities(purpose);
+            sendJson(response, 200, result);
+            return true;
+          }
+
+          sendMethodNotAllowed(response, ["POST"]);
+          return true;
+        }
+      }
+
       if (url.pathname === "/api/agent-services/current") {
         if (method === "POST") {
           const payload = (await readJsonBody(
@@ -100,6 +169,28 @@ export function createAgentAccessController(agentAccessService: AgentAccessServi
     }
 
     return false;
+  };
+}
+
+function matchPurposePath(pathname: string): {
+  purpose: AgentServicePurpose;
+  operation?: "connection-verification" | "capability-provisioning";
+} | null {
+  const match =
+    /^\/api\/agent-services\/(planning|execution)(?:\/(connection-verification|capability-provisioning))?$/.exec(
+      pathname,
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    purpose: match[1] as AgentServicePurpose,
+    operation: match[2] as
+      | "connection-verification"
+      | "capability-provisioning"
+      | undefined,
   };
 }
 

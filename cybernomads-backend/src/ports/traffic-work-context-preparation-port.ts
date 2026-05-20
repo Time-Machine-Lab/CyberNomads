@@ -15,11 +15,14 @@ export interface PrepareTrafficWorkContextInput {
   objectBindings: ObjectBindingItem[];
   contextMarkdown: string;
   context: TrafficWorkContextSnapshot;
+  taskSetMode: "create" | "replace";
 }
 
 export interface TrafficWorkContextPreparationPort {
   prepareContext(input: PrepareTrafficWorkContextInput): Promise<{
-    sessionId: string;
-    messageId: string;
+    decompositionRunId: string;
+    status: "running" | "waiting_user_confirmation" | "committed" | "failed" | "awaiting_user_feedback";
+    stage: string;
+    summary: string | null;
   }>;
 }

@@ -103,7 +103,7 @@ describe.sequential("agent service module http api", () => {
         `
           SELECT credential_ref AS credentialRef
           FROM agent_service_connections
-          WHERE service_scope = 'current'
+          WHERE service_scope = 'execution'
         `,
       )
       .get() as { credentialRef: string } | undefined;

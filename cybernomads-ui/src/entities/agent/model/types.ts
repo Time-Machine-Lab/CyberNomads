@@ -11,6 +11,9 @@ export type AgentServiceCapabilityStatus =
   | 'preparing'
   | 'ready'
   | 'prepare_failed'
+export type AgentServicePurpose = 'planning' | 'execution'
+export type AgentServiceProviderCode = 'cybernomads-agent' | 'openclaw'
+export type CybernomadsAgentReasoningEffort = 'low' | 'medium' | 'high'
 
 export interface AgentNodeConfigRecord {
   installPath: string
@@ -43,6 +46,13 @@ export interface OpenClawSetupFormInput {
   secret: string
 }
 
+export interface CybernomadsAgentLlmSetupFormInput {
+  endpointUrl: string
+  model: string
+  reasoningEffort: CybernomadsAgentReasoningEffort
+  apiKey: string
+}
+
 export interface AgentServiceRecoverableError {
   status: number
   message: string
@@ -56,7 +66,10 @@ export interface AgentServiceAuthenticationInput {
 
 export interface ConfigureAgentServiceRequest {
   providerCode: string
+  purpose?: AgentServicePurpose
   endpointUrl: string
+  model?: string | null
+  reasoningEffort?: string | null
   authentication: AgentServiceAuthenticationInput
 }
 
@@ -65,9 +78,12 @@ export type UpdateAgentServiceRequest = ConfigureAgentServiceRequest
 export interface CurrentAgentServiceDto {
   agentServiceId: string
   providerCode: string
+  purpose?: AgentServicePurpose
   endpointUrl: string
   authenticationKind: string
   hasCredential: boolean
+  model?: string | null
+  reasoningEffort?: string | null
   connectionStatus: AgentServiceConnectionStatus
   connectionStatusReason?: string | null
   capabilityStatus: AgentServiceCapabilityStatus
@@ -84,6 +100,10 @@ export interface CurrentAgentServiceDto {
 export interface AgentServiceStatusSnapshotDto {
   hasCurrentService: boolean
   currentService: CurrentAgentServiceDto | null
+  servicesByPurpose?: {
+    planning: CurrentAgentServiceDto | null
+    execution: CurrentAgentServiceDto | null
+  }
   connectionStatus: AgentServiceConnectionStatus
   capabilityStatus: AgentServiceCapabilityStatus
   isUsable: boolean

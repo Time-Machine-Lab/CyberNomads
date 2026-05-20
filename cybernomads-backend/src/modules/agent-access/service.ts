@@ -25,15 +25,21 @@ import {
   CurrentAgentServiceNotFoundError,
 } from "./errors.js";
 import {
-  CURRENT_AGENT_SERVICE_SCOPE,
   type AgentServiceAuthenticationInput,
   type AgentServiceConnectionRecord,
   type AgentServiceCredentialRecord,
+  type AgentReasoningEffort,
+  type AgentServicePurpose,
   type AgentServiceStatusSnapshot,
   type CapabilityProvisioningResult,
   type ConfigureAgentServiceInput,
   type ConnectionVerificationResult,
+  CYBERNOMADS_AGENT_PROVIDER_CODE,
+  DEFAULT_AGENT_SERVICE_PURPOSE,
+  EXECUTION_AGENT_SERVICE_PURPOSE,
   type CurrentAgentService,
+  OPENCLAW_PROVIDER_CODE,
+  PLANNING_AGENT_SERVICE_PURPOSE,
   type TaskDecompositionRequest,
   type TaskDecompositionResult,
   type TaskExecutionRequest,
@@ -50,6 +56,15 @@ export interface AgentAccessServiceOptions {
   agentInteractionLogRecorder?: AgentInteractionLogRecorderPort;
   now?: () => Date;
   createAgentServiceId?: () => string;
+}
+
+interface NormalizedAgentServiceInput {
+  purpose: AgentServicePurpose;
+  providerCode: string;
+  endpointUrl: string;
+  model: string | null;
+  reasoningEffort: AgentReasoningEffort | null;
+  authentication: AgentServiceAuthenticationInput;
 }
 
 export class AgentAccessService {
@@ -72,13 +87,15 @@ export class AgentAccessService {
   async configureCurrentService(
     input: ConfigureAgentServiceInput,
   ): Promise<CurrentAgentService> {
-    const existing = await this.options.stateStore.getCurrentService();
+    const normalizedInput = normalizeServiceInput(input);
+    const existing = await this.options.stateStore.getServiceByPurpose(
+      normalizedInput.purpose,
+    );
 
     if (existing) {
       throw new CurrentAgentServiceAlreadyExistsError();
     }
 
-    const normalizedInput = normalizeServiceInput(input);
     const timestamp = this.now().toISOString();
     const agentServiceId = this.createAgentServiceId();
     const credentialRef = createCredentialRef(agentServiceId);
@@ -90,10 +107,13 @@ export class AgentAccessService {
 
     try {
       const record: AgentServiceConnectionRecord = {
-        serviceScope: CURRENT_AGENT_SERVICE_SCOPE,
+        serviceScope: normalizedInput.purpose,
         agentServiceId,
         providerCode: normalizedInput.providerCode,
         endpointUrl: normalizedInput.endpointUrl,
+        model: normalizedInput.model,
+        reasoningEffort: normalizedInput.reasoningEffort,
+        providerSettings: {},
         authenticationKind: normalizedInput.authentication.kind,
         credentialRef,
         connectionStatus: "pending_verification",
@@ -107,7 +127,7 @@ export class AgentAccessService {
         updatedAt: timestamp,
       };
 
-      await this.options.stateStore.saveCurrentService(record);
+      await this.options.stateStore.saveService(record);
 
       return toCurrentAgentService(record);
     } catch (error) {
@@ -119,8 +139,8 @@ export class AgentAccessService {
   async updateCurrentService(
     input: UpdateAgentServiceInput,
   ): Promise<CurrentAgentService> {
-    const existing = await this.getCurrentServiceRecord();
     const normalizedInput = normalizeServiceInput(input);
+    const existing = await this.getServiceRecord(normalizedInput.purpose);
     const timestamp = this.now().toISOString();
     const nextAgentServiceId = this.createAgentServiceId();
     const nextCredentialRef = createCredentialRef(nextAgentServiceId);
@@ -132,10 +152,13 @@ export class AgentAccessService {
 
     try {
       const record: AgentServiceConnectionRecord = {
-        serviceScope: CURRENT_AGENT_SERVICE_SCOPE,
+        serviceScope: normalizedInput.purpose,
         agentServiceId: nextAgentServiceId,
         providerCode: normalizedInput.providerCode,
         endpointUrl: normalizedInput.endpointUrl,
+        model: normalizedInput.model,
+        reasoningEffort: normalizedInput.reasoningEffort,
+        providerSettings: {},
         authenticationKind: normalizedInput.authentication.kind,
         credentialRef: nextCredentialRef,
         connectionStatus: "pending_verification",
@@ -149,7 +172,7 @@ export class AgentAccessService {
         updatedAt: timestamp,
       };
 
-      await this.options.stateStore.saveCurrentService(record);
+      await this.options.stateStore.saveService(record);
       await this.options.credentialStore.deleteCredential(
         existing.credentialRef,
       );
@@ -162,16 +185,29 @@ export class AgentAccessService {
   }
 
   async getCurrentAgentService(): Promise<CurrentAgentService> {
-    return toCurrentAgentService(await this.getCurrentServiceRecord());
+    return toCurrentAgentService(
+      await this.getServiceRecord(DEFAULT_AGENT_SERVICE_PURPOSE),
+    );
+  }
+
+  async getAgentServiceForPurpose(
+    purpose: AgentServicePurpose,
+  ): Promise<CurrentAgentService> {
+    return toCurrentAgentService(await this.getServiceRecord(purpose));
   }
 
   async getCurrentAgentServiceStatus(): Promise<AgentServiceStatusSnapshot> {
-    const currentService = await this.options.stateStore.getCurrentService();
+    const serviceRecords = await this.options.stateStore.listServices();
+    const servicesByPurpose = toServicesByPurpose(serviceRecords);
+    const currentService =
+      servicesByPurpose[EXECUTION_AGENT_SERVICE_PURPOSE] ??
+      servicesByPurpose[PLANNING_AGENT_SERVICE_PURPOSE];
 
     if (!currentService) {
       return {
         hasCurrentService: false,
         currentService: null,
+        servicesByPurpose,
         connectionStatus: "not_configured",
         capabilityStatus: "not_ready",
         isUsable: false,
@@ -181,16 +217,23 @@ export class AgentAccessService {
 
     return {
       hasCurrentService: true,
-      currentService: toCurrentAgentService(currentService),
+      currentService,
+      servicesByPurpose,
       connectionStatus: currentService.connectionStatus,
       capabilityStatus: currentService.capabilityStatus,
-      isUsable: isCurrentServiceUsable(currentService),
-      warning: deriveStatusWarning(currentService),
+      isUsable: currentService.isUsable,
+      warning: deriveStatusWarningFromCurrentService(currentService),
     };
   }
 
   async verifyCurrentServiceConnection(): Promise<ConnectionVerificationResult> {
-    const currentService = await this.getCurrentServiceRecord();
+    return this.verifyServiceConnection(DEFAULT_AGENT_SERVICE_PURPOSE);
+  }
+
+  async verifyServiceConnection(
+    purpose: AgentServicePurpose,
+  ): Promise<ConnectionVerificationResult> {
+    const currentService = await this.getServiceRecord(purpose);
     const verifiedAt = this.now().toISOString();
 
     let connectionStatus: ConnectionVerificationResult["connectionStatus"];
@@ -223,7 +266,7 @@ export class AgentAccessService {
       updatedAt: verifiedAt,
     };
 
-    await this.options.stateStore.saveCurrentService(nextRecord);
+    await this.options.stateStore.saveService(nextRecord);
 
     return {
       agentServiceId: nextRecord.agentServiceId,
@@ -235,7 +278,13 @@ export class AgentAccessService {
   }
 
   async prepareCurrentAgentServiceCapabilities(): Promise<CapabilityProvisioningResult> {
-    const currentService = await this.getCurrentServiceRecord();
+    return this.prepareAgentServiceCapabilities(DEFAULT_AGENT_SERVICE_PURPOSE);
+  }
+
+  async prepareAgentServiceCapabilities(
+    purpose: AgentServicePurpose,
+  ): Promise<CapabilityProvisioningResult> {
+    const currentService = await this.getServiceRecord(purpose);
 
     if (currentService.connectionStatus !== "connected") {
       throw new AgentServiceOperationConflictError(
@@ -250,7 +299,7 @@ export class AgentAccessService {
       capabilityStatusReason: null,
       updatedAt: startedAt,
     };
-    await this.options.stateStore.saveCurrentService(preparingRecord);
+    await this.options.stateStore.saveService(preparingRecord);
 
     try {
       const providerAccess = await this.loadProviderAccess(preparingRecord);
@@ -268,7 +317,7 @@ export class AgentAccessService {
         updatedAt: finishedAt,
       };
 
-      await this.options.stateStore.saveCurrentService(nextRecord);
+      await this.options.stateStore.saveService(nextRecord);
 
       return {
         agentServiceId: nextRecord.agentServiceId,
@@ -287,7 +336,7 @@ export class AgentAccessService {
         updatedAt: finishedAt,
       };
 
-      await this.options.stateStore.saveCurrentService(nextRecord);
+      await this.options.stateStore.saveService(nextRecord);
 
       return {
         agentServiceId: nextRecord.agentServiceId,
@@ -303,7 +352,12 @@ export class AgentAccessService {
   async submitTaskPlanningRequest(
     request: TaskPlanningRequest,
   ): Promise<TaskPlanningResult> {
-    const providerAccess = await this.loadCurrentServiceForUpperLayerAccess();
+    const providerAccess = await this.loadServiceForPurpose(
+      PLANNING_AGENT_SERVICE_PURPOSE,
+      {
+        requireCapabilities: false,
+      },
+    );
     const normalizedRequest = normalizeTaskPlanningRequest(request);
     const session = await providerAccess.provider.createSession(
       providerAccess.context,
@@ -377,6 +431,8 @@ export class AgentAccessService {
 
       return {
         sessionId: session.sessionId,
+        providerCode: providerAccess.context.providerCode,
+        model: providerAccess.context.model,
         outputText: messageResult.outputText,
         history,
       };
@@ -504,7 +560,12 @@ export class AgentAccessService {
   async submitTaskExecutionRequest(
     request: TaskExecutionRequest,
   ): Promise<TaskExecutionResult> {
-    const providerAccess = await this.loadCurrentServiceForUpperLayerAccess();
+    const providerAccess = await this.loadServiceForPurpose(
+      EXECUTION_AGENT_SERVICE_PURPOSE,
+      {
+        requireCapabilities: false,
+      },
+    );
     const normalizedRequest = normalizeTaskExecutionRequest(request);
     const session = await providerAccess.provider.createSession(
       providerAccess.context,
@@ -612,8 +673,11 @@ export class AgentAccessService {
     this.options.stateStore.close();
   }
 
-  private async getCurrentServiceRecord(): Promise<AgentServiceConnectionRecord> {
-    const currentService = await this.options.stateStore.getCurrentService();
+  private async getServiceRecord(
+    purpose: AgentServicePurpose,
+  ): Promise<AgentServiceConnectionRecord> {
+    const currentService =
+      await this.options.stateStore.getServiceByPurpose(purpose);
 
     if (!currentService) {
       throw new CurrentAgentServiceNotFoundError();
@@ -626,22 +690,18 @@ export class AgentAccessService {
     provider: AgentProviderPort;
     context: AgentProviderContext;
   }> {
-    const currentService = await this.getCurrentServiceRecord();
-
-    if (currentService.connectionStatus !== "connected") {
-      throw new AgentServiceOperationConflictError(
-        "The current agent service must be connected before upper-layer access can be used.",
-      );
-    }
-
-    return this.loadProviderAccess(currentService);
+    return this.loadServiceForPurpose(EXECUTION_AGENT_SERVICE_PURPOSE, {
+      requireCapabilities: false,
+    });
   }
 
   private async loadCurrentServiceForTaskDecomposition(): Promise<{
     provider: AgentProviderPort;
     context: AgentProviderContext;
   }> {
-    const currentService = await this.getCurrentServiceRecord();
+    const currentService = await this.getServiceRecord(
+      PLANNING_AGENT_SERVICE_PURPOSE,
+    );
 
     if (currentService.connectionStatus !== "connected") {
       throw new AgentServiceOperationConflictError(
@@ -649,9 +709,44 @@ export class AgentAccessService {
       );
     }
 
+    if (currentService.providerCode !== CYBERNOMADS_AGENT_PROVIDER_CODE) {
+      throw new AgentServiceOperationConflictError(
+        "The planning provider must be configured as cybernomads-agent before task decomposition can be used.",
+      );
+    }
+
     if (currentService.capabilityStatus !== "ready") {
       throw new AgentServiceOperationConflictError(
         "The current agent service capabilities must be prepared before task decomposition can be used.",
+      );
+    }
+
+    return this.loadProviderAccess(currentService);
+  }
+
+  private async loadServiceForPurpose(
+    purpose: AgentServicePurpose,
+    options: {
+      requireCapabilities: boolean;
+    },
+  ): Promise<{
+    provider: AgentProviderPort;
+    context: AgentProviderContext;
+  }> {
+    const currentService = await this.getServiceRecord(purpose);
+
+    if (currentService.connectionStatus !== "connected") {
+      throw new AgentServiceOperationConflictError(
+        `The ${purpose} agent service must be connected before it can be used.`,
+      );
+    }
+
+    if (
+      options.requireCapabilities &&
+      currentService.capabilityStatus !== "ready"
+    ) {
+      throw new AgentServiceOperationConflictError(
+        `The ${purpose} agent service capabilities must be prepared before it can be used.`,
       );
     }
 
@@ -691,8 +786,11 @@ export class AgentAccessService {
       provider,
       context: {
         agentServiceId: currentService.agentServiceId,
+        purpose: currentService.serviceScope,
         providerCode: currentService.providerCode,
         endpointUrl: currentService.endpointUrl,
+        model: currentService.model,
+        reasoningEffort: currentService.reasoningEffort,
         authenticationKind: currentService.authenticationKind,
         credential,
       },
@@ -702,19 +800,88 @@ export class AgentAccessService {
 
 function normalizeServiceInput(
   input: ConfigureAgentServiceInput | UpdateAgentServiceInput,
-): ConfigureAgentServiceInput | UpdateAgentServiceInput {
+): NormalizedAgentServiceInput {
   const providerCode = normalizeRequiredString(
     input.providerCode,
     "Provider code is required.",
   );
+  const purpose = normalizeServicePurpose(
+    input.purpose ?? inferDefaultPurpose(providerCode),
+  );
   const endpointUrl = normalizeEndpointUrl(input.endpointUrl);
+  const model = normalizeOptionalString(input.model, "Model must be a string.");
+  let reasoningEffort = normalizeReasoningEffort(input.reasoningEffort);
   const authentication = normalizeAuthenticationInput(input.authentication);
 
+  ensureProviderPurposeBoundary(providerCode, purpose);
+
+  if (normalizeCode(providerCode) === CYBERNOMADS_AGENT_PROVIDER_CODE) {
+    if (!model) {
+      throw new AgentServiceValidationError(
+        "Cybernomads Agent model is required.",
+      );
+    }
+
+    reasoningEffort ??= "low";
+  }
+
   return {
+    purpose,
     providerCode,
     endpointUrl,
+    model,
+    reasoningEffort,
     authentication,
   };
+}
+
+function inferDefaultPurpose(providerCode: string): AgentServicePurpose {
+  switch (normalizeCode(providerCode)) {
+    case CYBERNOMADS_AGENT_PROVIDER_CODE:
+      return PLANNING_AGENT_SERVICE_PURPOSE;
+    case OPENCLAW_PROVIDER_CODE:
+      return EXECUTION_AGENT_SERVICE_PURPOSE;
+    default:
+      return DEFAULT_AGENT_SERVICE_PURPOSE;
+  }
+}
+
+function normalizeServicePurpose(value: unknown): AgentServicePurpose {
+  if (
+    value === PLANNING_AGENT_SERVICE_PURPOSE ||
+    value === EXECUTION_AGENT_SERVICE_PURPOSE
+  ) {
+    return value;
+  }
+
+  throw new AgentServiceValidationError(
+    'Agent service purpose must be "planning" or "execution".',
+  );
+}
+
+function ensureProviderPurposeBoundary(
+  providerCode: string,
+  purpose: AgentServicePurpose,
+): void {
+  const normalizedProviderCode = normalizeCode(providerCode);
+
+  if (
+    normalizedProviderCode === CYBERNOMADS_AGENT_PROVIDER_CODE &&
+    purpose !== PLANNING_AGENT_SERVICE_PURPOSE
+  ) {
+    throw new AgentServiceValidationError(
+      "Cybernomads Agent can only be configured for planning.",
+    );
+  }
+
+  if (
+    normalizedProviderCode === OPENCLAW_PROVIDER_CODE &&
+    purpose !== EXECUTION_AGENT_SERVICE_PURPOSE
+  ) {
+    throw new AgentServiceValidationError(
+      "OpenClaw can only be configured for execution.",
+    );
+  }
 }
 
 function normalizeAuthenticationInput(
@@ -755,7 +922,7 @@ function normalizeEndpointUrl(endpointUrl: string): string {
   }
 }
 
-function normalizeRequiredString(value: string, message: string): string {
+function normalizeRequiredString(value: unknown, message: string): string {
   if (typeof value !== "string") {
     throw new AgentServiceValidationError(message);
   }
@@ -767,6 +934,31 @@ function normalizeRequiredString(value: string, message: string): string {
   }
 
   return normalizedValue;
+}
+
+function normalizeOptionalString(
+  value: unknown,
+  message: string,
+): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return normalizeRequiredString(value, message);
+}
+
+function normalizeReasoningEffort(value: unknown): AgentReasoningEffort | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (value === "low" || value === "medium" || value === "high") {
+    return value;
+  }
+
+  throw new AgentServiceValidationError(
+    'Reasoning effort must be "low", "medium", or "high".',
+  );
 }
 
 function normalizeCode(value: string): string {
@@ -782,8 +974,11 @@ function toCurrentAgentService(
 ): CurrentAgentService {
   return {
     agentServiceId: record.agentServiceId,
+    purpose: record.serviceScope,
     providerCode: record.providerCode,
     endpointUrl: record.endpointUrl,
+    model: record.model,
+    reasoningEffort: record.reasoningEffort,
     authenticationKind: record.authenticationKind,
     hasCredential: record.credentialRef.length > 0,
     connectionStatus: record.connectionStatus,
@@ -804,8 +999,8 @@ function isCurrentServiceUsable(record: AgentServiceConnectionRecord): boolean {
   return record.connectionStatus === "connected";
 }
 
-function deriveStatusWarning(
-  record: AgentServiceConnectionRecord,
+function deriveStatusWarningFromCurrentService(
+  record: CurrentAgentService,
 ): string | null {
   if (record.connectionStatus === "connection_failed") {
     return (
@@ -830,6 +1025,25 @@ function deriveStatusWarning(
   }
 
   return null;
+}
+
+function toServicesByPurpose(
+  records: AgentServiceConnectionRecord[],
+): Record<AgentServicePurpose, CurrentAgentService | null> {
+  return {
+    [PLANNING_AGENT_SERVICE_PURPOSE]:
+      toCurrentServiceForPurpose(records, PLANNING_AGENT_SERVICE_PURPOSE),
+    [EXECUTION_AGENT_SERVICE_PURPOSE]:
+      toCurrentServiceForPurpose(records, EXECUTION_AGENT_SERVICE_PURPOSE),
+  };
+}
+
+function toCurrentServiceForPurpose(
+  records: AgentServiceConnectionRecord[],
+  purpose: AgentServicePurpose,
+): CurrentAgentService | null {
+  const record = records.find((item) => item.serviceScope === purpose);
+  return record ? toCurrentAgentService(record) : null;
 }
 
 function normalizeTaskPlanningRequest(

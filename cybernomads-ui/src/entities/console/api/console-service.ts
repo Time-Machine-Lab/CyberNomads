@@ -8,13 +8,16 @@ function mapStatusToOverview(status: AgentServiceStatusSnapshotDto): ConsoleOver
       state: 'not_configured',
       statusLabel: '尚未配置',
       statusTone: 'error',
-      actionLabel: '配置 OpenClaw',
-      description: status.warning ?? '当前还没有可用的 Agent 服务。请先配置 OpenClaw，完成连接测试后再继续创建推广工作。',
+      actionLabel: '配置 Cybernomads Agent LLM',
+      description:
+        status.warning ??
+        '当前还没有可用的 Agent 服务。请先配置任务拆分 / Review 使用的 Cybernomads Agent LLM，再配置 OpenClaw 执行器。',
       connectionStatus: 'not_configured',
       capabilityStatus: 'not_ready',
       hasCurrentService: false,
       isUsable: false,
       currentService: null,
+      servicesByPurpose: status.servicesByPurpose,
       warning: status.warning,
     }
   }
@@ -33,6 +36,7 @@ function mapStatusToOverview(status: AgentServiceStatusSnapshotDto): ConsoleOver
       hasCurrentService: true,
       isUsable: false,
       currentService: service,
+      servicesByPurpose: status.servicesByPurpose,
       warning: status.warning,
     }
   }
@@ -49,6 +53,7 @@ function mapStatusToOverview(status: AgentServiceStatusSnapshotDto): ConsoleOver
       hasCurrentService: true,
       isUsable: false,
       currentService: service,
+      servicesByPurpose: status.servicesByPurpose,
       warning: status.warning,
     }
   }
@@ -67,6 +72,7 @@ function mapStatusToOverview(status: AgentServiceStatusSnapshotDto): ConsoleOver
       hasCurrentService: true,
       isUsable: service.isUsable,
       currentService: service,
+      servicesByPurpose: status.servicesByPurpose,
       warning: status.warning,
     }
   }
@@ -83,6 +89,7 @@ function mapStatusToOverview(status: AgentServiceStatusSnapshotDto): ConsoleOver
       hasCurrentService: true,
       isUsable: service.isUsable,
       currentService: service,
+      servicesByPurpose: status.servicesByPurpose,
       warning: status.warning,
     }
   }
@@ -98,6 +105,7 @@ function mapStatusToOverview(status: AgentServiceStatusSnapshotDto): ConsoleOver
     hasCurrentService: true,
     isUsable: service.isUsable,
     currentService: service,
+    servicesByPurpose: status.servicesByPurpose,
     warning: status.warning,
   }
 }
@@ -119,6 +127,7 @@ export async function getConsoleOverview(): Promise<ConsoleOverviewRecord> {
       hasCurrentService: false,
       isUsable: false,
       currentService: null,
+      servicesByPurpose: undefined,
       warning: recoverable.message,
     }
   }

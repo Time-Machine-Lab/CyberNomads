@@ -115,12 +115,20 @@ export class AgentAccessTrafficWorkContextPreparationAdapter implements TrafficW
       },
     });
 
-    return this.options.agentAccessService.submitTaskDecompositionRequest({
+    const submission =
+      await this.options.agentAccessService.submitTaskDecompositionRequest({
       trafficWorkId: input.trafficWorkId,
       title: `traffic-work:${input.trafficWorkId}`,
       context: input.contextMarkdown,
       prompt,
     });
+
+    return {
+      decompositionRunId: submission.sessionId,
+      status: "running",
+      stage: "planning",
+      summary: `Legacy task decomposition request submitted. messageId=${submission.messageId}`,
+    };
   }
 }
 

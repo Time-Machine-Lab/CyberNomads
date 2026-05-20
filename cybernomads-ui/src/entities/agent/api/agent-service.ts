@@ -5,17 +5,20 @@ import type {
   AgentNodeStatus,
   AgentServiceCapabilityStatus,
   AgentServiceConnectionStatus,
+  AgentServicePurpose,
   AgentServiceStatusSnapshotDto,
   CapabilityProvisioningResultDto,
   ConfigureAgentServiceRequest,
   ConnectionVerificationResultDto,
   CurrentAgentServiceDto,
+  CybernomadsAgentLlmSetupFormInput,
   OpenClawSetupFormInput,
   UpdateAgentServiceRequest,
 } from '@/entities/agent/model/types'
 import { HttpClientError, requestJson } from '@/shared/api/http-client'
 
 const AGENT_SERVICE_API_ROOT = '/agent-services/current'
+const AGENT_SERVICE_PURPOSE_ROOT = '/agent-services'
 
 function mapConnectionStatusToNodeStatus(status: AgentServiceConnectionStatus): AgentNodeStatus {
   if (status === 'connected') return 'active'
@@ -30,9 +33,11 @@ function mapCapabilityStatus(status: AgentServiceCapabilityStatus): AgentCapabil
 }
 
 function mapCurrentServiceToAgentNode(dto: CurrentAgentServiceDto): AgentNodeRecord {
+  const isPlanning = dto.purpose === 'planning' || dto.providerCode === 'cybernomads-agent'
+
   return {
     id: dto.agentServiceId,
-    name: `${dto.providerCode || 'Agent'} Service`,
+    name: isPlanning ? 'Cybernomads Agent LLM' : 'OpenClaw Executor',
     type: dto.providerCode === 'openclaw' ? 'openclaw' : 'bridge',
     endpoint: dto.endpointUrl,
     status: mapConnectionStatusToNodeStatus(dto.connectionStatus),
@@ -40,14 +45,16 @@ function mapCurrentServiceToAgentNode(dto: CurrentAgentServiceDto): AgentNodeRec
     notes:
       dto.connectionStatusReason ??
       dto.capabilityStatusReason ??
-      (dto.isUsable ? 'Current agent service is connected.' : 'Current agent service needs verification.'),
-    roleLabel: dto.providerCode,
-    versionLabel: dto.authenticationKind,
+      (isPlanning
+        ? 'Planning and Review provider for Cybernomads Agent.'
+        : 'Execution provider for confirmed single tasks.'),
+    roleLabel: dto.purpose ?? dto.providerCode,
+    versionLabel: dto.model ?? dto.authenticationKind,
     badgeLabel: dto.isUsable ? 'CURRENT' : 'NEEDS_ATTENTION',
     config: {
       installPath: '',
       gatewayUrl: dto.endpointUrl,
-      authToken: dto.hasCredential ? '********' : '',
+      authToken: dto.hasCredential ? 'stored credential' : '',
       parallelLimit: 8,
       diagnosticsStatus: dto.connectionStatus === 'connected' ? 'connected' : 'offline',
       diagnosticsLogs: [
@@ -65,6 +72,22 @@ function mapOpenClawSetupToRequest(input: OpenClawSetupFormInput): ConfigureAgen
     authentication: {
       kind: input.authenticationKind,
       secret: input.secret,
+    },
+  }
+}
+
+function mapCybernomadsAgentLlmSetupToRequest(
+  input: CybernomadsAgentLlmSetupFormInput,
+): ConfigureAgentServiceRequest {
+  return {
+    providerCode: 'cybernomads-agent',
+    purpose: 'planning',
+    endpointUrl: input.endpointUrl,
+    model: input.model,
+    reasoningEffort: input.reasoningEffort,
+    authentication: {
+      kind: 'api-key',
+      secret: input.apiKey,
     },
   }
 }
@@ -115,6 +138,20 @@ export async function getCurrentAgentServiceStatus(): Promise<AgentServiceStatus
   }
 }
 
+export async function getAgentServiceForPurpose(
+  purpose: AgentServicePurpose,
+): Promise<CurrentAgentServiceDto | null> {
+  try {
+    return await requestJson<CurrentAgentServiceDto>(`${AGENT_SERVICE_PURPOSE_ROOT}/${purpose}`)
+  } catch (error) {
+    if (error instanceof HttpClientError && error.status === 404) {
+      return null
+    }
+
+    throw error
+  }
+}
+
 export async function configureCurrentAgentService(
   input: ConfigureAgentServiceRequest,
 ): Promise<CurrentAgentServiceDto> {
@@ -133,10 +170,41 @@ export async function updateCurrentAgentService(
   })
 }
 
+export async function configureAgentServiceForPurpose(
+  purpose: AgentServicePurpose,
+  input: ConfigureAgentServiceRequest,
+): Promise<CurrentAgentServiceDto> {
+  return requestJson<CurrentAgentServiceDto>(`${AGENT_SERVICE_PURPOSE_ROOT}/${purpose}`, {
+    method: 'POST',
+    body: input,
+  })
+}
+
+export async function updateAgentServiceForPurpose(
+  purpose: AgentServicePurpose,
+  input: UpdateAgentServiceRequest,
+): Promise<CurrentAgentServiceDto> {
+  return requestJson<CurrentAgentServiceDto>(`${AGENT_SERVICE_PURPOSE_ROOT}/${purpose}`, {
+    method: 'PUT',
+    body: input,
+  })
+}
+
 export async function verifyCurrentAgentServiceConnection(): Promise<ConnectionVerificationResultDto> {
   return requestJson<ConnectionVerificationResultDto>(`${AGENT_SERVICE_API_ROOT}/connection-verification`, {
     method: 'POST',
   })
+}
+
+export async function verifyAgentServiceConnectionForPurpose(
+  purpose: AgentServicePurpose,
+): Promise<ConnectionVerificationResultDto> {
+  return requestJson<ConnectionVerificationResultDto>(
+    `${AGENT_SERVICE_PURPOSE_ROOT}/${purpose}/connection-verification`,
+    {
+      method: 'POST',
+    },
+  )
 }
 
 export async function prepareCurrentAgentServiceCapabilities(): Promise<CapabilityProvisioningResultDto> {
@@ -145,20 +213,75 @@ export async function prepareCurrentAgentServiceCapabilities(): Promise<Capabili
   })
 }
 
+export async function prepareAgentServiceCapabilitiesForPurpose(
+  purpose: AgentServicePurpose,
+): Promise<CapabilityProvisioningResultDto> {
+  return requestJson<CapabilityProvisioningResultDto>(
+    `${AGENT_SERVICE_PURPOSE_ROOT}/${purpose}/capability-provisioning`,
+    {
+      method: 'POST',
+    },
+  )
+}
+
 export async function listAgentNodes(): Promise<AgentNodeRecord[]> {
   const status = await getCurrentAgentServiceStatus()
+  const services = status.servicesByPurpose
+
+  if (services) {
+    const planningNode = services.planning
+      ? mapCurrentServiceToAgentNode(services.planning)
+      : {
+          id: 'planning-agent-service',
+          name: 'Cybernomads Agent LLM',
+          type: 'bridge' as const,
+          endpoint: '',
+          status: 'missing' as const,
+          capabilityStatus: 'missing' as const,
+          notes: 'Planning and Review provider is not configured.',
+          roleLabel: 'planning',
+          badgeLabel: 'REQUIRED',
+        }
+
+    const executionNode = services.execution
+      ? mapCurrentServiceToAgentNode(services.execution)
+      : {
+          id: 'execution-agent-service',
+          name: 'OpenClaw Executor',
+          type: 'openclaw' as const,
+          endpoint: '',
+          status: 'missing' as const,
+          capabilityStatus: 'missing' as const,
+          notes: 'Execution provider for confirmed single tasks is not configured.',
+          roleLabel: 'execution',
+          badgeLabel: 'REQUIRED',
+        }
+
+    return [planningNode, executionNode]
+  }
 
   if (!status.currentService) {
     return [
       {
-        id: 'current-agent-service',
-        name: 'OpenClaw Service',
+        id: 'planning-agent-service',
+        name: 'Cybernomads Agent LLM',
+        type: 'bridge',
+        endpoint: '',
+        status: 'missing',
+        capabilityStatus: 'missing',
+        notes: 'Planning and Review provider is not configured.',
+        roleLabel: 'planning',
+        badgeLabel: 'REQUIRED',
+      },
+      {
+        id: 'execution-agent-service',
+        name: 'OpenClaw Executor',
         type: 'openclaw',
         endpoint: '',
         status: 'missing',
         capabilityStatus: 'missing',
-        notes: status.warning ?? 'No current agent service is configured.',
-        roleLabel: 'openclaw',
+        notes: status.warning ?? 'Execution provider for confirmed single tasks is not configured.',
+        roleLabel: 'execution',
         badgeLabel: 'REQUIRED',
       },
     ]
@@ -174,4 +297,15 @@ export async function saveOpenClawConfig(input: OpenClawSetupFormInput): Promise
   return existing
     ? updateCurrentAgentService(request)
     : configureCurrentAgentService(request)
+}
+
+export async function saveCybernomadsAgentLlmConfig(
+  input: CybernomadsAgentLlmSetupFormInput,
+): Promise<CurrentAgentServiceDto> {
+  const request = mapCybernomadsAgentLlmSetupToRequest(input)
+  const existing = await getAgentServiceForPurpose('planning')
+
+  return existing
+    ? updateAgentServiceForPurpose('planning', request)
+    : configureAgentServiceForPurpose('planning', request)
 }

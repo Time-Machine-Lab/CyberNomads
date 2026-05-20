@@ -8,6 +8,7 @@ import type { AgentServiceStateStore } from "../../src/ports/agent-service-state
 import type {
   AgentServiceConnectionRecord,
   AgentServiceCredentialRecord,
+  AgentServicePurpose,
 } from "../../src/modules/agent-access/types.js";
 
 describe("openclaw agent provider", () => {
@@ -372,16 +373,30 @@ class FakeOpenClawWsClient {
 }
 
 class InMemoryAgentServiceStateStore implements AgentServiceStateStore {
-  private currentService: AgentServiceConnectionRecord | undefined;
+  private readonly services = new Map<
+    AgentServicePurpose,
+    AgentServiceConnectionRecord
+  >();
 
-  async getCurrentService(): Promise<AgentServiceConnectionRecord | undefined> {
-    return this.currentService;
+  async getServiceByPurpose(
+    purpose: AgentServicePurpose,
+  ): Promise<AgentServiceConnectionRecord | undefined> {
+    const service = this.services.get(purpose);
+    return service ? { ...service, providerSettings: { ...service.providerSettings } } : undefined;
   }
 
-  async saveCurrentService(
-    record: AgentServiceConnectionRecord,
-  ): Promise<void> {
-    this.currentService = { ...record };
+  async listServices(): Promise<AgentServiceConnectionRecord[]> {
+    return Array.from(this.services.values()).map((service) => ({
+      ...service,
+      providerSettings: { ...service.providerSettings },
+    }));
+  }
+
+  async saveService(record: AgentServiceConnectionRecord): Promise<void> {
+    this.services.set(record.serviceScope, {
+      ...record,
+      providerSettings: { ...record.providerSettings },
+    });
   }
 
   close(): void {}
@@ -420,8 +435,11 @@ class InMemoryAgentServiceCredentialStore implements AgentServiceCredentialStore
 function createProviderContext(): AgentProviderContext {
   return {
     agentServiceId: "agent-service-1",
+    purpose: "execution",
     providerCode: "openclaw",
     endpointUrl: "http://127.0.0.1:18889",
+    model: null,
+    reasoningEffort: null,
     authenticationKind: "bearer-token",
     credential: {
       kind: "bearer-token",

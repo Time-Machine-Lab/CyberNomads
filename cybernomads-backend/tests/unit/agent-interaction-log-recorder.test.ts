@@ -42,18 +42,23 @@ describe("agent interaction log recorder", () => {
             status: "completed",
             input: {
               token: "raw-secret-token",
+              providerSecret: "raw-provider-secret",
             },
           },
         ],
         messages: [
           {
             role: "tool",
-            content: "tool output",
+            content:
+              "tool output with apiKey=raw-api-key and Authorization: Bearer raw-auth-token",
             createdAt: "2026-05-11T08:00:01.000Z",
           },
         ],
         payload: {
           secret: "raw-secret-token",
+          apiKey: "raw-api-key",
+          providerSecret: "raw-provider-secret",
+          authorization: "Bearer raw-auth-token",
         },
       },
       () => new Date("2026-05-11T08:00:00.000Z"),
@@ -68,6 +73,9 @@ describe("agent interaction log recorder", () => {
     expect(text).toContain("### Message 1 | tool");
     expect(text).toContain("[REDACTED]");
     expect(text).not.toContain("raw-secret-token");
+    expect(text).not.toContain("raw-api-key");
+    expect(text).not.toContain("raw-provider-secret");
+    expect(text).not.toContain("raw-auth-token");
   });
 
   it("writes deterministic .logs files and skips writes when disabled", async () => {

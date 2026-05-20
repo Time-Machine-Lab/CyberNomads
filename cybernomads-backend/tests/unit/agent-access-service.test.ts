@@ -20,6 +20,7 @@ import type {
   AgentConversationMessage,
   AgentServiceConnectionRecord,
   AgentServiceCredentialRecord,
+  AgentServicePurpose,
 } from "../../src/modules/agent-access/types.js";
 import type {
   AgentInteractionLogEvent,
@@ -30,24 +31,38 @@ describe("agent access service", () => {
   it("forwards task planning and task execution through the provider-neutral port", async () => {
     const stateStore = new InMemoryAgentServiceStateStore();
     const credentialStore = new InMemoryAgentServiceCredentialStore();
-    const provider = new FakeAgentProvider("openclaw");
+    const planningProvider = new FakeAgentProvider("cybernomads-agent");
+    const executionProvider = new FakeAgentProvider("openclaw");
     const service = new AgentAccessService({
       stateStore,
       credentialStore,
-      providers: [provider],
+      providers: [planningProvider, executionProvider],
       now: () => new Date("2026-04-21T08:00:00.000Z"),
-      createAgentServiceId: () => "agent-service-1",
+      createAgentServiceId: createSequentialId("agent-service"),
     });
 
     await service.configureCurrentService({
+      purpose: "planning",
+      providerCode: "cybernomads-agent",
+      endpointUrl: "http://gpt.local/v1",
+      model: "gpt-5.5",
+      reasoningEffort: "low",
+      authentication: {
+        kind: "api-key",
+        secret: "planning-secret",
+      },
+    });
+    await service.verifyServiceConnection("planning");
+
+    await service.configureCurrentService({
+      purpose: "execution",
       providerCode: "openclaw",
       endpointUrl: "http://agent.local:3001",
       authentication: {
         kind: "bearer-token",
-        secret: "secret-token",
+        secret: "execution-secret",
       },
     });
-
     await service.verifyCurrentServiceConnection();
 
     const planningResult = await service.submitTaskPlanningRequest({
@@ -81,39 +96,44 @@ describe("agent access service", () => {
 
     expect(executionResult.status).toBe("completed");
     expect(executionResult.outputText).toContain("Execute the first task.");
-    expect(executionResult.executionId).toBe("task-1:message-2");
-    expect(provider.createSessionCalls).toEqual([
+    expect(executionResult.executionId).toBe("task-1:message-1");
+    expect(planningProvider.createSessionCalls).toEqual([
       {
         purpose: "task_planning",
         title: "planning",
         context: "workspace alpha",
       },
+    ]);
+    expect(executionProvider.createSessionCalls).toEqual([
       {
         purpose: "task_execution",
         title: "execution",
         context: "D:/cybernomads/work/demo",
       },
     ]);
-    expect(provider.sendMessageCalls).toEqual([
+    expect(planningProvider.sendMessageCalls).toEqual([
       {
         sessionId: "session-1",
         message: expect.stringContaining("$cybernomads-task-decomposition"),
       },
+    ]);
+    expect(executionProvider.sendMessageCalls).toEqual([
       {
-        sessionId: "session-2",
+        sessionId: "session-1",
         message: expect.stringContaining("$cybernomads-task-execution"),
       },
     ]);
-    expect(provider.sendMessageCalls[0]?.message).toContain(
+    expect(planningProvider.sendMessageCalls[0]?.message).toContain(
       "Plan tasks for the launch.",
     );
-    expect(provider.sendMessageCalls[0]?.message).toContain(
+    expect(planningProvider.sendMessageCalls[0]?.message).toContain(
       "$cybernomads-task-decomposition",
     );
-    expect(provider.sendMessageCalls[1]?.message).toContain(
+    expect(executionProvider.sendMessageCalls[0]?.message).toContain(
       "Execute the first task.",
     );
-    expect(provider.submitMessageCalls).toEqual([]);
+    expect(planningProvider.submitMessageCalls).toEqual([]);
+    expect(executionProvider.submitMessageCalls).toEqual([]);
   });
 
   it("rejects upper-layer access until the current agent service is connected", async () => {
@@ -134,8 +154,9 @@ describe("agent access service", () => {
     });
 
     await expect(
-      service.submitTaskPlanningRequest({
-        prompt: "Plan tasks for the launch.",
+      service.submitTaskExecutionRequest({
+        taskId: "task-1",
+        instructions: "Execute the first task.",
       }),
     ).rejects.toMatchObject({
       code: "AGENT_SERVICE_OPERATION_NOT_ALLOWED",
@@ -145,7 +166,7 @@ describe("agent access service", () => {
   it("submits task decomposition requests without waiting for agent completion", async () => {
     const stateStore = new InMemoryAgentServiceStateStore();
     const credentialStore = new InMemoryAgentServiceCredentialStore();
-    const provider = new FakeAgentProvider("openclaw");
+    const provider = new FakeAgentProvider("cybernomads-agent");
     const service = new AgentAccessService({
       stateStore,
       credentialStore,
@@ -155,15 +176,18 @@ describe("agent access service", () => {
     });
 
     await service.configureCurrentService({
-      providerCode: "openclaw",
-      endpointUrl: "http://agent.local:3001",
+      purpose: "planning",
+      providerCode: "cybernomads-agent",
+      endpointUrl: "http://gpt.local/v1",
+      model: "gpt-5.5",
+      reasoningEffort: "low",
       authentication: {
-        kind: "bearer-token",
+        kind: "api-key",
         secret: "secret-token",
       },
     });
-    await service.verifyCurrentServiceConnection();
-    await service.prepareCurrentAgentServiceCapabilities();
+    await service.verifyServiceConnection("planning");
+    await service.prepareAgentServiceCapabilities("planning");
 
     const result = await service.submitTaskDecompositionRequest({
       prompt: "Decompose the current traffic work.",
@@ -189,27 +213,41 @@ describe("agent access service", () => {
   it("records decomposition submission and task execution history without exposing provider-specific contracts", async () => {
     const stateStore = new InMemoryAgentServiceStateStore();
     const credentialStore = new InMemoryAgentServiceCredentialStore();
-    const provider = new FakeAgentProvider("openclaw");
+    const planningProvider = new FakeAgentProvider("cybernomads-agent");
+    const executionProvider = new FakeAgentProvider("openclaw");
     const recorder = new InMemoryAgentInteractionLogRecorder();
     const service = new AgentAccessService({
       stateStore,
       credentialStore,
-      providers: [provider],
+      providers: [planningProvider, executionProvider],
       agentInteractionLogRecorder: recorder,
       now: () => new Date("2026-05-11T08:00:00.000Z"),
-      createAgentServiceId: () => "agent-service-1",
+      createAgentServiceId: createSequentialId("agent-service"),
     });
 
     await service.configureCurrentService({
+      purpose: "planning",
+      providerCode: "cybernomads-agent",
+      endpointUrl: "http://gpt.local/v1",
+      model: "gpt-5.5",
+      reasoningEffort: "low",
+      authentication: {
+        kind: "api-key",
+        secret: "planning-secret",
+      },
+    });
+    await service.verifyServiceConnection("planning");
+    await service.prepareAgentServiceCapabilities("planning");
+    await service.configureCurrentService({
+      purpose: "execution",
       providerCode: "openclaw",
       endpointUrl: "http://agent.local:3001",
       authentication: {
         kind: "bearer-token",
-        secret: "secret-token",
+        secret: "execution-secret",
       },
     });
     await service.verifyCurrentServiceConnection();
-    await service.prepareCurrentAgentServiceCapabilities();
 
     await service.submitTaskDecompositionRequest({
       trafficWorkId: "traffic-work-1",
@@ -238,7 +276,7 @@ describe("agent access service", () => {
       correlation: {
         trafficWorkId: "traffic-work-1",
         sessionId: "session-1",
-        providerCode: "openclaw",
+        providerCode: "cybernomads-agent",
       },
       skills: ["cybernomads-task-decomposition"],
     });
@@ -249,8 +287,8 @@ describe("agent access service", () => {
       },
       correlation: {
         taskId: "task-1",
-        sessionId: "session-2",
-        messageId: "message-2",
+        sessionId: "session-1",
+        messageId: "message-1",
       },
       output: {
         status: "completed",
@@ -276,7 +314,7 @@ describe("agent access service", () => {
   it("does not fail agent submission when interaction logging fails", async () => {
     const stateStore = new InMemoryAgentServiceStateStore();
     const credentialStore = new InMemoryAgentServiceCredentialStore();
-    const provider = new FakeAgentProvider("openclaw");
+    const provider = new FakeAgentProvider("cybernomads-agent");
     const service = new AgentAccessService({
       stateStore,
       credentialStore,
@@ -287,15 +325,18 @@ describe("agent access service", () => {
     });
 
     await service.configureCurrentService({
-      providerCode: "openclaw",
-      endpointUrl: "http://agent.local:3001",
+      purpose: "planning",
+      providerCode: "cybernomads-agent",
+      endpointUrl: "http://gpt.local/v1",
+      model: "gpt-5.5",
+      reasoningEffort: "low",
       authentication: {
-        kind: "bearer-token",
+        kind: "api-key",
         secret: "secret-token",
       },
     });
-    await service.verifyCurrentServiceConnection();
-    await service.prepareCurrentAgentServiceCapabilities();
+    await service.verifyServiceConnection("planning");
+    await service.prepareAgentServiceCapabilities("planning");
 
     await expect(
       service.submitTaskDecompositionRequest({
@@ -312,16 +353,30 @@ describe("agent access service", () => {
 });
 
 class InMemoryAgentServiceStateStore implements AgentServiceStateStore {
-  private currentService: AgentServiceConnectionRecord | undefined;
+  private readonly services = new Map<
+    AgentServicePurpose,
+    AgentServiceConnectionRecord
+  >();
 
-  async getCurrentService(): Promise<AgentServiceConnectionRecord | undefined> {
-    return this.currentService;
+  async getServiceByPurpose(
+    purpose: AgentServicePurpose,
+  ): Promise<AgentServiceConnectionRecord | undefined> {
+    const service = this.services.get(purpose);
+    return service ? { ...service, providerSettings: { ...service.providerSettings } } : undefined;
   }
 
-  async saveCurrentService(
-    record: AgentServiceConnectionRecord,
-  ): Promise<void> {
-    this.currentService = { ...record };
+  async listServices(): Promise<AgentServiceConnectionRecord[]> {
+    return Array.from(this.services.values()).map((service) => ({
+      ...service,
+      providerSettings: { ...service.providerSettings },
+    }));
+  }
+
+  async saveService(record: AgentServiceConnectionRecord): Promise<void> {
+    this.services.set(record.serviceScope, {
+      ...record,
+      providerSettings: { ...record.providerSettings },
+    });
   }
 
   close(): void {}
@@ -502,4 +557,13 @@ class FailingAgentInteractionLogRecorder
     void _event;
     throw new Error("log write failed");
   }
+}
+
+function createSequentialId(prefix: string): () => string {
+  let tick = 0;
+
+  return () => {
+    tick += 1;
+    return `${prefix}-${tick}`;
+  };
 }

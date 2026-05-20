@@ -68,7 +68,7 @@ describe("traffic work service", () => {
     expect(created.lifecycleStatus).toBe("ready");
     expect(created.contextPreparationStatus).toBe("pending");
     expect(created.contextPreparationStatusReason).toContain(
-      "Task decomposition request submitted to agent service.",
+      "Cybernomads Agent task decomposition is waiting for user confirmation.",
     );
     expect(created.contextPreparedAt).toBeNull();
     expect(contextPreparation.inputs).toHaveLength(1);
@@ -112,7 +112,7 @@ describe("traffic work service", () => {
     expect(updated.strategy.name).toBe("Retention Strategy");
     expect(updated.contextPreparationStatus).toBe("pending");
     expect(updated.contextPreparationStatusReason).toContain(
-      "Task decomposition replace request submitted to agent service.",
+      "Cybernomads Agent task decomposition is waiting for user confirmation.",
     );
     expect(contextPreparation.inputs).toHaveLength(2);
 
@@ -460,8 +460,10 @@ class InMemoryStrategyStore
 
 function createPreparationSubmissionResult() {
   return {
-    sessionId: "session-1",
-    messageId: "message-1",
+    decompositionRunId: "run-1",
+    status: "waiting_user_confirmation" as const,
+    stage: "waiting_user_confirmation",
+    summary: "Review passed.",
   };
 }
 

@@ -92,8 +92,10 @@ describe("traffic work context preparation adapter", () => {
     const result = await adapter.prepareContext(createInput(workDirectory));
 
     expect(result).toEqual({
-      sessionId: "session-1",
-      messageId: "message-1",
+      decompositionRunId: "session-1",
+      status: "running",
+      stage: "planning",
+      summary: "Legacy task decomposition request submitted. messageId=message-1",
     });
     expect(submitTaskDecompositionRequest).toHaveBeenCalledTimes(1);
     const request = submitTaskDecompositionRequest.mock.calls[0]?.[0];
@@ -273,6 +275,7 @@ function createInput(workDirectory: string): PrepareTrafficWorkContextInput {
       knowledgeDirectory: join(workDirectory, "knowledge"),
       dataDirectory: join(workDirectory, "data"),
     },
+    taskSetMode: "create",
   };
 }
 

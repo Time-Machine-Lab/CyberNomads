@@ -6,10 +6,12 @@ import {
   type BootstrapRuntimeResult,
 } from "./bootstrap-runtime.js";
 import { BilibiliStubAccountPlatformAdapter } from "../adapters/platform/bilibili/bilibili-stub-account-platform-adapter.js";
-import { AgentAccessTrafficWorkContextPreparationAdapter } from "../adapters/agent/traffic-work-context-preparation-adapter.js";
+import { CybernomadsAgentProvider } from "../adapters/agent/cybernomads-agent/cybernomads-agent-provider.js";
+import { CybernomadsAgentTrafficWorkContextPreparationAdapter } from "../adapters/agent/cybernomads-agent/cybernomads-agent-context-preparation-adapter.js";
 import { FileSystemAgentInteractionLogRecorder } from "../adapters/storage/file-system/agent-interaction-log-recorder.js";
 import { FileSystemAccountSecretStore } from "../adapters/storage/file-system/account-secret-store.js";
 import { FileSystemAgentServiceCredentialStore } from "../adapters/storage/file-system/agent-service-credential-store.js";
+import { FileSystemTaskDecompositionArchiveStore } from "../adapters/storage/file-system/task-decomposition-archive-store.js";
 import { FileSystemProductContentStore } from "../adapters/storage/file-system/product-content-store.js";
 import { FileSystemRuntimeAgentResourceStore } from "../adapters/storage/file-system/runtime-agent-resource-store.js";
 import { FileSystemTrafficWorkContextStore } from "../adapters/storage/file-system/traffic-work-context-store.js";
@@ -24,15 +26,20 @@ import {
   SqliteStrategyRepository,
 } from "../adapters/storage/sqlite/strategies-sqlite-repository.js";
 import { SqliteTaskRepository } from "../adapters/storage/sqlite/tasks-sqlite-repository.js";
+import { SqliteTaskDecompositionRunRepository } from "../adapters/storage/sqlite/task-decomposition-runs-sqlite-repository.js";
 import { SqliteTrafficWorkRepository } from "../adapters/storage/sqlite/traffic-works-sqlite-repository.js";
 import { AccountAccessSessionService } from "../modules/account-access-sessions/service.js";
 import { AgentAccessService } from "../modules/agent-access/service.js";
 import { AccountService } from "../modules/accounts/service.js";
 import { ProductService } from "../modules/products/service.js";
 import { TaskService } from "../modules/tasks/service.js";
+import { StaticControlledToolRegistry } from "../modules/cybernomads-agent-runtime/controlled-tool-registry.js";
+import { CybernomadsAgentRuntimeService } from "../modules/cybernomads-agent-runtime/service.js";
 import { TaskDecompositionSupportToolsService } from "../modules/task-decomposition-support-tools/service.js";
+import { TaskDecompositionRunService } from "../modules/task-decomposition-runs/service.js";
 import { TrafficWorkService } from "../modules/traffic-works/service.js";
 import { StrategyService } from "../modules/strategies/service.js";
+import { FileSystemSkillRegistry } from "../adapters/skill/local/file-system-skill-registry.js";
 import type { AccountPlatformPort } from "../ports/account-platform-port.js";
 import type { AgentProviderPort } from "../ports/agent-provider-port.js";
 import {
@@ -98,6 +105,8 @@ export async function startApplication(
     runtime.paths.databaseFile,
   );
   const taskRepository = new SqliteTaskRepository(runtime.paths.databaseFile);
+  const taskDecompositionRunRepository =
+    new SqliteTaskDecompositionRunRepository(runtime.paths.databaseFile);
   const productContentStore = new FileSystemProductContentStore(
     runtime.paths.productDirectory,
   );
@@ -110,6 +119,8 @@ export async function startApplication(
   const agentServiceCredentialStore = new FileSystemAgentServiceCredentialStore(
     runtime.paths.runtimeRoot,
   );
+  const taskDecompositionArchiveStore =
+    new FileSystemTaskDecompositionArchiveStore(runtime.paths.workDirectory);
   const trafficWorkContextStore = new FileSystemTrafficWorkContextStore(
     runtime.paths.workDirectory,
   );
@@ -144,11 +155,28 @@ export async function startApplication(
   const agentAccessService = new AgentAccessService({
     stateStore: agentServiceStateRepository,
     credentialStore: agentServiceCredentialStore,
-    providers: [new OpenClawAgentProvider(), ...(options.agentProviders ?? [])],
+    providers: [
+      new CybernomadsAgentProvider(),
+      new OpenClawAgentProvider(),
+      ...(options.agentProviders ?? []),
+    ],
     agentInteractionLogRecorder,
   });
   const taskService = new TaskService({
     taskStore: taskRepository,
+  });
+  const cybernomadsAgentRuntimeService = new CybernomadsAgentRuntimeService({
+    agentAccessService,
+    skillRegistry: new FileSystemSkillRegistry(runtime.paths.agentSkillsDirectory),
+    toolRegistry: new StaticControlledToolRegistry(),
+  });
+  const taskDecompositionRunService = new TaskDecompositionRunService({
+    runStore: taskDecompositionRunRepository,
+    trafficWorkStateStore: trafficWorkRepository,
+    taskService,
+    runtime: cybernomadsAgentRuntimeService,
+    archiveStore: taskDecompositionArchiveStore,
+    agentInteractionLogRecorder,
   });
   const taskDecompositionSupportToolsService =
     new TaskDecompositionSupportToolsService({
@@ -161,11 +189,8 @@ export async function startApplication(
   const trafficWorkService = new TrafficWorkService({
     stateStore: trafficWorkRepository,
     contextStore: trafficWorkContextStore,
-    contextPreparation: new AgentAccessTrafficWorkContextPreparationAdapter({
-      agentAccessService,
-      runtimeRootDirectory: runtime.paths.runtimeRoot,
-      runtimeSkillsDirectory: runtime.paths.agentSkillsDirectory,
-      agentInteractionLogRecorder,
+    contextPreparation: new CybernomadsAgentTrafficWorkContextPreparationAdapter({
+      taskDecompositionRunService,
     }),
     productStore: productRepository,
     productContentStore,
@@ -183,6 +208,7 @@ export async function startApplication(
         taskService,
         trafficWorkService,
         agentAccessService,
+        decompositionFeedbackSink: taskDecompositionRunService,
         agentInteractionLogRecorder,
         intervalMs: threadTaskPlannerOptions.intervalMs,
       });
@@ -196,6 +222,7 @@ export async function startApplication(
       agentAccessService,
       trafficWorkService,
       taskService,
+      taskDecompositionRunService,
       taskDecompositionSupportToolsService,
       host: options.host,
       port: options.port,
@@ -218,6 +245,7 @@ export async function startApplication(
         agentAccessService.close();
         trafficWorkService.close();
         taskService.close();
+        taskDecompositionRunService.close();
         strategyReferenceRepository.close();
       },
     };
@@ -230,6 +258,7 @@ export async function startApplication(
     agentAccessService.close();
     trafficWorkService.close();
     taskService.close();
+    taskDecompositionRunService.close();
     strategyReferenceRepository.close();
     throw error;
   }

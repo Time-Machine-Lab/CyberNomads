@@ -56,6 +56,18 @@ export const router = createRouter({
       component: FocusedShell,
       children: [
         {
+          path: 'console/cybernomads-agent',
+          name: 'console-cybernomads-agent',
+          component: () => import('@/pages/agents/cybernomads-agent/ui/CybernomadsAgentConfigPage.vue'),
+          meta: {
+            moduleTitle: '控制台',
+            shellNavKey: 'console',
+            shellSectionTitle: 'Cybernomads Agent LLM 配置',
+            backTo: '/console',
+            backLabel: '返回控制台',
+          },
+        },
+        {
           path: 'console/openclaw',
           name: 'console-openclaw',
           component: () => import('@/pages/agents/openclaw/ui/OpenClawConfigPage.vue'),
@@ -170,6 +182,19 @@ export const router = createRouter({
       component: RuntimeShell,
       children: [
         {
+          path: 'demo/task-decomposition-center',
+          name: 'demo-task-decomposition-center',
+          component: () =>
+            import(
+              '@/pages/workspaces/decomposition-demo/ui/TaskDecompositionCenterDemoPage.vue'
+            ),
+          meta: {
+            moduleTitle: '推广工作区',
+            shellNavKey: 'workspaces',
+            shellSectionTitle: '任务拆分中心 Demo',
+          },
+        },
+        {
           path: 'workspaces/:workspaceId/runtime',
           name: 'workspace-runtime',
           component: () => import('@/pages/workspaces/detail/ui/WorkspaceExecutionPage.vue'),
@@ -190,6 +215,10 @@ export const router = createRouter({
     {
       path: '/agents/openclaw',
       redirect: '/console/openclaw',
+    },
+    {
+      path: '/agents/cybernomads-agent',
+      redirect: '/console/cybernomads-agent',
     },
     {
       path: '/workspaces/:workspaceId/execution',

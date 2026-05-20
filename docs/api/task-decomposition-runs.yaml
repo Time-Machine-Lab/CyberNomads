@@ -1,0 +1,233 @@
+openapi: 3.1.0
+info:
+  title: Cybernomads Task Decomposition Runs API
+  version: 1.0.0
+  description: >
+    Cybernomads Agent 任务拆分运行批次 API 契约。该契约暴露草案、Review、
+    报告、用户确认和反馈重拆入口；正式任务写入仍由任务模块完成。
+  summary: 任务拆分运行批次与产物 API
+
+tags:
+  - name: TaskDecompositionRuns
+    description: 任务拆分运行批次、报告、确认和反馈接口
+
+paths:
+  /api/traffic-works/{trafficWorkId}/decomposition-run:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    get:
+      tags:
+        - TaskDecompositionRuns
+      summary: 读取当前任务拆分运行批次
+      operationId: getCurrentTaskDecompositionRun
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDecompositionRunDetail"
+        "404":
+          description: 当前引流工作尚无拆分运行批次
+
+  /api/traffic-works/{trafficWorkId}/decomposition-run/report:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    get:
+      tags:
+        - TaskDecompositionRuns
+      summary: 读取当前任务拆分报告
+      operationId: getCurrentTaskDecompositionReport
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDecompositionReport"
+        "404":
+          description: 当前引流工作尚无可读报告
+
+  /api/traffic-works/{trafficWorkId}/decomposition-run/confirmation:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    post:
+      tags:
+        - TaskDecompositionRuns
+      summary: 用户确认当前任务方案并提交正式任务集
+      description: >
+        只有当最新拆分运行批次处于 `waiting_user_confirmation` 时才允许确认。
+        确认后由后端 Orchestrator 调用任务模块创建或替换正式任务集，并在成功后
+        将引流工作上下文准备状态标记为 `prepared`。
+      operationId: confirmCurrentTaskDecompositionRun
+      responses:
+        "200":
+          description: 确认并提交成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDecompositionRunDetail"
+        "404":
+          description: 当前引流工作尚无拆分运行批次
+        "409":
+          description: 当前运行批次不允许确认
+
+  /api/traffic-works/{trafficWorkId}/decomposition-run/feedback:
+    parameters:
+      - $ref: "#/components/parameters/TrafficWorkId"
+    post:
+      tags:
+        - TaskDecompositionRuns
+      summary: 提交用户反馈并触发反馈重拆
+      operationId: replanTaskDecompositionRunWithFeedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskDecompositionFeedbackInput"
+      responses:
+        "202":
+          description: 反馈已记录并启动新的拆分运行批次
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDecompositionRunDetail"
+        "400":
+          description: 反馈输入不合法
+        "404":
+          description: 引流工作不存在
+
+components:
+  parameters:
+    TrafficWorkId:
+      name: trafficWorkId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+
+  schemas:
+    TaskDecompositionRunStatus:
+      type: string
+      enum:
+        - running
+        - waiting_user_confirmation
+        - committed
+        - failed
+        - awaiting_user_feedback
+
+    TaskDecompositionRunStage:
+      type: string
+      enum:
+        - context_ready
+        - planning
+        - reviewing
+        - repairing
+        - reporting
+        - waiting_user_confirmation
+        - committing
+        - prepared
+        - failed
+
+    TaskDecompositionRunDetail:
+      type: object
+      required:
+        - decompositionRunId
+        - trafficWorkId
+        - status
+        - stage
+        - taskSetMode
+        - providerCode
+        - artifacts
+        - requiresUserConfirmation
+        - createdAt
+        - updatedAt
+      properties:
+        decompositionRunId:
+          type: string
+        trafficWorkId:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskDecompositionRunStatus"
+        stage:
+          $ref: "#/components/schemas/TaskDecompositionRunStage"
+        taskSetMode:
+          type: string
+          enum:
+            - create
+            - replace
+        providerCode:
+          type: string
+        model:
+          type:
+            - string
+            - "null"
+        latestSummary:
+          type:
+            - string
+            - "null"
+        reviewConclusion:
+          type:
+            - string
+            - "null"
+        requiresUserConfirmation:
+          type: boolean
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskDecompositionArtifactSummary"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskDecompositionArtifactSummary:
+      type: object
+      required:
+        - artifactId
+        - artifactType
+        - createdAt
+      properties:
+        artifactId:
+          type: string
+        artifactType:
+          type: string
+        summary:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+
+    TaskDecompositionReport:
+      type: object
+      required:
+        - decompositionRunId
+        - trafficWorkId
+        - markdown
+      properties:
+        decompositionRunId:
+          type: string
+        trafficWorkId:
+          type: string
+        markdown:
+          type: string
+
+    TaskDecompositionFeedbackInput:
+      type: object
+      required:
+        - feedback
+      properties:
+        feedback:
+          type: string
+          minLength: 1
+        taskKey:
+          type:
+            - string
+            - "null"
+          description: 可选。为空表示整份方案反馈；有值表示单任务反馈。

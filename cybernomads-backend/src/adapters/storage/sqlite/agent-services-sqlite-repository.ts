@@ -3,7 +3,9 @@ import { DatabaseSync } from "node:sqlite";
 import type { AgentServiceStateStore } from "../../../ports/agent-service-state-store-port.js";
 import type {
   AgentServiceConnectionRecord,
+  AgentServicePurpose,
   CapabilityProvisioningStatus,
+  AgentReasoningEffort,
   StoredConnectionStatus,
 } from "../../../modules/agent-access/types.js";
 
@@ -12,6 +14,9 @@ interface AgentServiceConnectionRow {
   agent_service_id: string;
   provider_code: string;
   endpoint_url: string;
+  model: string | null;
+  reasoning_effort: AgentReasoningEffort | null;
+  provider_settings_json: string;
   authentication_kind: string;
   credential_ref: string;
   connection_status: StoredConnectionStatus;
@@ -33,7 +38,9 @@ export class SqliteAgentServiceStateRepository implements AgentServiceStateStore
     this.database.exec("PRAGMA foreign_keys = ON;");
   }
 
-  async getCurrentService(): Promise<AgentServiceConnectionRecord | undefined> {
+  async getServiceByPurpose(
+    purpose: AgentServicePurpose,
+  ): Promise<AgentServiceConnectionRecord | undefined> {
     const row = this.database
       .prepare(
         `
@@ -42,6 +49,9 @@ export class SqliteAgentServiceStateRepository implements AgentServiceStateStore
             agent_service_id,
             provider_code,
             endpoint_url,
+            model,
+            reasoning_effort,
+            provider_settings_json,
             authentication_kind,
             credential_ref,
             connection_status,
@@ -54,23 +64,26 @@ export class SqliteAgentServiceStateRepository implements AgentServiceStateStore
             created_at,
             updated_at
           FROM agent_service_connections
-          WHERE service_scope = 'current'
+          WHERE service_scope = ?
         `,
       )
-      .get() as AgentServiceConnectionRow | undefined;
+      .get(purpose) as AgentServiceConnectionRow | undefined;
 
     return row ? mapAgentServiceConnectionRow(row) : undefined;
   }
 
-  async saveCurrentService(record: AgentServiceConnectionRecord): Promise<void> {
-    this.database
+  async listServices(): Promise<AgentServiceConnectionRecord[]> {
+    const rows = this.database
       .prepare(
         `
-          INSERT INTO agent_service_connections (
+          SELECT
             service_scope,
             agent_service_id,
             provider_code,
             endpoint_url,
+            model,
+            reasoning_effort,
+            provider_settings_json,
             authentication_kind,
             credential_ref,
             connection_status,
@@ -82,11 +95,46 @@ export class SqliteAgentServiceStateRepository implements AgentServiceStateStore
             capability_prepared_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          FROM agent_service_connections
+          ORDER BY service_scope ASC
+        `,
+      )
+      .all() as unknown as AgentServiceConnectionRow[];
+
+    return rows.map(mapAgentServiceConnectionRow);
+  }
+
+  async saveService(record: AgentServiceConnectionRecord): Promise<void> {
+    this.database
+      .prepare(
+        `
+          INSERT INTO agent_service_connections (
+            service_scope,
+            agent_service_id,
+            provider_code,
+            endpoint_url,
+            model,
+            reasoning_effort,
+            provider_settings_json,
+            authentication_kind,
+            credential_ref,
+            connection_status,
+            connection_status_reason,
+            capability_status,
+            capability_status_reason,
+            last_verified_at,
+            last_connected_at,
+            capability_prepared_at,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(service_scope) DO UPDATE SET
             agent_service_id = excluded.agent_service_id,
             provider_code = excluded.provider_code,
             endpoint_url = excluded.endpoint_url,
+            model = excluded.model,
+            reasoning_effort = excluded.reasoning_effort,
+            provider_settings_json = excluded.provider_settings_json,
             authentication_kind = excluded.authentication_kind,
             credential_ref = excluded.credential_ref,
             connection_status = excluded.connection_status,
@@ -105,6 +153,9 @@ export class SqliteAgentServiceStateRepository implements AgentServiceStateStore
         record.agentServiceId,
         record.providerCode,
         record.endpointUrl,
+        record.model,
+        record.reasoningEffort,
+        JSON.stringify(record.providerSettings),
         record.authenticationKind,
         record.credentialRef,
         record.connectionStatus,
@@ -128,10 +179,13 @@ function mapAgentServiceConnectionRow(
   row: AgentServiceConnectionRow,
 ): AgentServiceConnectionRecord {
   return {
-    serviceScope: "current",
+    serviceScope: row.service_scope as AgentServicePurpose,
     agentServiceId: row.agent_service_id,
     providerCode: row.provider_code,
     endpointUrl: row.endpoint_url,
+    model: row.model,
+    reasoningEffort: row.reasoning_effort,
+    providerSettings: parseProviderSettings(row.provider_settings_json),
     authenticationKind: row.authentication_kind,
     credentialRef: row.credential_ref,
     connectionStatus: row.connection_status,
@@ -144,4 +198,15 @@ function mapAgentServiceConnectionRow(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function parseProviderSettings(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {}
+
+  return {};
 }

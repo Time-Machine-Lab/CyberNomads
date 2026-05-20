@@ -69,6 +69,7 @@ describe.sequential("runtime bootstrap", () => {
       "008-tasks.sql",
       "009-traffic-work-parameter-bindings.sql",
       "010-traffic-work-object-bindings-only.sql",
+      "011-agent-provider-purposes-and-decomposition-runs.sql",
     ]);
     expect(result.skippedScripts).toEqual([]);
 
@@ -136,10 +137,20 @@ describe.sequential("runtime bootstrap", () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
       .get("task_output_records") as { name: string } | undefined;
+    const taskDecompositionRunsTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("task_decomposition_runs") as { name: string } | undefined;
+    const taskDecompositionArtifactsTable = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("task_decomposition_artifacts") as { name: string } | undefined;
     database.close();
 
     expect(bootstrapTable?.name).toBe("runtime_sql_scripts");
-    expect(recordedScripts?.count).toBe(10);
+    expect(recordedScripts?.count).toBe(11);
     expect(productsTable?.name).toBe("products");
     expect(agentServicesTable?.name).toBe("agent_service_connections");
     expect(accountsTable?.name).toBe("accounts");
@@ -151,6 +162,10 @@ describe.sequential("runtime bootstrap", () => {
     expect(legacyConnectionAttemptsTable).toBeUndefined();
     expect(tasksTable?.name).toBe("tasks");
     expect(taskOutputRecordsTable?.name).toBe("task_output_records");
+    expect(taskDecompositionRunsTable?.name).toBe("task_decomposition_runs");
+    expect(taskDecompositionArtifactsTable?.name).toBe(
+      "task_decomposition_artifacts",
+    );
   });
 
   it("skips already executed runtime SQL scripts on repeated startup", async () => {
@@ -173,6 +188,7 @@ describe.sequential("runtime bootstrap", () => {
       "008-tasks.sql",
       "009-traffic-work-parameter-bindings.sql",
       "010-traffic-work-object-bindings-only.sql",
+      "011-agent-provider-purposes-and-decomposition-runs.sql",
     ]);
 
     const database = new DatabaseSync(runtimePaths.databaseFile);
@@ -181,7 +197,7 @@ describe.sequential("runtime bootstrap", () => {
       .get() as { count: number } | undefined;
     database.close();
 
-    expect(recordedScripts?.count).toBe(10);
+    expect(recordedScripts?.count).toBe(11);
   });
 
   it("refreshes bundled agent runtime assets without deleting unrelated runtime files", async () => {

@@ -24,5 +24,9 @@ export interface ConsoleOverviewRecord {
   hasCurrentService: boolean
   isUsable: boolean
   currentService: CurrentAgentServiceDto | null
+  servicesByPurpose?: {
+    planning: CurrentAgentServiceDto | null
+    execution: CurrentAgentServiceDto | null
+  }
   warning?: string | null
 }

@@ -215,11 +215,11 @@ function sanitizeText(value: string): string {
   return value
     .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, "$1[REDACTED]")
     .replace(
-      /("(?:authorization|credential|secret|token|password|apiKey|accessToken|refreshToken)"\s*:\s*")([^"]*)(")/gi,
+      /("(?:authorization|credential|secret|providerSecret|token|password|apiKey|providerApiKey|api_key|accessToken|refreshToken)"\s*:\s*")([^"]*)(")/gi,
       "$1[REDACTED]$3",
     )
     .replace(
-      /((?:authorization|credential|secret|token|password|apiKey|accessToken|refreshToken)\s*[=:]\s*)([^\s,;]+)/gi,
+      /((?:authorization|credential|secret|providerSecret|token|password|apiKey|providerApiKey|api_key|accessToken|refreshToken)\s*[=:]\s*)([^\s,;]+)/gi,
       "$1[REDACTED]",
     );
 }

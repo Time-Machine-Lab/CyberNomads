@@ -3,11 +3,12 @@ info:
   title: Cybernomads Agent Services API
   version: 1.0.0
   description: >
-    Agent 服务接入域首版 API 契约。当前阶段围绕“唯一当前激活 Agent 服务”建模，
+    Agent 服务接入域首版 API 契约。当前阶段围绕“按用途当前激活 Agent 服务”建模，
     覆盖配置、更新、连接校验、状态查询与能力准备行为。
     在 MVP 语义下，连接成功即可视为服务可被系统使用；能力准备是独立的业务状态，
     不改变“已连接即可使用”的主状态判断。
-    当前阶段不提供多服务路由、自动恢复、失败重试或 provider 私有字段语义。
+    当前阶段最小区分 `planning` 与 `execution` 两个用途，不提供任意多 provider 路由、
+    自动恢复、失败重试或 provider 私有字段语义。
   summary: Agent 服务接入域 MVP 对外契约
 
 tags:
@@ -15,12 +16,12 @@ tags:
     description: Agent 服务接入域接口
 
 x-runtime-minimum-development-checklist:
-  - 配置当前激活 Agent 服务
-  - 更新或替换当前激活 Agent 服务
-  - 显式校验当前 Agent 服务连接
+  - 配置当前用途下的激活 Agent 服务
+  - 更新或替换当前用途下的激活 Agent 服务
+  - 显式校验当前用途下的 Agent 服务连接
   - 查询当前 Agent 服务整体状态
   - 触发并记录能力准备状态
-  - 获取当前激活 Agent 服务供上层编排使用
+  - 获取 planning / execution 激活 Agent 服务供上层编排使用
 
 x-provider-minimum-capabilities:
   - 连通性检查
@@ -29,6 +30,17 @@ x-provider-minimum-capabilities:
   - 会话历史读取
   - subagent 调用
   - Cybernomads 所需能力准备
+  - Cybernomads Agent GPT / OpenAI-compatible Responses API 调用
+
+x-provider-purpose-boundaries:
+  planning:
+    validProviders:
+      - cybernomads-agent
+    description: 任务拆分、Review、修正和拆分报告生成。
+  execution:
+    validProviders:
+      - openclaw
+    description: 已确认单任务执行。
 
 paths:
   /api/agent-services/current:
@@ -160,7 +172,119 @@ paths:
         "409":
           description: 当前连接状态不允许执行能力准备
 
+  /api/agent-services/{purpose}:
+    parameters:
+      - $ref: "#/components/parameters/AgentServicePurposePath"
+    post:
+      tags:
+        - AgentServices
+      summary: 配置指定用途下的激活 Agent 服务
+      description: >
+        配置 `planning` 或 `execution` 用途槽位下的当前激活 Agent 服务。
+        `planning` 第一版应使用 `cybernomads-agent`，并提供服务地址、模型、推理强度和 API Key；
+        `execution` 第一版保留 OpenClaw。
+      operationId: configureAgentServiceForPurpose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigureAgentServiceRequest"
+      responses:
+        "201":
+          description: 配置成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentAgentService"
+        "400":
+          description: 请求参数不合法
+        "409":
+          description: 指定用途下的激活服务已存在
+    get:
+      tags:
+        - AgentServices
+      summary: 获取指定用途下的激活 Agent 服务
+      operationId: getAgentServiceForPurpose
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentAgentService"
+        "404":
+          description: 指定用途尚未配置激活服务
+    put:
+      tags:
+        - AgentServices
+      summary: 更新指定用途下的激活 Agent 服务
+      operationId: updateAgentServiceForPurpose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentServiceRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentAgentService"
+        "400":
+          description: 请求参数不合法
+        "404":
+          description: 指定用途尚未配置激活服务
+
+  /api/agent-services/{purpose}/connection-verification:
+    parameters:
+      - $ref: "#/components/parameters/AgentServicePurposePath"
+    post:
+      tags:
+        - AgentServices
+      summary: 校验指定用途下的 Agent 服务连接
+      operationId: verifyAgentServiceConnectionForPurpose
+      responses:
+        "200":
+          description: 校验完成
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionVerificationResult"
+        "404":
+          description: 指定用途尚未配置激活服务
+
+  /api/agent-services/{purpose}/capability-provisioning:
+    parameters:
+      - $ref: "#/components/parameters/AgentServicePurposePath"
+    post:
+      tags:
+        - AgentServices
+      summary: 准备指定用途下的 Agent 服务能力
+      operationId: prepareAgentServiceCapabilitiesForPurpose
+      responses:
+        "200":
+          description: 触发完成
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapabilityProvisioningResult"
+        "404":
+          description: 指定用途尚未配置激活服务
+        "409":
+          description: 当前连接状态不允许执行能力准备
+
 components:
+  parameters:
+    AgentServicePurposePath:
+      name: purpose
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/AgentServicePurpose"
+
   schemas:
     ConfigureAgentServiceRequest:
       type: object
@@ -171,12 +295,26 @@ components:
       properties:
         providerCode:
           type: string
-          description: provider 中立的服务提供方编码，例如 `openclaw`
+          description: provider 中立的服务提供方编码，例如 `cybernomads-agent` 或 `openclaw`
           minLength: 1
+        purpose:
+          $ref: "#/components/schemas/AgentServicePurpose"
         endpointUrl:
           type: string
           format: uri
           description: 当前 Agent 服务的统一连接入口地址，对应 SQL 契约中的 `endpoint_url`
+        model:
+          type:
+            - string
+            - "null"
+          description: >
+            provider 使用的模型。`cybernomads-agent` 必填；OpenClaw 可为空。
+        reasoningEffort:
+          type:
+            - string
+            - "null"
+          description: >
+            provider 使用的推理强度。`cybernomads-agent` 至少支持 `low`、`medium`、`high`。
         authentication:
           $ref: "#/components/schemas/AgentServiceAuthenticationInput"
 
@@ -193,12 +331,24 @@ components:
             provider 中立的服务提供方编码。更新时允许替换 provider，
             但上层业务语义仍保持统一 Agent 服务抽象。
           minLength: 1
+        purpose:
+          $ref: "#/components/schemas/AgentServicePurpose"
         endpointUrl:
           type: string
           format: uri
           description: 更新后的统一连接入口地址，对应 SQL 契约中的 `endpoint_url`
         authentication:
           $ref: "#/components/schemas/AgentServiceAuthenticationInput"
+        model:
+          type:
+            - string
+            - "null"
+          description: 更新后的 provider 模型。
+        reasoningEffort:
+          type:
+            - string
+            - "null"
+          description: 更新后的 provider 推理强度。
 
     AgentServiceAuthenticationInput:
       type: object
@@ -245,6 +395,8 @@ components:
         providerCode:
           type: string
           description: 当前 provider 编码，对应 SQL 契约中的 `provider_code`
+        purpose:
+          $ref: "#/components/schemas/AgentServicePurpose"
         endpointUrl:
           type: string
           format: uri
@@ -257,6 +409,16 @@ components:
           description: >
             是否已存在可用凭证引用。对外只暴露布尔结果，不返回 `credential_ref`
             或任何明文凭证内容。
+        model:
+          type:
+            - string
+            - "null"
+          description: 当前 provider 模型摘要，不包含 secret。
+        reasoningEffort:
+          type:
+            - string
+            - "null"
+          description: 当前 provider 推理强度摘要，不包含 secret。
         connectionStatus:
           $ref: "#/components/schemas/ConnectionStatus"
         connectionStatusReason:
@@ -325,6 +487,21 @@ components:
             - $ref: "#/components/schemas/CurrentAgentService"
             - type: "null"
           description: 当前激活服务对象；未配置时返回 `null`
+        servicesByPurpose:
+          type: object
+          required:
+            - planning
+            - execution
+          properties:
+            planning:
+              oneOf:
+                - $ref: "#/components/schemas/CurrentAgentService"
+                - type: "null"
+            execution:
+              oneOf:
+                - $ref: "#/components/schemas/CurrentAgentService"
+                - type: "null"
+          description: planning / execution 两个用途槽位的安全状态摘要。
         connectionStatus:
           $ref: "#/components/schemas/ConnectionStatus"
         capabilityStatus:
@@ -421,5 +598,12 @@ components:
         - preparing
         - ready
         - prepare_failed
+
+    AgentServicePurpose:
+      type: string
+      description: Agent provider 使用目的。
+      enum:
+        - planning
+        - execution
 
   securitySchemes: {}

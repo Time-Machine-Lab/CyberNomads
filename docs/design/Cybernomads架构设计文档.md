@@ -387,3 +387,14 @@ cybernomads/
 - 后端不再预写统一的 `task.md` 占位文件。
 - 任务文档和补充上下文资产由 Agent 任务拆分流程在工作目录内生成。
 - 引流工作更新时沿用原有 `work/<trafficWorkId>/` 目录，不创建第二份工作上下文。
+
+## 7. Agent Provider 分工补充（2026-05-20）
+
+任务规划与任务执行在本期被明确拆成两个 provider 用途：
+
+- `planning`: Cybernomads Agent，第一版接 GPT / OpenAI-compatible Responses API，负责任务方案草案、Agent Review、修正循环和拆分报告。
+- `execution`: OpenClaw，负责执行已经由用户确认、并由系统写入正式任务表的单任务。
+
+创建或更新引流工作后，系统先启动任务拆分运行批次，保存草案、Review 报告、修正历史、用户反馈和确认快照。Review 通过前不写入正式任务表；Review 通过后进入 `waiting_user_confirmation`。用户确认后，后端 Orchestrator 调用任务模块创建或替换正式任务集，再把引流工作上下文准备状态标记为 `prepared`。
+
+OpenClaw 不再接收整份产品、策略和引流工作去自由拆分任务，也不拥有正式任务落库权。它只接收单任务说明、任务文档、必要上下文和可用工具，执行失败时将异常摘要回流为未来反馈重拆材料。

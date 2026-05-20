@@ -1,12 +1,17 @@
 import type {
   AgentConversationMessage,
   AgentServiceCredentialRecord,
+  AgentReasoningEffort,
+  AgentServicePurpose,
 } from "../modules/agent-access/types.js";
 
 export interface AgentProviderContext {
   agentServiceId: string;
+  purpose: AgentServicePurpose;
   providerCode: string;
   endpointUrl: string;
+  model: string | null;
+  reasoningEffort: AgentReasoningEffort | null;
   authenticationKind: string;
   credential: AgentServiceCredentialRecord;
 }

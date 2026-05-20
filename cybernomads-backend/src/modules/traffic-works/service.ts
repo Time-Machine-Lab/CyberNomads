@@ -329,16 +329,18 @@ export class TrafficWorkService {
         objectBindings: record.objectBindings,
         contextMarkdown,
         context,
+        taskSetMode,
       });
 
       const submittedAt = this.now().toISOString();
       const nextRecord: TrafficWorkRecord = {
         ...record,
-        contextPreparationStatus: "pending",
-        contextPreparationStatusReason:
-          taskSetMode === "create"
-            ? `Task decomposition request submitted to agent service. sessionId=${submission.sessionId}; messageId=${submission.messageId}`
-            : `Task decomposition replace request submitted to agent service. sessionId=${submission.sessionId}; messageId=${submission.messageId}`,
+        contextPreparationStatus:
+          submission.status === "failed" ? "failed" : "pending",
+        contextPreparationStatusReason: toPreparationSubmissionReason(
+          submission,
+          taskSetMode,
+        ),
         contextPreparedAt: null,
         updatedAt: submittedAt,
       };
@@ -751,4 +753,25 @@ function toPreparationFailureReason(error: unknown): string {
   }
 
   return "Traffic work context preparation failed.";
+}
+
+function toPreparationSubmissionReason(
+  submission: Awaited<
+    ReturnType<TrafficWorkContextPreparationPort["prepareContext"]>
+  >,
+  taskSetMode: "create" | "replace",
+): string {
+  if (submission.status === "failed") {
+    return `Cybernomads Agent task decomposition failed. runId=${submission.decompositionRunId}; stage=${submission.stage}; ${submission.summary ?? "No summary."}`;
+  }
+
+  if (submission.status === "waiting_user_confirmation") {
+    return `Cybernomads Agent task decomposition is waiting for user confirmation. runId=${submission.decompositionRunId}; stage=${submission.stage}`;
+  }
+
+  if (taskSetMode === "create") {
+    return `Cybernomads Agent task decomposition run started. runId=${submission.decompositionRunId}; stage=${submission.stage}`;
+  }
+
+  return `Cybernomads Agent task decomposition replace run started. runId=${submission.decompositionRunId}; stage=${submission.stage}`;
 }

@@ -38,15 +38,32 @@ describe.sequential("traffic work module http api", () => {
   });
 
   it("creates, lists, reads, and applies lifecycle operations for traffic works", async () => {
-    const provider = new FakeAgentProvider("openclaw");
+    const planningProvider = new FakeAgentProvider("cybernomads-agent", [
+      JSON.stringify(createTaskPlanDraft("collect-1", "Collect candidates 1")),
+      JSON.stringify(createPassingReview("Initial draft is reviewable.")),
+      JSON.stringify(
+        createTaskPlanDraft(
+          "collect-feedback",
+          "Collect candidates after feedback",
+          {
+            feedbackConsideration:
+              "User asked to prioritize creator candidates with verified profile data.",
+          },
+        ),
+      ),
+      JSON.stringify(createPassingReview("Feedback-based draft is reviewable.")),
+      JSON.stringify(createTaskPlanDraft("collect-2", "Collect candidates 2")),
+      JSON.stringify(createPassingReview("Replacement draft is reviewable.")),
+    ]);
+    const executionProvider = new FakeAgentProvider("openclaw");
     const { application, workingDirectory } = await startTemporaryApplication(
       temporaryDirectories,
       applications,
-      [provider],
+      [planningProvider, executionProvider],
     );
     const runtimePaths = resolveRuntimePaths(workingDirectory);
 
-    await configureConnectedAgentService(application);
+    await configureConnectedAgentServices(application);
 
     const productId = await createProduct(application, "CyberNomads Product");
     await seedStrategy(
@@ -142,22 +159,19 @@ describe.sequential("traffic work module http api", () => {
     expect(created.lifecycleStatus).toBe("ready");
     expect(created.contextPreparationStatus).toBe("pending");
     expect(created.contextPreparationStatusReason).toContain(
-      "Task decomposition request submitted to agent service.",
+      "Cybernomads Agent task decomposition is waiting for user confirmation.",
     );
-    expect(provider.sentMessages).toHaveLength(0);
-    expect(provider.submittedMessages).toHaveLength(1);
-    expect(provider.submittedMessages.at(-1)?.message).toContain(
-      `Cybernomads目录绝对路径: ${runtimePaths.runtimeRoot}`,
+    expect(planningProvider.sentMessages).toHaveLength(2);
+    expect(planningProvider.sentMessages[0]?.message).toContain(
+      "Cybernomads Task Planner",
     );
-    expect(provider.submittedMessages.at(-1)?.message).toContain(
-      `引流工作目录: ./work/${created.trafficWorkId}`,
+    expect(planningProvider.sentMessages[1]?.message).toContain(
+      "Cybernomads Review Agent",
     );
-    expect(provider.submittedMessages.at(-1)?.message).toContain(
-      "任务拆分Skill位置: ./agent/skills/cybernomads-task-decomposition/SKILL.md",
+    expect(planningProvider.createdSessions[0]?.context).toContain(
+      "product_name",
     );
-    expect(provider.submittedMessages.at(-1)?.message).not.toContain(
-      "Work context root:",
-    );
+    expect(executionProvider.sentMessages).toHaveLength(0);
 
     const createdTasksResponse = await fetch(
       `${application.http.url}/api/tasks?trafficWorkId=${created.trafficWorkId}`,
@@ -184,19 +198,76 @@ describe.sequential("traffic work module http api", () => {
       access(join(workDirectory, "collect-1.md")),
     ).rejects.toBeDefined();
 
+    const runDetailResponse = await fetch(
+      `${application.http.url}/api/traffic-works/${created.trafficWorkId}/decomposition-run`,
+    );
+    expect(runDetailResponse.status).toBe(200);
+    await expect(runDetailResponse.json()).resolves.toMatchObject({
+      status: "waiting_user_confirmation",
+      stage: "waiting_user_confirmation",
+      providerCode: "cybernomads-agent",
+      model: "gpt-5.5",
+      reviewConclusion: "pass",
+      requiresUserConfirmation: true,
+      artifacts: expect.arrayContaining([
+        expect.objectContaining({ artifactType: "task_plan_draft" }),
+        expect.objectContaining({ artifactType: "review_report" }),
+        expect.objectContaining({ artifactType: "decomposition_report" }),
+      ]),
+    });
+
+    const reportResponse = await fetch(
+      `${application.http.url}/api/traffic-works/${created.trafficWorkId}/decomposition-run/report`,
+    );
+    expect(reportResponse.status).toBe(200);
+    await expect(reportResponse.json()).resolves.toMatchObject({
+      trafficWorkId: created.trafficWorkId,
+      markdown: expect.stringContaining("Collect candidates 1"),
+    });
+
     const blockedStartResponse = await fetch(
       `${application.http.url}/api/traffic-works/${created.trafficWorkId}/start`,
       { method: "POST" },
     );
     expect(blockedStartResponse.status).toBe(409);
 
-    await simulateAgentPreparedTaskSet({
-      application,
-      runtimePaths,
-      trafficWorkId: created.trafficWorkId,
-      mode: "create",
-      taskKey: "collect-1",
-      taskName: "Collect candidates 1",
+    const feedbackResponse = await fetch(
+      `${application.http.url}/api/traffic-works/${created.trafficWorkId}/decomposition-run/feedback`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          feedback:
+            "Prioritize creator candidates with verified profile data before collection.",
+        }),
+      },
+    );
+    expect(feedbackResponse.status).toBe(202);
+    await expect(feedbackResponse.json()).resolves.toMatchObject({
+      status: "waiting_user_confirmation",
+      stage: "waiting_user_confirmation",
+      reviewConclusion: "pass",
+      requiresUserConfirmation: true,
+    });
+    expect(planningProvider.sentMessages).toHaveLength(4);
+    expect(planningProvider.sentMessages[2]?.message).toContain(
+      "Prioritize creator candidates with verified profile data before collection.",
+    );
+    expect(planningProvider.sentMessages[2]?.message).toContain(
+      "Initial draft is reviewable.",
+    );
+
+    const confirmResponse = await fetch(
+      `${application.http.url}/api/traffic-works/${created.trafficWorkId}/decomposition-run/confirmation`,
+      { method: "POST" },
+    );
+    expect(confirmResponse.status).toBe(200);
+    await expect(confirmResponse.json()).resolves.toMatchObject({
+      status: "committed",
+      stage: "prepared",
+      requiresUserConfirmation: false,
     });
 
     const createdTasksAfterPreparationResponse = await fetch(
@@ -209,14 +280,14 @@ describe.sequential("traffic work module http api", () => {
       items: [
         {
           trafficWorkId: created.trafficWorkId,
-          name: "Collect candidates 1",
+          name: "Collect candidates after feedback",
           status: "ready",
         },
       ],
     });
     await expect(
-      readFile(join(workDirectory, "collect-1.md"), "utf8"),
-    ).resolves.toContain("Collect candidates 1");
+      readFile(join(workDirectory, "collect-feedback.md"), "utf8"),
+    ).resolves.toContain("Collect candidates after feedback");
 
     const listResponse = await fetch(
       `${application.http.url}/api/traffic-works`,
@@ -338,21 +409,19 @@ describe.sequential("traffic work module http api", () => {
       ],
       contextPreparationStatus: "pending",
     });
-    expect(provider.submittedMessages).toHaveLength(2);
-    expect(provider.submittedMessages.at(-1)?.message).toContain(
-      `引流工作目录: ./work/${created.trafficWorkId}`,
-    );
-    expect(provider.submittedMessages.at(-1)?.message).toContain(
-      "任务拆分Skill位置: ./agent/skills/cybernomads-task-decomposition/SKILL.md",
+    expect(planningProvider.sentMessages).toHaveLength(6);
+    expect(planningProvider.createdSessions[4]?.context).toContain(
+      "CyberNomads v2",
     );
 
-    await simulateAgentPreparedTaskSet({
-      application,
-      runtimePaths,
-      trafficWorkId: created.trafficWorkId,
-      mode: "replace",
-      taskKey: "collect-2",
-      taskName: "Collect candidates 2",
+    const confirmReplacementResponse = await fetch(
+      `${application.http.url}/api/traffic-works/${created.trafficWorkId}/decomposition-run/confirmation`,
+      { method: "POST" },
+    );
+    expect(confirmReplacementResponse.status).toBe(200);
+    await expect(confirmReplacementResponse.json()).resolves.toMatchObject({
+      status: "committed",
+      stage: "prepared",
     });
 
     const replacedTasksResponse = await fetch(
@@ -399,7 +468,8 @@ describe.sequential("traffic work module http api", () => {
       lifecycleStatus: "deleted",
     });
 
-    expect(provider.submittedMessages).toHaveLength(2);
+    expect(planningProvider.sentMessages).toHaveLength(6);
+    expect(executionProvider.sentMessages).toHaveLength(0);
   });
 
   it("returns a failed preparation state when no current agent service is configured", async () => {
@@ -460,15 +530,19 @@ describe.sequential("traffic work module http api", () => {
   });
 
   it("allows creating a traffic work without object bindings", async () => {
-    const provider = new FakeAgentProvider("openclaw");
+    const planningProvider = new FakeAgentProvider("cybernomads-agent", [
+      JSON.stringify(createTaskPlanDraft("collect-1", "Collect candidates 1")),
+      JSON.stringify(createPassingReview("Draft is reviewable.")),
+    ]);
+    const executionProvider = new FakeAgentProvider("openclaw");
     const { application, workingDirectory } = await startTemporaryApplication(
       temporaryDirectories,
       applications,
-      [provider],
+      [planningProvider, executionProvider],
     );
     const runtimePaths = resolveRuntimePaths(workingDirectory);
 
-    await configureConnectedAgentService(application);
+    await configureConnectedAgentServices(application);
 
     const productId = await createProduct(application, "CyberNomads Product");
     await seedStrategy(
@@ -525,7 +599,7 @@ describe.sequential("traffic work module http api", () => {
       contextPreparationStatus: "pending",
     });
 
-    expect(provider.submittedMessages.at(-1)?.message).toContain(
+    expect(planningProvider.createdSessions[0]?.context).toContain(
       "product_name",
     );
   });
@@ -554,11 +628,44 @@ async function startTemporaryApplication(
   };
 }
 
-async function configureConnectedAgentService(
+async function configureConnectedAgentServices(
   application: ApplicationReadyState,
 ): Promise<void> {
-  const configureResponse = await fetch(
-    `${application.http.url}/api/agent-services/current`,
+  const configurePlanningResponse = await fetch(
+    `${application.http.url}/api/agent-services/planning`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        providerCode: "cybernomads-agent",
+        endpointUrl: "http://agent.local:3002",
+        model: "gpt-5.5",
+        reasoningEffort: "low",
+        authentication: {
+          kind: "api-key",
+          secret: "planning-secret",
+        },
+      }),
+    },
+  );
+  expect(configurePlanningResponse.status).toBe(201);
+
+  const verifyPlanningResponse = await fetch(
+    `${application.http.url}/api/agent-services/planning/connection-verification`,
+    { method: "POST" },
+  );
+  expect(verifyPlanningResponse.status).toBe(200);
+
+  const capabilityPlanningResponse = await fetch(
+    `${application.http.url}/api/agent-services/planning/capability-provisioning`,
+    { method: "POST" },
+  );
+  expect(capabilityPlanningResponse.status).toBe(200);
+
+  const configureExecutionResponse = await fetch(
+    `${application.http.url}/api/agent-services/execution`,
     {
       method: "POST",
       headers: {
@@ -574,19 +681,19 @@ async function configureConnectedAgentService(
       }),
     },
   );
-  expect(configureResponse.status).toBe(201);
+  expect(configureExecutionResponse.status).toBe(201);
 
-  const verifyResponse = await fetch(
-    `${application.http.url}/api/agent-services/current/connection-verification`,
+  const verifyExecutionResponse = await fetch(
+    `${application.http.url}/api/agent-services/execution/connection-verification`,
     { method: "POST" },
   );
-  expect(verifyResponse.status).toBe(200);
+  expect(verifyExecutionResponse.status).toBe(200);
 
-  const capabilityResponse = await fetch(
-    `${application.http.url}/api/agent-services/current/capability-provisioning`,
+  const capabilityExecutionResponse = await fetch(
+    `${application.http.url}/api/agent-services/execution/capability-provisioning`,
     { method: "POST" },
   );
-  expect(capabilityResponse.status).toBe(200);
+  expect(capabilityExecutionResponse.status).toBe(200);
 }
 
 async function createProduct(
@@ -646,91 +753,67 @@ async function seedStrategy(
   );
 }
 
-async function simulateAgentPreparedTaskSet(input: {
-  application: ApplicationReadyState;
-  runtimePaths: ReturnType<typeof resolveRuntimePaths>;
-  trafficWorkId: string;
-  mode: "create" | "replace";
-  taskKey: string;
-  taskName: string;
-}): Promise<void> {
-  const batchSaveResponse = await fetch(
-    `${input.application.http.url}/api/task-decomposition-support-tools/batch-save-tasks`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        trafficWorkId: input.trafficWorkId,
-        mode: input.mode,
-        taskSet: {
-          source: {
-            kind: "agent-decomposition",
-            requestId: `${input.mode}-${input.taskKey}`,
-            description: "Integration test simulated task decomposition.",
-          },
-          tasks: [
-            {
-              taskKey: input.taskKey,
-              name: input.taskName,
-              instruction: "Collect candidate traffic targets.",
-              documentRef: `./${input.taskKey}.md`,
-              contextRef: "./",
-              condition: {
-                cron: null,
-                relyOnTaskKeys: [],
-              },
-              inputPrompt:
-                "Read prepared work context from ./knowledge before executing this task.",
-            },
-          ],
-        },
-      }),
-    },
-  );
-  expect(batchSaveResponse.status).toBe(input.mode === "create" ? 201 : 200);
-  await expect(batchSaveResponse.json()).resolves.toMatchObject({
-    mode: input.mode,
-    trafficWorkId: input.trafficWorkId,
-    taskCount: 1,
+function createTaskPlanDraft(
+  taskKey: string,
+  taskName: string,
+  options: { feedbackConsideration?: string } = {},
+) {
+  return {
+    summary: `${taskName} draft is ready.`,
+    strategyCoverageSummary: "Covers the selected growth strategy.",
+    feedbackConsideration: options.feedbackConsideration ?? null,
     tasks: [
       {
-        taskKey: input.taskKey,
+        taskKey,
+        name: taskName,
+        goal: "Collect candidate traffic targets for the selected strategy.",
+        expectedOutputs: [`${taskName} shortlist`],
+        inputSources: [
+          {
+            type: "product_content",
+            description: "CyberNomads product content snapshot.",
+            acquisition: "Read from the traffic work context markdown.",
+            missingBehavior: "blocking",
+            sourceTaskKey: null,
+          },
+          {
+            type: "strategy_content",
+            description: "Selected strategy content snapshot.",
+            acquisition: "Read from the traffic work context markdown.",
+            missingBehavior: "blocking",
+            sourceTaskKey: null,
+          },
+        ],
+        dependsOn: [],
+        resourceNeeds: ["Product snapshot", "Strategy snapshot"],
+        strategyCoverage: ["Candidate discovery"],
+        skillRefs: ["cybernomads-task-decomposition"],
+        instruction: "Collect candidate traffic targets.",
+        documentRef: `./${taskKey}.md`,
+        contextRef: "./",
+        condition: {
+          cron: null,
+          relyOnTaskKeys: [],
+        },
+        inputPrompt:
+          "Read prepared work context from ./knowledge before executing this task.",
       },
     ],
-  });
+  };
+}
 
-  await writeFile(
-    join(
-      input.runtimePaths.workDirectory,
-      input.trafficWorkId,
-      `${input.taskKey}.md`,
-    ),
-    `# ${input.taskName}\n\n- Task Key: ${input.taskKey}\n- Data Path: ./data/${input.taskKey}.json\n`,
-    "utf8",
-  );
-
-  const reportResponse = await fetch(
-    `${input.application.http.url}/api/task-decomposition-support-tools/context-preparation-status`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        trafficWorkId: input.trafficWorkId,
-        status: "prepared",
-        reason: `Prepared by integration test for ${input.taskKey}.`,
-      }),
-    },
-  );
-  expect(reportResponse.status).toBe(200);
+function createPassingReview(summary: string) {
+  return {
+    conclusion: "pass",
+    summary,
+    issues: [],
+  };
 }
 
 class FakeAgentProvider implements AgentProviderPort {
   readonly submittedMessages: AgentProviderSendMessageInput[] = [];
   readonly sentMessages: AgentProviderSendMessageInput[] = [];
+  readonly createdSessions: AgentProviderSessionCreateInput[] = [];
   private readonly sessionMessages = new Map<
     string,
     AgentConversationMessage[]
@@ -738,7 +821,10 @@ class FakeAgentProvider implements AgentProviderPort {
   private sessionCounter = 0;
   private messageCounter = 0;
 
-  constructor(readonly providerCode: string) {}
+  constructor(
+    readonly providerCode: string,
+    private readonly messageResponses: string[] = [],
+  ) {}
 
   async verifyConnection(
     _context: AgentProviderContext,
@@ -765,6 +851,7 @@ class FakeAgentProvider implements AgentProviderPort {
     input: AgentProviderSessionCreateInput,
   ): Promise<AgentProviderSession> {
     void _context;
+    this.createdSessions.push(structuredClone(input));
     this.sessionCounter += 1;
     const sessionId = `session-${this.sessionCounter}`;
     const messages: AgentConversationMessage[] = [];
@@ -788,7 +875,8 @@ class FakeAgentProvider implements AgentProviderPort {
     void _context;
     this.messageCounter += 1;
     this.sentMessages.push(structuredClone(input));
-    const outputText = `handled:${input.message}`;
+    const outputText =
+      this.messageResponses.shift() ?? `handled:${input.message}`;
 
     const messages = this.sessionMessages.get(input.sessionId) ?? [];
     messages.push({

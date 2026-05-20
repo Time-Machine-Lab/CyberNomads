@@ -16,6 +16,13 @@ export interface ThreadTaskPlannerOptions {
   >;
   trafficWorkService: Pick<TrafficWorkService, "listTrafficWorks">;
   agentAccessService: Pick<AgentAccessService, "submitTaskExecutionRequest">;
+  decompositionFeedbackSink?: {
+    recordExecutionFailure(input: {
+      trafficWorkId: string;
+      taskId: string;
+      reason: string;
+    }): Promise<void>;
+  };
   agentInteractionLogRecorder?: AgentInteractionLogRecorderPort;
   intervalMs?: number;
   now?: () => Date;
@@ -347,6 +354,11 @@ export class ThreadTaskPlanner {
         toFailureReason("Task submission failed", error),
         result,
       );
+      await this.options.decompositionFeedbackSink?.recordExecutionFailure({
+        trafficWorkId: task.trafficWorkId,
+        taskId: task.taskId,
+        reason: toFailureReason("Task submission failed", error),
+      });
     }
   }
 
